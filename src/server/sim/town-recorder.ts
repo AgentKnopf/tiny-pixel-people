@@ -408,7 +408,7 @@ export function recordTownLog(engine: Engine, log: TownLog): () => void {
       v.kind === 'snoop' ? 'snooping' : 'house_visit',
       [PLAYER_ID, ...v.ownerIds],
       v.kind === 'snoop'
-        ? `${nameOf(PLAYER_ID)} snooped around ${house} while ${owners} was out`
+        ? `${nameOf(PLAYER_ID)} snooped around ${house} while ${owners} ${v.ownerIds.length > 1 ? 'were' : 'was'} out`
         : v.kind === 'sleeping'
           ? `${nameOf(PLAYER_ID)} tiptoed into ${house} while ${owners} slept`
           : `${nameOf(PLAYER_ID)} visited ${owners} at ${house}`,

@@ -199,8 +199,6 @@ export class ObserverViews {
     const talking = this.talkingTo();
     const happening = this.src.events().filter((e) => e.status === 'happening');
     const ev = happening[0];
-    const p = world.player;
-    const pLoc = locationAt(this.src.map.locations, p.pos);
     return {
       ts: new Date().toISOString(),
       tick: now,
@@ -222,29 +220,36 @@ export class ObserverViews {
         : null,
       agents: this.src.villagerIds().map((id) => this.agentSummary(id, talking)),
       ...this.v2State(),
-      player: {
-        id: PLAYER_ID,
-        kind: 'player',
-        name: p.name,
-        x: round2(p.pos.x),
-        y: round2(p.pos.y),
-        location: pLoc?.id ?? null,
-        location_name: pLoc?.name ?? null,
-        gold: p.gold,
-        inside: p.inside
-          ? {
-              location: p.inside.locationId,
-              location_name: this.placeName(p.inside.locationId),
-              x: round2(p.inside.pos.x),
-              y: round2(p.inside.pos.y),
-            }
-          : null,
-      },
+      player: this.playerSummary(),
+    };
+  }
+
+  private playerSummary() {
+    const p = this.src.playerWorld.state;
+    const pLoc = locationAt(this.src.map.locations, p.pos);
+    return {
+      id: PLAYER_ID,
+      kind: 'player',
+      name: p.name,
+      x: round2(p.pos.x),
+      y: round2(p.pos.y),
+      location: pLoc?.id ?? null,
+      location_name: pLoc?.name ?? null,
+      gold: p.gold,
+      inside: p.inside
+        ? {
+            location: p.inside.locationId,
+            location_name: this.placeName(p.inside.locationId),
+            x: round2(p.inside.pos.x),
+            y: round2(p.inside.pos.y),
+          }
+        : null,
     };
   }
 
   /** null for unknown ids. */
   agent(id: VillagerId) {
+    if (id === PLAYER_ID) return { ...this.playerSummary(), romance: null, relationships: [] };
     const profile = this.src.profile(id);
     const s = this.src.villager(id);
     if (!profile || !s) return null;

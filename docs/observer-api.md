@@ -87,8 +87,17 @@ The whole village at a glance.
 - `paused`: speed is 0. `phase` is `waking_up` while the clock waits at 06:00 for the day plans.
 - `event_active`: the village event happening now (`id`, `title`, `host`, `location`,
   `location_name`, `until`, `attendees`), else `null`.
-- `agents[].kind`: `villager`, or `visitor` for strangers who are only passing through.
-- `talking_to` / `talking_to_name`: only present while the agent is in a conversation.
+- `agents[].kind`: `villager` (resident), `visitor` (came by train, stays at the hotel), or
+  `stranger` (v1 stranger passing through). `player.kind` is `player`; `player.inside` is the
+  interior the player is in (`location`, `location_name`, `x`, `y` in interior tiles), else `null`.
+- `train`: `status` (`away`, `arriving`, `boarding`, `departing`), `next_arrival` (ISO), `day`,
+  `time`, `arrives_tick`, `departs_tick`, `departs_time`, `arriving` and `departing` visitor ids;
+  `null` when the train is off or the map has no station.
+- `hotel`: `location`, `rooms` (count), `occupied`, `room_list` (`id`, `guest`, `since?`); or `null`.
+- `visitors`: `[{ id, name, status, room, origin, arrived, departs, departs_tick, day, time }]`;
+  `status` is `arriving`, `checkedIn` or `leaving`, and `day`/`time` give the departure.
+- `farm`: farm animal counts per species, e.g. `{ "cow": 3, "chicken": 5 }`.
+- `stock`: item counts per venue, e.g. `{ "burger_joint": { "burger": 4 } }`.- `talking_to` / `talking_to_name`: only present while the agent is in a conversation.
 - `needs`: the game's own needs, 0–100, 100 = fully satisfied. All four exist in the game; none are
   derived or `null`.
 - `mood`: one word derived from the needs: `asleep`, `tired`, `hungry`, `lonely` or `bored` (a need
@@ -134,9 +143,16 @@ Everything in the `agents[]` entry above, plus:
 
 - `relationships`: sorted by `score` (affinity, −10 to 10). `kind` is derived from the score:
   `close_friend` (≥ 6), `friend` (≥ 2), `acquaintance`, `dislikes` (≤ −2), `rival` (≤ −5).
-  `note` is the villager's own summary of the relationship, if any.
+  A romance overrides it: `crush` (this agent has a crush), `shy_crush` (the slow-burn pair),
+  `dating` or `partner` (a couple). `note` is the villager's own summary of the relationship, if any.
+- `romance`: the agent's current romance (couple first, then dating, then their own crush), else
+  `null`: `{ id, stage, partner, partner_name, since, crush_from, shy?, dates: [{ event, ts, day,
+time, location, location_name, asked_by, status }] }`. `stage` is `crush`, `dating` or `couple`;
+  date `status` is `planned`, `done`, `missed` or `declined`.
+- `visitor` (visitors only): `{ status, origin, reason?, room, arrived, departs }`.
 - `plan_today`: today's plan blocks; `plan_source` is `llm` or `fallback`. Empty before the plan exists.
-- `404` for unknown ids (including `player`).
+- `GET /api/agents/player` returns the `player` entry of `/api/state` (with `inside`), plus
+  `romance: null` and `relationships: []`. `404` for unknown ids; `/api/agents/player/memories` is `404`.
 
 ### `GET /api/agents/{id}/memories?limit=50&since=&kind=`
 
@@ -211,22 +227,70 @@ The town log, one line per thing that happened:
 ]
 ```
 
-| `type`            | When                                                                   |
-| ----------------- | ---------------------------------------------------------------------- |
-| `move`            | An agent arrived at a different place.                                 |
-| `chat`            | A conversation ended (with its first line); `data.conversationId`.     |
-| `plan_change`     | A new day plan, or a change to today's plan (new block, event, task).  |
-| `reflection`      | A villager formed an insight.                                          |
-| `note_left`       | Someone left a door note.                                              |
-| `note_read`       | The owner read it (and the reply, if any).                             |
-| `gossip_spread`   | One agent told another something new; `data.originId` traces the fact. |
-| `event_start`     | A village event or world event (rain, party, birthday) started.        |
-| `visitor_arrived` | A stranger arrived in town.                                            |
-| `visitor_left`    | A stranger left.                                                       |
+| `type`               | When                                                                   |
+| -------------------- | ---------------------------------------------------------------------- |
+| `move`               | An agent arrived at a different place.                                 |
+| `chat`               | A conversation ended (with its first line); `data.conversationId`.     |
+| `plan_change`        | A new day plan, or a change to today's plan (new block, event, task).  |
+| `reflection`         | A villager formed an insight.                                          |
+| `note_left`          | Someone left a door note.                                              |
+| `note_read`          | The owner read it (and the reply, if any).                             |
+| `gossip_spread`      | One agent told another something new; `data.originId` traces the fact. |
+| `event_start`        | A village event or world event (rain, party, birthday) started.        |
+| `visitor_arrived`    | A visitor or stranger arrived in town.                                 |
+| `visitor_checked_in` | A visitor checked in at the hotel; `data.room`.                        |
+| `visitor_left`       | A visitor or stranger left.                                            |
+| `train_arrived`      | The train stopped at the station; `agents` are the arriving visitors.  |
+| `train_departed`     | The train left; `agents` are the visitors on board.                    |
+| `romance`            | Any other romance change (catch-all), e.g. a pair starts dating.       |
+| `crush`              | Someone has a new crush; `data.shy` for the slow-burn pair.            |
+| `date_asked`         | Someone asked their crush on a date; `data.eventId`.                   |
+| `date`               | A pair went on a date.                                                 |
+| `date_missed`        | A planned date did not happen.                                         |
+| `couple`             | A pair became a couple.                                                |
+| `romance_ended`      | A romance ended.                                                       |
+| `letter_sent`        | A letter (or a reply, `data.replyTo`) was posted.                      |
+| `letter_delivered`   | The crow delivered it (`data.returned` when it came back undelivered). |
+| `letter_read`        | The recipient read it.                                                 |
+| `letter_replied`     | The recipient replied.                                                 |
+| `notice_posted`      | A notice went up on the board.                                         |
+| `keep_logged`        | Laude filed something in the Keep; `data.kind`.                        |
+| `animal_born`        | A farm animal was born; `agents` is the farmer.                        |
+| `animal_died`        | A farm animal died of old age.                                         |
+| `animal_butchered`   | A farm animal was butchered.                                           |
+| `house_visit`        | The player visited a house (owners home or asleep).                    |
+| `snooping`           | The player went into a house while the owners were out.                |
+| `ride`               | A villager boarded a zoo ride.                                         |
+| `purchase`           | A villager bought food (ice cream, a burger or a veggie burger).       |
 
-`type` and `agent` filter (`type` takes a comma-separated list). `limit` max 1000. `seq` increases
-by one per entry. The log keeps the last `observer.logSize` entries (default 5000) and is saved with
-the village, so it survives restarts. Romance, letters and other v2 features add more types later.
+`type` and `agent` filter (`type` takes a comma-separated list; an unknown type is a `400`, a known
+type with no entries is `200 []`). `limit` max 1000. `seq` increases by one per entry. The log keeps
+the last `observer.logSize` entries (default 5000) and is saved with the village, so it survives restarts.
+
+### `GET /api/letters?agent=&since=&limit=100`
+
+Letters, oldest first: `[{ id, ts, tick, day, time, from, from_name, to, to_name, text, status,
+delivered_ts?, read_ts?, reply_to?, reply?, updated_tick, source? }]`. `from`/`to` are villager ids
+or `player`. `status` is `posted`, `delivered`, `read`, `replied` or `returned`. `reply` is the text
+of the first letter answering this one. `agent` matches the sender or the recipient; `since`
+compares with the posting time. Door notes stay in `/api/notes`.
+
+### `GET /api/notices`
+
+The notices on the board now (not expired), oldest first: `[{ id, ts, tick, day, time, author,
+author_name, text, expires, expires_tick, event? }]`.
+
+### `GET /api/keep?since=&kind=&q=&limit=100`
+
+Laude's Keep: `[{ id, ts, tick, day, time, kind, ref, author, author_name, recipient?,
+recipient_name?, text }]`. `kind` is `note`, `letter`, `notice`, `rumor` or `reply`
+(comma-separated for several); `q` is a case-insensitive substring of `text`.
+
+### `GET /api/animals?group=&species=`
+
+`[{ id, species, group, name?, stage?, sex?, ageDays?, location, location_name, x, y, status }]`.
+`group` is `farm`, `zoo` or `ambient` (comma-separated for several); `stage` (`baby`, `adult`,
+`elder`) and `ageDays` are for farm animals. `location` is the pen or perch the animal belongs to.
 
 ### `GET /api/stats`
 
