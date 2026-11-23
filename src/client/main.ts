@@ -1,13 +1,11 @@
 import type { ServerMessage } from '../shared/protocol.ts';
-import { formatClock } from '../shared/time.ts';
 import type { WorldMap } from '../shared/types.ts';
-import { connect } from './net.ts';
+import { connect, type Connection } from './net.ts';
+import { mountUi } from './ui/index.ts';
 
 // Skeleton client: draws the collision grid and locations. WP4 replaces this with the real renderer.
 const canvas = document.querySelector<HTMLCanvasElement>('#world')!;
 const ctx = canvas.getContext('2d')!;
-const clockEl = document.querySelector<HTMLElement>('#clock')!;
-const statusEl = document.querySelector<HTMLElement>('#status')!;
 const SCALE = 2;
 
 let map: WorldMap | null = null;
@@ -32,20 +30,42 @@ function draw(): void {
   }
 }
 
+const frames = new Map<string, { x: number; y: number }>();
+
 function onMessage(msg: ServerMessage): void {
-  switch (msg.type) {
-    case 'hello':
-      map = msg.map;
-      clockEl.textContent = formatClock(msg.snapshot.time);
-      statusEl.textContent = `connected · ${msg.llm.provider}/${msg.llm.model}`;
-      draw();
-      break;
-    case 'tick':
-      clockEl.textContent = formatClock(msg.time);
-      break;
-    default:
-      break;
+  ui.handleMessage(msg);
+  if (msg.type === 'hello') {
+    map = msg.map;
+    for (const v of msg.snapshot.villagers) frames.set(v.id, v.pos);
+    draw();
+  } else if (msg.type === 'tick') {
+    for (const f of msg.villagers) frames.set(f.id, f);
   }
 }
 
-connect(onMessage, (s) => (statusEl.textContent = s));
+// Placeholder hit-testing until the real renderer lands: nearest villager within 1 tile, else a door.
+canvas.addEventListener('click', (ev) => {
+  if (!map) return;
+  // The canvas is letterboxed by object-fit: contain.
+  const rect = canvas.getBoundingClientRect();
+  const scale = Math.min(rect.width / canvas.width, rect.height / canvas.height);
+  const left = rect.left + (rect.width - canvas.width * scale) / 2;
+  const top = rect.top + (rect.height - canvas.height * scale) / 2;
+  const tx = ((ev.clientX - left) / (canvas.width * scale)) * map.width;
+  const ty = ((ev.clientY - top) / (canvas.height * scale)) * map.height;
+  let best: string | null = null;
+  let bestD = 1;
+  for (const [id, p] of frames) {
+    const d = Math.hypot(p.x + 0.5 - tx, p.y + 0.5 - ty);
+    if (d < bestD) [best, bestD] = [id, d];
+  }
+  if (best) return ui.selectVillager(best);
+  const house = map.locations.find(
+    (l) => l.door && Math.floor(tx) === l.door.x && Math.floor(ty) === l.door.y,
+  );
+  if (house) ui.openDoorNote(house.id);
+});
+
+let conn: Connection | null = null;
+const ui = mountUi(document.querySelector<HTMLElement>('#ui')!, { send: (m) => conn?.send(m) });
+conn = connect(onMessage, ui.setConnectionStatus);
