@@ -130,7 +130,10 @@ describe('Mind planning', () => {
     await v.advanceTo(at(0, '09:50'));
     hunger(15);
     expect(ben.update(v.view('ben'))).toMatchObject({ activity: 'eat a snack at home' });
-    expect(blockAt(v.worlds.get('ben')!.plan, minuteOfDay(v.time.now))).toMatchObject({ start: 590, end: 635 });
+    expect(blockAt(v.worlds.get('ben')!.plan, minuteOfDay(v.time.now))).toMatchObject({
+      start: 590,
+      end: 635,
+    });
   });
 
   it('renews at the exact end of a food block when hunger never left the critical range', async () => {

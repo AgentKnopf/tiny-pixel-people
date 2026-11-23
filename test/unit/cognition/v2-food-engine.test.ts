@@ -90,8 +90,7 @@ describe.skipIf(!ready(...FEATURES))(`hunger override near food${waitingFor(...F
       },
     });
     w.dispose();
-    for (const [id, from] of hungrySince)
-      if (lastTime - from > 60) late.push({ id, from, to: null });
+    for (const [id, from] of hungrySince) if (lastTime - from > 60) late.push({ id, from, to: null });
     expect(gotHungry.has('guest')).toBe(true);
     // The renewal boundary: hunger stays critical through a 45-minute meal at this decay, so the
     // villager must either eat on past the block's end or be hungry again the moment it ends.

@@ -74,7 +74,9 @@ describe('nearest food when hungry (real map)', () => {
       needOverride(needs, lunch, LOCS, 'hotel', 726, () => false, fromHotel.food, fromHotel.distance)!.block,
     ).toMatchObject({ locationId: 'hotel', activity: 'eat a snack at home' });
     const fromBakery = at(entry('bakery'));
-    expect(needOverride(needs, lunch, LOCS, 'hotel', 726, () => false, fromBakery.food, fromBakery.distance)).toBeNull();
+    expect(
+      needOverride(needs, lunch, LOCS, 'hotel', 726, () => false, fromBakery.food, fromBakery.distance),
+    ).toBeNull();
     // Without a distance the planned meal still counts, as before.
     expect(needOverride(needs, lunch, LOCS, 'hotel', 726, () => false, fromHotel.food)).toBeNull();
   });
