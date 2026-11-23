@@ -88,6 +88,8 @@ export const WAKE_UP_MINUTE = 6 * 60;
 const WAKE_UP_MAX_ROUNDS = 5;
 /** Real-time grace before an idle LLM queue counts as "every plan request has finished". */
 const WAKE_UP_IDLE_GRACE_MS = 1500;
+/** WP3's nightly usage line; also printed to the server terminal. */
+const LLM_USE_PREFIX = 'LLM use so far';
 
 const FULL_FRAME_EVERY_TICKS = 50;
 
@@ -213,6 +215,7 @@ export class Engine implements SimEngine, SimHost {
   private lastFrames = new Map<VillagerId, string>();
   private stepping = false;
   private wokeDay = -1;
+  private idleProbe: { done: boolean } | null = null;
   private wakeHold: { day: number; startedMs: number; ready: number; rounds: number } | null = null;
 
   constructor(opts: SimEngineOptions) {
@@ -665,7 +668,10 @@ export class Engine implements SimEngine, SimHost {
       config: this.config,
       queue: this.queue,
       now: () => this.now(),
-      emit: (m) => this.broadcast(m),
+      emit: (m) => {
+        if (m.type === 'log' && m.text.startsWith(LLM_USE_PREFIX)) log.info(m.text);
+        this.broadcast(m);
+      },
       world: this.mindWorld(profile.id),
       random: () => this.rng.next(),
       ...(snapshot ? { snapshot } : {}),
@@ -797,6 +803,14 @@ export class Engine implements SimEngine, SimHost {
     return !!plan && plan.day === day && plan.source === 'llm';
   }
 
+  /** Every mind reports plan settlement itself, so an idle queue proves nothing (embeds, retries). */
+  private plansSelfReported(): boolean {
+    for (const rt of this.runtimes.values()) {
+      if (!rt.profile.transient && !rt.mind.isPlanSettled) return false;
+    }
+    return true;
+  }
+
   private wakeUpCounts(day: number): { ready: number; total: number } {
     const all = [...this.runtimes.values()].filter((rt) => !rt.profile.transient);
     return { ready: all.filter((rt) => this.planSettled(rt, day)).length, total: all.length };
@@ -836,8 +850,9 @@ export class Engine implements SimEngine, SimHost {
       this.endWakeUp(day, true);
       return false;
     }
-    // Nothing left in flight: the remaining villagers keep their fallback plans.
-    if ((this.wakeHold.rounds > 0 || waited >= WAKE_UP_IDLE_GRACE_MS) && this.llmIdle()) {
+    // Minds that cannot report settlement: once nothing is in flight they keep their fallback plans.
+    const idle = this.plansSelfReported() ? false : this.llmIdle();
+    if (idle && (this.wakeHold.rounds > 0 || waited >= WAKE_UP_IDLE_GRACE_MS)) {
       this.endWakeUp(day, false);
       return false;
     }
@@ -848,9 +863,22 @@ export class Engine implements SimEngine, SimHost {
     return true;
   }
 
+  /**
+   * Chat lane empty and the whole queue (embeddings included) reached idle since the previous call.
+   * `drain()` is the only public view of the embeddings lane, so idleness is observed one tick late.
+   */
   private llmIdle(): boolean {
+    const probe = this.idleProbe;
+    const reached = !!probe && probe.done;
+    if (!probe || probe.done) {
+      const next = { done: false };
+      this.idleProbe = next;
+      void this.queue.drain().then(() => {
+        next.done = true;
+      });
+    }
     const q = this.queue.stats();
-    return q.queued === 0 && q.running === 0 && this.pending.size === 0;
+    return reached && q.queued === 0 && q.running === 0 && this.pending.size === 0;
   }
 
   private endWakeUp(day: number, timedOut: boolean): void {
