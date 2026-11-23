@@ -104,7 +104,15 @@ _Generative Agents_ (Park et al., 2023), scaled down to small local models:
 - **Planning.** For each day (prepared in the evening, otherwise at wake-up) the model writes a day plan of 5–8 blocks (time, place, activity,
   emoji), taking needs, memories, invitations and the weather into account. The plan is validated
   and repaired (unknown places mapped, gaps filled, overlaps clipped). An answer that can't be used is
-  asked for once more at once; after that the villager keeps a fallback plan. A plan prepared while
+  asked for once more at once. A villager whose plan for today is a fallback then retries
+  `plan.day` in the background (priority 103, `PLAN_RESCUE_*` in `cognition/mind.ts`): 30 game
+  minutes after the previous attempt finished, until max(12:00, wake + 2 h), at most 8 attempts a
+  day; a parsed plan replaces the blocks from now on. **Dawn rush:** while some villager's
+  first-priority request for today's plan is in flight (within 2 game hours of its wake time),
+  `Village.dawnRush()` makes every mind and the conversation runner treat the load level as
+  `overloaded`, so optional cognition is skipped and chats use canned lines (except a speaker's
+  first line with news). During the wake-up hold the clock stands still, so the measured lag alone
+  would read `normal`. A plan prepared while
   the villager is asleep is applied right away, so the engine's 06:00 wake-up hold (see
   [Time and the loop](#time-and-the-loop)) can see it through `isPlanSettled(day)`. Important news
   triggers a rate-limited revision of the rest of the day. Accepted events and player requests are inserted
@@ -190,10 +198,10 @@ _Generative Agents_ (Park et al., 2023), scaled down to small local models:
 - Every call names a **task** (`plan.day`, `convo.turn`, `note.reply`, `player.reply`, …). The
   **LlmQueue** runs at most `llm.concurrency` calls at once (default 1 for `ollama`, 2 otherwise;
   the engine also caps simultaneous villager conversations at this number), ordered by priority. The defaults are in `TASK_PRIORITY` (`llm/types.ts`); cognition overrides
-  some (`PRIORITY` in `cognition/mind.ts`). The resulting order is: player replies (110), note
-  replies (108), today's plan (105), a speaker's first line with news (104), the event proposal
-  (101), conversation turns (100), RSVPs (92),
-  plan retries (90), player task requests (85), tomorrow's plan and plan revisions (70),
+  some (`PRIORITY` in `cognition/mind.ts`). The resulting order is: player replies and the first
+  request for today's plan (110), note replies (108), a speaker's first line with news (104),
+  plan rescue retries (103), the event proposal (101), conversation turns (100), RSVPs (92),
+  player task requests (85), tomorrow's plan and plan revisions (70),
   conversation summaries (60), importance ratings (30), reflections and day summaries (20). Waiting jobs gain +1 priority per 2 s of real
   waiting (at most +50). Duplicate jobs are coalesced. Jobs whose `expiresAt` game time has passed
   before they start are dropped; without an explicit `expiresAt`, background tasks get a default

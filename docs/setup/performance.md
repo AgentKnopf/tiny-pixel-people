@@ -76,9 +76,9 @@ settings lively; above 20 seconds, use the CPU settings above.
 
 ## What happens under load
 
-- **Priorities.** Your chats go first, then replies to your door notes, then today's plan for a
-  villager still on a default plan, then the first line of a villager who has news to share, the
-  daily event, other conversation turns and the invitees' answers, then your requests to villagers, then tomorrow's plans, summaries, importance ratings
+- **Priorities.** Your chats and the villagers' first request for today's plan go first, then
+  replies to your door notes, then the first line of a villager who has news to share, then
+  retries of plans that fell back to the default, then the daily event, other conversation turns and the invitees' answers, then your requests to villagers, then tomorrow's plans, summaries, importance ratings
   and reflections. Jobs that have waited a long time slowly gain priority, so background work is
   delayed but not starved.
 - **Load levels.** The villagers notice when answers take long in game time and cut back on
@@ -90,7 +90,15 @@ settings lively; above 20 seconds, use the CPU settings above.
   villager with fresh important news walks up to someone who hasn't heard it, so gossip spreads
   even when chance meetings are rare. Under load, if the
   model's line leaves the news out, the game adds it (`Did you hear? …`). There is no
-  setting for this; it recovers as soon as the model catches up. See
+  setting for this; it recovers as soon as the model catches up.
+- **Morning rush.** While any villager is still waiting for its plan for today (up to 2 game hours
+  after it wakes), the whole village acts as if overloaded: optional model work is skipped and
+  conversations use canned lines, apart from each speaker's first line with news. This leaves the
+  model to the morning plans, which the 06:00 wait depends on.
+- **Rescuing default plans.** A villager that started the day on a default plan keeps asking the
+  model in the background, every 30 game minutes, until 12:00 (or 2 game hours after waking, if
+  that's later), at most 8 tries a day. When a usable plan arrives, it replaces the rest of the
+  day. See
   [When the model is slow](../user-guide.md#when-the-model-is-slow) in the user guide.
 - **Waiting for plans at 06:00.** Each morning the clock holds until every villager's day-plan
   request has finished (with a model plan or a fallback), the model is offline, or `sim.wakeUpTimeoutSec` (300) real seconds have

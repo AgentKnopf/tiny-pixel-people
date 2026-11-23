@@ -67,7 +67,7 @@ cottage ✓`. Your conversations with villagers appear in a small dialog there t
 
 At higher speeds the language model has less real time per game hour, so villagers "think slower" in
 game time: a conversation takes longer, or a villager follows a simple default plan until its real
-plan arrives. That's expected; apart from the short wait at 06:00, the town never waits for the
+plan arrives (it keeps asking until noon). That's expected; apart from the short wait at 06:00, the town never waits for the
 model.
 
 ## Moving around and the camera
@@ -302,8 +302,11 @@ measures how long answers take in game time and works in one of three modes:
   (`Did you hear? …`, `Really? …? I had no idea!`), so gossip still spreads. Invitees decide about events by a simple rule (how much they like the host
   and whether they're free).
 
-In every mode your chats and door-note replies come first, followed by today's plans for villagers
-still on a default plan, news being passed on, and the day's event. Each
+In every mode your chats and the villagers' morning plans come first, followed by door-note
+replies, news being passed on, new tries for villagers still on a default plan, and the day's
+event. Until every villager has its morning plan (for up to 2 game hours after it wakes), conversations use the canned lines described
+under Overloaded. A villager on a default plan keeps asking the model until 12:00 (at most 8
+tries) and switches to the real plan for the rest of the day when it arrives. Each
 villager plans tomorrow in the evening, about 90 minutes before bedtime, while the model is less
 busy (except when overloaded). The mode recovers as soon as answers come back faster. For how to
 make a slow machine keep up, see [Performance and slow hardware](setup/performance.md).
