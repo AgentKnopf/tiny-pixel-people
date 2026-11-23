@@ -35,6 +35,7 @@ const SHY_DATE_AFFINITY = 8;
 const SHY_DATE_TALKS = 6;
 const POST_OFFICE = 'post_office';
 const FALLBACK_DATE_AT = 17 * 60;
+const FALLBACK_SOON_BEFORE = 15 * 60;
 /** A transient villager whose mind has not been stepped for this long has left town. */
 const DEPARTED_AFTER = 60;
 
@@ -60,6 +61,14 @@ export function isDateVenue(l: Location): boolean {
 /** Romance records of one village: the engine's copies (from views) win when they are newer. */
 export class RomanceBook {
   private readonly byId = new Map<string, Romance>();
+  private readonly askDay = new Map<string, number>();
+
+  /** One date.ask per pair and day: after a chat both partners of a couple would otherwise ask at once. */
+  claimAsk(pairKey: string, day: number): boolean {
+    if ((this.askDay.get(pairKey) ?? -1) >= day) return false;
+    this.askDay.set(pairKey, day);
+    return true;
+  }
 
   sync(records: readonly Romance[] | undefined): void {
     for (const r of records ?? []) {
@@ -70,6 +79,21 @@ export class RomanceBook {
 
   get(id: string): Romance | undefined {
     return this.byId.get(id);
+  }
+
+  /** The pair's active record, else its latest one (record ids may come from the engine's seeds). */
+  pair(a: VillagerId, b: VillagerId): Romance | undefined {
+    let best: Romance | undefined;
+    for (const r of this.byId.values()) {
+      if (!r.pair.includes(a) || !r.pair.includes(b)) continue;
+      if (
+        !best ||
+        (isActive(r) && !isActive(best)) ||
+        (isActive(r) === isActive(best) && r.updatedAt > best.updatedAt)
+      )
+        best = r;
+    }
+    return best;
   }
 
   of(villager: VillagerId): Romance[] {
@@ -179,7 +203,7 @@ export class RomanceAgent {
   }
 
   shyWith(other: VillagerId): Romance | undefined {
-    const r = this.book.get(romanceId(this.mind.id, other));
+    const r = this.book.pair(this.mind.id, other);
     return r && r.shy && isActive(r) ? r : undefined;
   }
 
@@ -266,7 +290,7 @@ export class RomanceAgent {
     }
     if (!best || this.mind.deps.random() >= CRUSH_CHANCE) return;
     const id = romanceId(me, best.id);
-    const old = this.book.get(id);
+    const old = this.book.pair(me, best.id);
     const now = view.now;
     const rec: Romance =
       old && isActive(old)
@@ -372,7 +396,7 @@ export class RomanceAgent {
   afterConversation(other: VillagerId, conv: Conversation): void {
     const view = this.mind.lastView;
     if (!this.enabled || !view || conv.messages.length === 0) return;
-    const r = this.book.get(romanceId(this.mind.id, other));
+    const r = this.book.pair(this.mind.id, other);
     if (!r || !isActive(r)) return;
     if (r.stage !== 'couple' && !r.crushFrom.includes(this.mind.id)) return;
     const now = this.mind.deps.now();
@@ -380,6 +404,7 @@ export class RomanceAgent {
     if (this.askedDay >= day || this.mind.load() === 'overloaded') return;
     if (this.hasDateSoon(view, now)) return;
     if (r.shy && !this.shyMayDate(other, now)) return;
+    if (!this.book.claimAsk(romanceId(this.mind.id, other), day)) return;
     this.askedDay = day;
     this.mind.job(`date.ask:${other}`, () => this.ask(view, r, other));
   }
@@ -414,10 +439,11 @@ export class RomanceAgent {
     return view.locations.filter((l) => isDateVenue(l) && isOpenFor(l, mod, mod + DATE_MINUTES, zoo));
   }
 
-  /** The next 17:00 at least 2 game hours away. */
+  /** Two game hours from now before 15:00, else the next 17:00. */
   static fallbackStart(now: GameMinutes): GameMinutes {
+    if (minuteOfDay(now) < FALLBACK_SOON_BEFORE) return now + 120;
     const today = dayOf(now) * MINUTES_PER_DAY + FALLBACK_DATE_AT;
-    return today - now >= 120 ? today : today + MINUTES_PER_DAY;
+    return today > now ? today : today + MINUTES_PER_DAY;
   }
 
   private async ask(view: WorldView, r: Romance, other: VillagerId): Promise<void> {
@@ -644,8 +670,7 @@ export class RomanceAgent {
         });
       }
       if (e.hostId === me) {
-        const id = romanceId(me, other);
-        const r = this.book.get(id);
+        const r = this.book.pair(me, other);
         if (r)
           this.write({
             ...r,

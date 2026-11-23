@@ -948,13 +948,32 @@ export class Mind implements VillagerMind {
     const leave = this.leavingAt(plan.day);
     if (leave !== null) blocks = cutForTrain(blocks, leave, locations);
     const post = this.shyVisitPlace(plan.day, locations);
+    // The shy pair meet at the post office: whoever plans second fits in with the other's plan.
+    const partner = this.shyPartnerPlan(plan.day);
     if (post)
       blocks = addVisit(blocks, post, ctx, {
         key: `${this.settings.seed}:${this.id}:${plan.day}`,
         activity: 'drop by the post office',
         emoji: '✉️',
         from,
+        prefer: (partner ?? [])
+          .filter((b) => b.locationId === POST_OFFICE)
+          .map((b) => [b.start, b.end] as const),
       });
+    else if (partner && workLocation(this.profile, locations) === POST_OFFICE) {
+      const visit = partner.find((b) => b.locationId === POST_OFFICE && b.end > from);
+      const covered = (b: PlanBlock) =>
+        b.locationId === POST_OFFICE && b.start <= visit!.start && b.end >= visit!.end;
+      const busy = (b: PlanBlock) => (b.eventId || b.taskId) && b.start < visit!.end && b.end > visit!.start;
+      if (visit && !blocks.some(covered) && !blocks.some(busy))
+        blocks = insertBlock(blocks, {
+          start: visit.start,
+          end: visit.end,
+          locationId: POST_OFFICE,
+          activity: 'sort the mail at the post office',
+          emoji: '📮',
+        });
+    }
     return blocks.length === plan.blocks.length && blocks.every((b, i) => b === plan.blocks[i])
       ? plan.blocks
       : blocks;
@@ -997,6 +1016,15 @@ export class Mind implements VillagerMind {
 
   romances(view: WorldView | null = this.lastView): readonly Romance[] {
     return this.romance.records(view);
+  }
+
+  /** The shy partner's plan blocks for `day`, when that plan is already made. */
+  private shyPartnerPlan(day: number): readonly PlanBlock[] | null {
+    const shy = this.romances().find((r) => r.shy && r.stage !== 'ended' && r.pair.includes(this.id));
+    if (!shy) return null;
+    const other = this.village.minds.get(shy.pair[0] === this.id ? shy.pair[1] : shy.pair[0]);
+    const plan = other?.currentPlan;
+    return plan?.day === day ? plan.blocks : null;
   }
 
   /** The post office, on the days a shy villager (not working there) visits it (spec v2 §7.1). */

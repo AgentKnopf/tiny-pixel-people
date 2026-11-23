@@ -289,6 +289,14 @@ describe('couples (v2 §7)', () => {
           .find((m) => m.text === `${other} and I are a couple now!`)!.importance,
       ).toBe(8);
     expect(mia.romance.planLine(v.view('mia'))).toContain('Ben are a couple');
+
+    // After a chat, only one of the two partners asks.
+    v.time.now = at(2, '10:00');
+    await v.advanceTo(at(2, '10:01'));
+    await runner(v).run(conv('mia', 'ben', v.time.now), [mia, v.minds.get('ben')!]);
+    await v.queue.drain();
+    expect(v.queue.count('date.ask')).toBe(1);
+    expect(v.events.filter((e) => e.kind === 'date')).toHaveLength(1);
   });
 
   it('does not make a couple with one done date or one-sided affinity', async () => {
@@ -307,6 +315,34 @@ describe('couples (v2 §7)', () => {
     mia.town.romances.put(romance('ben', 'mia', { stage: 'dating', dates: [d('d1'), d('d2')] }));
     await v.advanceTo(at(2, '02:05'));
     expect(mia.town.romances.get(romanceId('mia', 'ben'))!.stage).toBe('dating');
+  });
+
+  it('a visitor never becomes part of a couple', async () => {
+    const vera: VillagerProfile = {
+      ...person('vera', 'Vera', 'Tourist'),
+      homeId: 'hotel',
+      transient: true,
+      visitor: true,
+    };
+    const v = createTestVillage({
+      start: at(2, '01:58'),
+      profiles: [vera, ...PROFILES],
+      locations: V2_LOCATIONS,
+    });
+    mutual(v, 'mia', 'vera', 9);
+    const mia = v.minds.get('mia')!;
+    const d = (eventId: string) => ({
+      eventId,
+      locationId: 'park',
+      at: at(1, '17:00'),
+      askedBy: 'mia',
+      status: 'done' as const,
+      source: 'llm' as const,
+    });
+    mia.town.romances.put(romance('mia', 'vera', { stage: 'dating', dates: [d('d1'), d('d2')] }));
+    await v.advanceTo(at(2, '02:05'));
+    expect(mia.town.romances.get(romanceId('mia', 'vera'))!.stage).toBe('dating');
+    expect(v.messages.some((m) => m.type === 'toast')).toBe(false);
   });
 
   it('a romance ends after three days of negative affinity', async () => {
@@ -401,9 +437,10 @@ describe('the shy pair (v2 §7.1)', () => {
 });
 
 describe('fallback date time', () => {
-  it('is the next 17:00 at least two hours away', () => {
-    expect(RomanceAgent.fallbackStart(at(1, '10:00'))).toBe(at(1, '17:00'));
-    expect(RomanceAgent.fallbackStart(at(1, '15:30'))).toBe(at(2, '17:00'));
+  it('is two hours from now before 15:00, else the next 17:00', () => {
+    expect(RomanceAgent.fallbackStart(at(1, '10:00'))).toBe(at(1, '12:00'));
+    expect(RomanceAgent.fallbackStart(at(1, '15:30'))).toBe(at(1, '17:00'));
+    expect(RomanceAgent.fallbackStart(at(1, '18:00'))).toBe(at(2, '17:00'));
   });
 });
 
