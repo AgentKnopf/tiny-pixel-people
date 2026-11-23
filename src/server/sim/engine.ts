@@ -109,6 +109,7 @@ export const NOTICE_READ_RADIUS = 3;
 export const GREETING_HOLD_MINUTES = 10;
 /** What villagers do at a ride after their cycle, or after giving up on the queue (spec v2 §4). */
 export const RIDE_FALLBACK_ACTIVITY = 'watching the rides';
+export const AFTER_RIDE_ACTIVITY = 'chatting about the ride';
 const RIDE_EMOJI: Record<string, string> = { rollercoaster: '🎢', ferris_wheel: '🎡', carousel: '🎠' };
 /** Bubbles stay visible for this many real milliseconds. */
 export const BUBBLE_MS = 5000;
@@ -146,6 +147,8 @@ interface Runtime {
   approach: { conversationId: string; partnerId: VillagerId } | null;
   /** Ride this villager already rode during the current visit (one cycle per visit). */
   rodeAt?: string | null;
+  /** Finished a cycle during the current ride block; stays at `to` until the plan moves on. */
+  doneRide?: { rideId: string; to: string } | null;
 }
 
 interface ActiveConversation {
@@ -1072,11 +1075,12 @@ export class Engine implements SimEngine, SimHost {
         const day = dayOf(this.clock.time);
         if (day !== prevDay) this.onNewDay(day);
         this.updateNeedsAndBlocks(dt);
+        // Before movement: a rider who arrives this step waits in the queue until the next one.
+        this.stepRides();
         for (const rt of [...this.runtimes.values()]) this.think(rt);
         for (const rt of [...this.runtimes.values()]) this.moveVillager(rt, dt);
         this.stepAnimals();
         this.stepTrain();
-        this.stepRides();
         const minute = Math.floor(this.clock.time);
         if (minute > this.lastMinute) {
           this.lastMinute = minute;
@@ -1217,6 +1221,13 @@ export class Engine implements SimEngine, SimHost {
           if (event.kind === 'finished') {
             const gain = this.rides.spec(loc.id)?.funGain ?? 0;
             rt.state.needs.fun = Math.min(100, rt.state.needs.fun + gain);
+            // One cycle per visit: the rider steps off and spends the rest of the block nearby.
+            const to = this.afterRidePlace(loc);
+            if (to) {
+              rt.doneRide = { rideId: loc.id, to: to.id };
+              this.goTo(rt, to.id, AFTER_RIDE_ACTIVITY, '😄', false);
+              continue;
+            }
           }
           rt.rodeAt = loc.id;
           this.setActivity(rt, RIDE_FALLBACK_ACTIVITY, '👀', 'acting');
@@ -1224,6 +1235,24 @@ export class Engine implements SimEngine, SimHost {
       }
       this.bus.emit('ride', event);
     }
+  }
+
+  private afterRidePlace(ride: Location): Location | null {
+    let best: Location | null = null;
+    let bestD = Infinity;
+    for (const l of this.map.locations) {
+      if (l.kind !== 'public' && l.kind !== 'food' && l.kind !== 'nature') continue;
+      // Zoo food stands sit next to the rides; a public place across town is a last resort.
+      const d =
+        Math.abs(l.entry.x - ride.entry.x) +
+        Math.abs(l.entry.y - ride.entry.y) +
+        (l.kind === 'food' ? 0 : 40);
+      if (d < bestD) {
+        best = l;
+        bestD = d;
+      }
+    }
+    return best;
   }
 
   private animalsNear(pos: Point): { id: string; species: AnimalSpecies; distance: number }[] {
@@ -1313,6 +1342,21 @@ export class Engine implements SimEngine, SimHost {
 
   private applyIntent(rt: Runtime, intent: Intent): void {
     const s = rt.state;
+    if (rt.doneRide) {
+      const done = rt.doneRide;
+      const atRide = intent.type === 'act' && s.locationId === done.rideId;
+      if ((intent.type === 'goto' && intent.locationId === done.rideId) || atRide) {
+        this.goTo(rt, done.to, AFTER_RIDE_ACTIVITY, '😄', false);
+        return;
+      }
+      if (
+        intent.type !== 'wait' &&
+        intent.type !== 'talk' &&
+        !(intent.type === 'act' && s.locationId === done.to)
+      )
+        rt.doneRide = null;
+      else if (intent.type === 'act') return;
+    }
     switch (intent.type) {
       case 'goto':
         this.goTo(rt, intent.locationId, intent.activity, intent.emoji ?? '🚶', false);
@@ -1320,7 +1364,7 @@ export class Engine implements SimEngine, SimHost {
       case 'sleep':
         this.goTo(rt, rt.profile.homeId, 'sleeping', '💤', true);
         break;
-      case 'act':
+      case 'act': {
         s.path = [];
         rt.target = {
           locationId: s.locationId,
@@ -1330,8 +1374,15 @@ export class Engine implements SimEngine, SimHost {
           sleep: false,
         };
         rt.arrived = true;
+        const loc = s.locationId ? locationById(this.map.locations, s.locationId) : null;
+        if (loc?.kind === 'ride') {
+          // Queue, ride and "watching the rides" own the activity while the villager stays here.
+          if (!this.rides.rideOf(rt.profile.id) && rt.rodeAt !== loc.id) this.enterRide(rt, loc);
+          break;
+        }
         this.setActivity(rt, intent.activity, intent.emoji ?? '✨', 'acting');
         break;
+      }
       case 'talk':
         if (!this.isBusy(rt)) {
           const other = this.runtimes.get(intent.targetId);
@@ -1390,17 +1441,24 @@ export class Engine implements SimEngine, SimHost {
     return 'acting';
   }
 
+  /** Join the ride's queue, or watch when it is closed or full of waiting riders. */
+  private enterRide(rt: Runtime, loc: Location): void {
+    if (this.rides.join(rt.profile.id, loc.id)) {
+      this.setActivity(rt, `waiting for the ${loc.name.replace(/^the /i, '')}`, '⏳', 'idle');
+    } else {
+      rt.rodeAt = loc.id;
+      this.setActivity(rt, RIDE_FALLBACK_ACTIVITY, '👀', 'acting');
+    }
+  }
+
   private arrive(rt: Runtime): void {
     const t = rt.target;
     if (!t) return;
     rt.arrived = true;
     const loc = t.locationId ? locationById(this.map.locations, t.locationId) : null;
     rt.state.locationId = t.locationId;
-    if (loc?.kind === 'ride' && !t.sleep && this.rides.join(rt.profile.id, loc.id)) {
-      this.setActivity(rt, `waiting for the ${loc.name.replace(/^the /i, '')}`, '⏳', 'idle');
-    } else if (loc?.kind === 'ride' && !t.sleep) {
-      rt.rodeAt = loc.id;
-      this.setActivity(rt, RIDE_FALLBACK_ACTIVITY, '👀', 'acting');
+    if (loc?.kind === 'ride' && !t.sleep) {
+      this.enterRide(rt, loc);
     } else {
       this.setActivity(rt, t.activity, t.emoji, this.arrivedStatus(rt, loc));
       if (loc?.kind === 'food' && !t.sleep) this.eatAt(rt, loc);

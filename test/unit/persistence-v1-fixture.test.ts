@@ -61,7 +61,8 @@ describe('v1 save fixture loads into v2', () => {
 
     await w.advance(24 * 60);
     expect(w.errors()).toEqual([]);
-    expect(w.state().villagers).toHaveLength(10);
+    // Train visitors come and go on the v2 map; the residents stay.
+    expect(w.state().villagers.filter((v) => !w!.profile(v.id).visitor)).toHaveLength(10);
   }, 120_000);
 
   it('writes the resumed world back as the current schema', async () => {

@@ -60,21 +60,23 @@ describe.skipIf(!ready(...FEATURES))(`§14.1 world events${waitingFor(...FEATURE
     async () => {
       w = await createTestWorld({ startAt: '06:00' });
       await w.advanceTo('09:00');
-      const before = w.state().villagers.length;
+      // Residents and strangers only: v2 train visitors come and go on their own schedule.
+      const settled = () => w!.state().villagers.filter((v) => !w!.profile(v.id).visitor);
+      const before = settled().length;
       w.command({ type: 'world.trigger', kind: 'stranger' });
       await w.advance(5);
       const added = (w.of('villagers.changed') as VillagersChangedMsg[]).flatMap((m) => m.added);
       expect(added).toHaveLength(1);
       const stranger = added[0]!;
       expect(stranger.transient).toBe(true);
-      expect(w.state().villagers).toHaveLength(before + 1);
+      expect(settled()).toHaveLength(before + 1);
       await w.advance(60);
       expect(w.memories(stranger.id).length).toBeGreaterThan(0);
       expect(w.inspect(stranger.id)?.villagerId).toBe(stranger.id);
       await w.advanceTo(at(1, '02:00'));
       const removed = (w.of('villagers.changed') as VillagersChangedMsg[]).flatMap((m) => m.removed);
       expect(removed).toContain(stranger.id);
-      expect(w.state().villagers).toHaveLength(before);
+      expect(settled()).toHaveLength(before);
     },
     180_000,
   );
