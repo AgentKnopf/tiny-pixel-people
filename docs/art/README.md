@@ -58,7 +58,27 @@ Houses come in `brown`, `blue`, `teal`, `purple` (the player cottage), `red`, `g
   `data/villagers.json` can pick a `sprite` that fits.
 - `player.png` is the player avatar (yellow shirt). Draw its name tag with a `★` prefix.
 - `stranger.png` is the cloaked traveller for the Stranger event.
+- `laude.png` (the postmaster, blue cap) and `franzi.png` (chestnut bob with a pink bow) are the
+  two v2 residents.
+- `visitor-01` to `visitor-08` are train visitors who stay at the hotel; their
+  `suggestedRole` is `visitor (train guest)`.
 - `pet-pip.png` is Pip, the player's orange cat, with the same sheet layout.
+
+### `assets/animals/*.png` + `index.json`
+
+- Side-view sheets: row 0 faces left, row 1 faces right. There are no up or down rows; when an
+  animal moves vertically, keep its last horizontal facing. Frame sizes differ per species, so
+  read `frameWidth` and `frameHeight` for each entry; the anchor is the feet.
+- Columns: idle 0–1, walk 2–5, sleep 6. Farm animals have separate `young` and `old` keys
+  (`cow-calf`, `sheep-lamb`, `chicken-chick`, `cow-old`, ...). Birds use columns 2–5 for flying.
+- The crow lists its own frames: idle 0–1, hop 2–4, caw 5–6, fly 7–10 and sleep 11.
+
+### `assets/vehicles/index.json` (train, rides, ice cream truck)
+
+- The train sheet has one row per piece (engine and 3 carriages, facing left, then the same facing
+  right), with 64×32 frames and 2 frames each. Arriving trains move west.
+- The Ferris wheel and carousel frames are drawn over the matching map object, with the same size
+  and origin. The rollercoaster track is map tiles; `coasterCar` has one frame per direction.
 
 ### `assets/ui/icons.png` + `icons.json`
 

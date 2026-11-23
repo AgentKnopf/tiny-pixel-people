@@ -1,5 +1,5 @@
 {
-  "note": "Side-view sheets: row 0 faces left, row 1 faces right; columns per \"frames\". Anchor = feet.",
+  "note": "Side-view sheets: row 0 faces left, row 1 faces right; columns per \"frames\" (the crow lists its own). Anchor = feet. When moving up or down, keep the last horizontal facing.",
   "rows": [
     "left",
     "right"
@@ -14,11 +14,16 @@
       3,
       4,
       5
+    ],
+    "sleep": [
+      6
     ]
   },
   "fps": {
     "idle": 2,
-    "walk": 6
+    "walk": 6,
+    "fly": 8,
+    "sleep": 1
   },
   "animals": [
     {
@@ -431,9 +436,18 @@
         "caw": [
           5,
           6
+        ],
+        "fly": [
+          7,
+          8,
+          9,
+          10
+        ],
+        "sleep": [
+          11
         ]
       },
-      "description": "the post office crow; idle, hop and caw frames"
+      "description": "the post office crow; idle, hop, caw, fly and sleep frames"
     }
   ]
 }
