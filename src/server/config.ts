@@ -60,6 +60,8 @@ export const configSchema = z.object({
     nightSpeedMultiplier: z.number().min(1),
     tickMs: z.number().int().min(10),
     seed: z.number().int(),
+    /** Real seconds the clock holds at day start until plans settle; 0 disables the hold. */
+    wakeUpTimeoutSec: z.number().min(0),
   }),
   cognition: z.object({
     retrievalK: z.number().int().min(1),
@@ -148,6 +150,7 @@ export const DEFAULT_CONFIG: AppConfig = {
     nightSpeedMultiplier: 6,
     tickMs: 100,
     seed: 42,
+    wakeUpTimeoutSec: 300,
   },
   cognition: {
     retrievalK: 8,
