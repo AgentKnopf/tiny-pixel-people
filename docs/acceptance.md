@@ -44,7 +44,7 @@ AC1–AC7 still hold with every v2 feature on. The v2 criteria:
 | AC21 | The notice board.                                                                          |
 | AC22 | Laude learns every note, letter, notice and rumor at once; the Keep archives them.         |
 | AC23 | The crow on the post office roof.                                                          |
-| AC24 | Laude and Franzi live near the bakery; Laude goes to bake-offs.                            |
+| AC24 | Laude and Franzi live on the bakery road; Laude goes to bake-offs.                         |
 | AC25 | Laude and Franzi's slow, shy crush.                                                        |
 | AC26 | The forest with a grove, a lake and small animals.                                         |
 | AC27 | The observer API shows the v2 world.                                                       |

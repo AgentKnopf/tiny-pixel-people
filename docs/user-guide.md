@@ -360,19 +360,21 @@ wool and eggs, grow old and die, all on their own. No farm animal ever needs the
 (Ages are in game days.)
 
 - **Every morning at 06:00** the animals age by a day. Very old animals die peacefully
-  (`🕊️ Old Bessie the cow passed away peacefully on the farm.`), and when there is a grown-up male
-  and female and room on the farm, a baby may be born (`🐣 A chick hatched at the coop!`).
-- **At 07:00** the milk, eggs and wool go to the shop, where you can buy them from the place bar (the farm shop in the farmhouse sells
-  the same stock)
-  (milk 2, egg 1, wool 3 gold). Old animals give half as much. **At 18:00** the barn turns 2 milk into 1 cheese
-  (4 gold).
+  (`🕊️ Old Bessie the cow passed away peacefully on the farm.`). If a kind has lost all its males
+  or all its females, a grown-up one of the missing sex arrives so the kind can keep breeding. Then each grown-up
+  female may have a baby when there is a grown-up male and room on the farm, at most once every two
+  days per mother (`🐣 A chick hatched at the coop!`).
+- **At 07:00** the milk, eggs and wool go to the shop, where you can buy them from the place bar
+  (milk 2, egg 1, wool 3 gold); the farm shop in the farmhouse sells the same stock. Old animals
+  give half as much. **At 18:00** the barn turns 2 milk into 1 cheese (4 gold).
 - **At most 10 of each kind** live on the farm at a time (`farm.capPerSpecies`). Config can lower
   this, but never raise it.
 - **At 16:00** at most one animal a day goes "to the butcher", when a kind has 8 or more animals
   (`farm.butcherAtCount`) or the Burger Joint is running low. Tom the farmer walks it to the shed by
   the road, or it walks there alone if he is busy. You never see what happens there: the animal
   simply leaves the farm, burgers appear at the Burger Joint, and a toast says
-  `🍔 Tom took a cow to the butcher. Fresh burgers at the Burger Joint!`.
+  `🍔 Tom took a cow to the butcher. Fresh burgers at the Burger Joint!`. The butcher never takes
+  the last male or the last female of a kind; if that is the only choice, nobody goes that day.
 
 Click a farm animal to see its name, whether it is young, grown up or old, and its age in days.
 
