@@ -514,7 +514,16 @@ describe('dock and modals', () => {
     click(byTestId('dock-mail'));
     expect($('.modal-title').textContent).toBe('📬 Your mailbox');
     expect(byTestId('mailbox').textContent).toContain('from Bo');
+    expect(byTestId('mailbox').textContent).toContain('📝 door note from Bo');
     expect(byTestId('mailbox').textContent).toContain('Thanks for the apple!');
+  });
+
+  it('mailbox promises only delivered letters, with or without a placed mailbox', () => {
+    click(byTestId('dock-mail'));
+    const modal = $('#modal').textContent ?? '';
+    expect(modal).toContain('Letters from villagers arrive here with the post office delivery rounds.');
+    expect(modal).not.toMatch(/leave a note|so villagers can write to you/);
+    expect(byTestId('mailbox').textContent).toBe('No letters yet.');
   });
 
   it('Escape closes the modal, then the inspector', () => {
