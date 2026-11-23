@@ -124,6 +124,7 @@ export class StubMind implements VillagerMind {
         readAt: now,
         reply: `Thanks for your note about "${words}". I'll think it over!`,
         repliedAt: now,
+        replySource: 'fallback',
       });
     }
   }
@@ -191,8 +192,14 @@ export function createStubConversationRunner(
         speakerId: a,
         text: `${StubMind.greeting(t)}, ${names(b)}! Lovely day, isn't it?`,
         at: t,
+        source: 'fallback',
       });
-      conversation.messages.push({ speakerId: b, text: `It is, ${names(a)}. Good to see you.`, at: t });
+      conversation.messages.push({
+        speakerId: b,
+        text: `It is, ${names(a)}. Good to see you.`,
+        at: t,
+        source: 'fallback',
+      });
       for (const [i, mind] of minds.entries()) {
         const other = conversation.participants[1 - i]!;
         mind.observe({

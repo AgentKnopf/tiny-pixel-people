@@ -14,6 +14,7 @@ import {
   type Location,
   type Memory,
   type PlayerState,
+  type Provenance,
   type Point,
   type VillageEvent,
   type VillagerId,
@@ -85,8 +86,6 @@ export const WAKE_UP_MINUTE = 6 * 60;
 export const DEFAULT_WAKE_UP_TIMEOUT_SEC = 300;
 /** Virtual-clock mode gives up waiting after this many drain rounds. */
 const WAKE_UP_MAX_ROUNDS = 5;
-
-type Provenance = 'llm' | 'fallback';
 
 /** Broadcast while the morning wake-up hold is active and once when it ends. */
 export interface SimStatusMsg {
@@ -1288,7 +1287,7 @@ export class Engine implements SimEngine, SimHost {
     while (entry.sent < c.messages.length) {
       const m = c.messages[entry.sent++]!;
       const listenerId = c.participants[0] === m.speakerId ? c.participants[1] : c.participants[0];
-      const source = (m as { source?: Provenance }).source;
+      const source = m.source;
       this.broadcast({
         type: 'conversation.message',
         conversationId: entry.publicId ?? c.id,

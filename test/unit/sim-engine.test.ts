@@ -35,7 +35,9 @@ describe('sim engine', () => {
     expect(samples).toBeGreaterThan(100);
     expect(onPlan / samples).toBeGreaterThan(0.7);
     expect(engine.conversations().filter((c) => c.status === 'ended').length).toBeGreaterThan(5);
-    expect(messages.some((m) => m.type === 'conversation.message')).toBe(true);
+    const lines = messages.filter((m) => m.type === 'conversation.message');
+    expect(lines.length).toBeGreaterThan(0);
+    expect(lines.every((m) => m.source === 'fallback')).toBe(true);
     // 06:00 next day: everyone slept at home overnight.
     expect(engine.now()).toBe(at(1, '06:00'));
   }, 60_000);
@@ -64,6 +66,7 @@ describe('sim engine', () => {
     const note = engine.snapshot().notes.find((n) => n.ownerId === v.id)!;
     expect(note.status).toBe('replied');
     expect(note.reply).toBeTruthy();
+    expect(note.replySource).toBe('fallback');
     expect(engine.memories('tom').some((m) => m.kind === 'note' && m.text.includes('picnic'))).toBe(true);
     expect(messages.some((m) => m.type === 'note.updated' && m.note.status === 'replied')).toBe(true);
     expect(engine.snapshot().rumors.some((r) => r.text.includes('picnic'))).toBe(true);
@@ -194,6 +197,10 @@ describe('sim engine', () => {
     expect(b.time).toBe(a.time);
     expect(b.player).toEqual(a.player);
     expect(b.notes).toEqual(a.notes);
+    const restoredLines = restored.conversations().flatMap((c) => c.messages);
+    expect(restoredLines.map((m) => m.source)).toEqual(
+      engine.conversations().flatMap((c) => c.messages.map((m) => m.source)),
+    );
     expect(b.villagers.map((v) => [v.id, v.pos, v.plan])).toEqual(
       a.villagers.map((v) => [v.id, v.pos, v.plan]),
     );
