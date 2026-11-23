@@ -161,6 +161,12 @@ Villagers pass on news when they talk. Whatever you tell a villager with **Tell 
 door note once it is read, is tracked as a rumor. Villagers can start rumors too, when they hear
 something they find very important.
 
+Villagers don't just wait to bump into someone. A villager with fresh, important news (heard in
+the last 12 game hours and told to fewer than two people so far) walks up to an awake villager who
+hasn't heard it yet and starts a chat, at most every 30 game minutes. It doesn't do this during an
+event, while doing something you asked for, or in the last hour before bed. If a chat ends right
+after the news is told, the listener still reacts (`Really? …? I had no idea!`), so the news sticks.
+
 The **rumor tracker** panel (top left, yellow border) opens with the first rumor and shows the newest
 one:
 

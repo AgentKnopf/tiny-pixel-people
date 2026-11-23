@@ -117,7 +117,14 @@ _Generative Agents_ (Park et al., 2023), scaled down to small local models:
   both.
 - **Gossip.** Each memory carries an `originId`. A speaker is offered "news you might share" that
   the listener hasn't heard from it yet; facts the listener learns keep the original `originId`
-  and record who they came from. This is how gossip and rumors are traced.
+  and record who they came from. This is how gossip and rumors are traced. A villager with hot news
+  (newsworthy, importance ≥ 7, at most 12 game hours old, told to fewer than 2 villagers) seeks out
+  a listener: at most every 30 game minutes, outside event and player-task blocks and the last hour
+  before bedtime, it picks an awake, free villager who hasn't heard it and is past the pair
+  cooldown (nearest first) and returns a `talk` intent. When a chat is cut off (turn cap or time)
+  right after a news line the listener never repeated, a canned listener echo
+  (`Really? …? I had no idea!`, `source: 'fallback'`) is appended, and who was told what is
+  recorded before the summary call.
 - **Events.** Villagers propose events in their day plan or on request; at least one per day with
   `events.ensureDaily` (asked from 07:00 until 15:00). The proposal call never expires in the queue; if nothing has
   come back by 13:00 (at least an hour after asking), a default event is created. Invitees decide with a model call; accepting inserts a plan block.

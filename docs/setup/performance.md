@@ -86,7 +86,9 @@ settings lively; above 20 seconds, use the CPU settings above.
   about 35. Busy means shorter conversations (at most 4 lines), mostly when someone has news, and
   no plan revisions, reflections or model-written summaries. Overloaded means only conversations
   that carry news, with at most 3 lines, and invitees answer by a simple rule. The first line of a
-  villager with news still goes to the model once; the other lines are canned. Under load, if the
+  villager with news still goes to the model once; the other lines are canned. In every mode a
+  villager with fresh important news walks up to someone who hasn't heard it, so gossip spreads
+  even when chance meetings are rare. Under load, if the
   model's line leaves the news out, the game adds it (`Did you hear? …`). There is no
   setting for this; it recovers as soon as the model catches up. See
   [When the model is slow](../user-guide.md#when-the-model-is-slow) in the user guide.
