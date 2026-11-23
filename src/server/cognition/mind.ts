@@ -55,6 +55,7 @@ import {
   type LoadLevel,
 } from './llm.ts';
 import { MemoryStore } from './memory.ts';
+import { compareIds } from './rng.ts';
 import {
   blockAt,
   describeBlocks,
@@ -988,10 +989,10 @@ export class Mind implements VillagerMind {
   private shyVisitPlace(day: number, locations: readonly Location[]): Location | null {
     const cfg = this.deps.config.romance;
     if (!cfg?.enabled) return null;
-    const post = locations.find((l) => l.id === POST_OFFICE);
-    if (!post || workLocation(this.profile, locations) === POST_OFFICE) return null;
     const shy = this.romances().some((r) => r.shy && r.stage !== 'ended' && r.pair.includes(this.id));
     if (!shy) return null;
+    const post = locations.find((l) => l.id === POST_OFFICE);
+    if (!post || workLocation(this.profile, locations) === POST_OFFICE) return null;
     return hashUnit(`${this.settings.seed}:${this.id}:visit:${day}`) < cfg.shyVisitChance ? post : null;
   }
 
@@ -1547,7 +1548,7 @@ export class Mind implements VillagerMind {
       const villagers = Object.entries(view.villagerNames)
         .filter(([id]) => id !== this.id && id !== PLAYER_ID)
         .map(([id, name]) => ({ id, name, affinity: view.self.relationships[id]?.affinity ?? 0 }))
-        .sort((a, b) => b.affinity - a.affinity || a.id.localeCompare(b.id));
+        .sort((a, b) => b.affinity - a.affinity || compareIds(a.id, b.id));
       const p = eventProposePrompt(
         this.profile,
         view.now,
@@ -1610,7 +1611,7 @@ export class Mind implements VillagerMind {
       .sort(
         (a, b) =>
           (view.self.relationships[b]?.affinity ?? 0) - (view.self.relationships[a]?.affinity ?? 0) ||
-          a.localeCompare(b),
+          compareIds(a, b),
       );
     while (invitees.size < 5 && others.length) invitees.add(others.shift()!);
     const event: VillageEvent = {
@@ -1678,7 +1679,7 @@ export class Mind implements VillagerMind {
     if (this.animalSeenAt === loc.id) return;
     const seen = (view.animalsNearby ?? [])
       .filter((a) => a.distance <= 4 && a.species !== 'crow')
-      .sort((a, b) => a.distance - b.distance || a.id.localeCompare(b.id))[0];
+      .sort((a, b) => a.distance - b.distance || compareIds(a.id, b.id))[0];
     if (!seen) return;
     this.animalSeenAt = loc.id;
     const where = /lake/.test(loc.id)

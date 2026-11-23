@@ -5,6 +5,7 @@
 import { parseClock } from '../../shared/time.ts';
 import type { Location, LocationId, PlanBlock } from '../../shared/types.ts';
 import { insertBlock, planEnd, sortBlocks, type WakeWindow } from './planning.ts';
+import { compareIds } from './rng.ts';
 
 export interface Hours {
   open: number;
@@ -65,7 +66,7 @@ function alternativeFor(
   let cands = OPEN_ALTERNATIVES.map((id) => byId.get(id)).filter((l): l is Location => !!l);
   if (cands.length === 0) cands = locations.filter((l) => l.kind === 'public' || l.kind === 'nature');
   const open = cands.filter((l) => l.id !== from.id && isOpenFor(l, start, end, zoo));
-  open.sort((a, b) => dist(from, a) - dist(from, b) || a.id.localeCompare(b.id));
+  open.sort((a, b) => dist(from, a) - dist(from, b) || compareIds(a.id, b.id));
   return open[0] ?? null;
 }
 
