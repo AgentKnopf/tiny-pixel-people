@@ -155,6 +155,8 @@ export class HouseVisits implements HouseVisitService {
     const home = owners.filter((id) => this.ctx.villager(id)?.locationId === loc.id);
     const awake = home.filter((id) => this.ctx.villager(id)?.status !== 'sleeping');
     const kind: HouseVisitKind = awake.length > 0 ? 'visit' : home.length > 0 ? 'sleeping' : 'snoop';
+    // Before the visit id: the snoop fact is only saved in memories, so the saved visit must outrank it.
+    const originId = kind === 'snoop' ? this.ctx.id('fact') : '';
     const visit: HouseVisit = {
       id: this.ctx.id('visit'),
       houseId: loc.id,
@@ -183,7 +185,6 @@ export class HouseVisits implements HouseVisitService {
       }
     } else if (kind === 'snoop') {
       const ownerName = this.ctx.nameOf(owners[0]!);
-      const originId = this.ctx.id('fact');
       for (const v of this.ctx.awake()) {
         if (owners.includes(v.id) || distance(v.pos, loc.door ?? loc.entry) > WITNESS_DISTANCE) continue;
         visit.witnesses.push(v.id);
