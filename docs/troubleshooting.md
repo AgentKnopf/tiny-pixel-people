@@ -91,6 +91,12 @@ smaller model is the better fix. See [Performance and slow hardware](setup/perfo
 
 ## Villagers
 
+**The clock stands still at 06:00 and a banner says `Villagers are waking up…`.**
+Each morning the clock waits for the villagers' day plans, for at most 5 real minutes. That is
+normal on a slow model. To wait less, lower `sim.wakeUpTimeoutSec` (`0` turns the wait off); to
+wait less often, use a faster model. If it ends with
+`[sim] wake-up: only N/M plans ready, starting the day anyway`, the rest start on default plans.
+
 **Villagers walk around but never talk, or follow the same simple routine every day.**
 The model isn't answering (see above), or is too slow for the day length. Look at the stats card:
 if the call count barely moves or the queue keeps growing, the model is offline or slow, and
