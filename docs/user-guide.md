@@ -260,8 +260,9 @@ letters yet, so the mailbox stays empty.
 - **💾 Save replay** saves right away and downloads the replay log.
 - When you start the server again, it **loads the last save** and the village carries on where it
   stopped (`persistence.loadOnStart`). The log says `resuming save "default" from …`.
-- To **start a new village**, run `npm start -- --new`. The existing save is ignored and gets
-  overwritten at the next save; `replay.jsonl` keeps growing. To keep the old village, copy its
+- To **start a new village**, run `npm start -- --new`. The log says
+  `starting new world (save "default")`. The existing save is ignored and gets overwritten at the
+  next save; `replay.jsonl` keeps growing. To keep the old village, copy its
   folder first or use another slot.
 - Saves live in `saves/<slot>/`: `world.json`, one memory file per villager in `memories/`, and
   `replay.jsonl`. Use `persistence.slot` to keep several villages side by side, for example

@@ -40,10 +40,18 @@ INFO  [main] world: 48x30 tiles, 10 villagers
 INFO  [main] Tiny Pixel People running at http://127.0.0.1:3000
 ```
 
-Without a `config.json` the first line reads `config: defaults (no config.json)`. The `resuming save`
-line appears only when there is a save to load.
+Without a `config.json` the first line reads `config: defaults (no config.json)`. The second line
+says which village you get:
 
-Stop the server with `Ctrl+C`; it saves the game first.
+- `resuming save "default" from <folder>`: the saved village was loaded.
+- `starting new world (save "default")`: there was no save yet, you passed `--new`, or
+  `persistence.loadOnStart` is `false`. A new world overwrites the old save at its next save.
+- `ERROR [main] could not load save "default": <reason>`, followed by `starting new world …`: the
+  save is damaged; see [Troubleshooting](../troubleshooting.md#saves).
+
+Stop the server with `Ctrl+C`; it saves the game first and logs
+`INFO  [autosave] SIGINT: saving before exit` and `INFO  [autosave] saved at game time <n>`
+(`SIGTERM` instead of `SIGINT` when stopped by a service manager or `kill`).
 
 ### Command-line options
 
