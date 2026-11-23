@@ -32,7 +32,9 @@ export function lettersModal(ctx: UiContext, initial: LettersTab = 'inbox'): Mod
   });
   const counter = h('span', { class: 'label note-counter' }, `0 / ${NOTE_MAX_LENGTH}`);
   textarea.addEventListener('input', () => setText(counter, `${textarea.value.length} / ${NOTE_MAX_LENGTH}`));
-  textarea.addEventListener('keydown', (ev) => ev.stopPropagation());
+  textarea.addEventListener('keydown', (ev) => {
+    if (ev.key !== 'Escape') ev.stopPropagation();
+  });
 
   const send = () => {
     const to = select.value as VillagerId;

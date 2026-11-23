@@ -23,6 +23,7 @@ import { createRumorPanel } from './rumor-panel.ts';
 import { createSimStatusBanner } from './sim-status.ts';
 import { createStatsCard } from './stats.ts';
 import { UiStore, type Topic } from './store.ts';
+import { WalkIn } from './walk-in.ts';
 import { createToasts } from './toasts.ts';
 import { createToolbar } from './toolbar.ts';
 import type { Catalog, ConnectionState, UiController, UiHost } from './types.ts';
@@ -70,9 +71,11 @@ export function mountUi(root: HTMLElement, host: UiHost, store: UiStore = new Ui
   const selectionListeners = new Set<(id: VillagerId | null) => void>();
 
   const modals: ModalHost = new ModalHost(() => ctx.closeModal());
+  const walkIn = new WalkIn(store, (msg) => host.send(msg));
   const ctx: UiContext = {
     store,
     host,
+    walkIn,
     select(id) {
       if (id) store.selectAnimal(null);
       if (id === store.selectedId) return;
