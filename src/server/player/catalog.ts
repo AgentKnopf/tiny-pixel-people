@@ -34,8 +34,25 @@ export const strangerTemplateSchema = z.object({
 
 export type StrangerTemplate = z.infer<typeof strangerTemplateSchema>;
 
+/** Fallback train visitors (data/visitors.json, spec v2 §5.2). */
+export const visitorTemplateSchema = z.object({
+  id: z.string().regex(/^[a-z0-9_]+$/, 'visitor ids may only contain a-z, 0-9 and _'),
+  name: z.string().min(1).max(24),
+  age: z.number().int().min(18).max(100),
+  occupation: z.string().min(1),
+  bio: z.string().min(1).max(300),
+  traits: z.array(z.string()),
+  sprite: z.string().min(1),
+  origin: z.string().min(1),
+  reason: z.string().min(1),
+  likes: z.array(z.string()).default([]),
+});
+
+export type VisitorTemplate = z.infer<typeof visitorTemplateSchema>;
+
 export interface WorldCatalogs extends Catalogs {
   strangers: StrangerTemplate[];
+  visitors: VisitorTemplate[];
 }
 
 function uniqueIds<T extends { id: string }>(file: string, list: T[]): T[] {
@@ -62,12 +79,16 @@ function readJson<T>(path: string, schema: z.ZodType<T>): T {
   return parsed.data;
 }
 
-/** Load and validate data/items.json, data/decorations.json and data/strangers.json. */
+/** Load and validate data/items.json, decorations.json, strangers.json and visitors.json. */
 export function loadCatalogs(dataDir = 'data'): WorldCatalogs {
   const file = (name: string) => resolve(dataDir, name);
   return {
     items: uniqueIds('items.json', readJson(file('items.json'), z.array(itemSchema))),
     decorations: uniqueIds('decorations.json', readJson(file('decorations.json'), z.array(decorationSchema))),
     strangers: uniqueIds('strangers.json', readJson(file('strangers.json'), z.array(strangerTemplateSchema))),
+    visitors: uniqueIds(
+      'visitors.json',
+      readJson(file('visitors.json'), z.array(visitorTemplateSchema).min(12)),
+    ),
   };
 }

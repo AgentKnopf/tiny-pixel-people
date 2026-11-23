@@ -48,6 +48,8 @@ export class WorldEvents implements WorldEventService {
         return this.birthday(opts.villagerId);
       case 'townEvent':
         return this.townEvent();
+      case 'train':
+        return this.train();
       default:
         return { ok: false, reason: `Unknown world event "${String(kind)}"` };
     }
@@ -135,6 +137,14 @@ export class WorldEvents implements WorldEventService {
       this.log.open('townEvent', null, {});
       this.ctx.toast('🗓', 'Someone is planning a town event…');
     }
+    return res;
+  }
+
+  private train(): CommandResult {
+    const trigger = this.ctx.host.triggerTrain;
+    if (!this.ctx.train.enabled || !trigger) return { ok: false, reason: 'There is no train service' };
+    const res = trigger.call(this.ctx.host);
+    if (res.ok) this.ctx.toast('🚂', 'The next train is on its way!');
     return res;
   }
 

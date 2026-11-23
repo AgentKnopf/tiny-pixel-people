@@ -4,5 +4,11 @@
   { "id": "seed", "name": "Seed packet", "emoji": "🌱", "sprite": "ui/icons.json#seed" },
   { "id": "gem", "name": "Shiny pebble", "emoji": "💎", "sprite": "ui/icons.json#gem" },
   { "id": "bread", "name": "Bread", "emoji": "🍞", "sprite": "ui/icons.json#bread" },
-  { "id": "honey", "name": "Honey jar", "emoji": "🍯", "sprite": "ui/icons.json#honey" }
+  { "id": "honey", "name": "Honey jar", "emoji": "🍯", "sprite": "ui/icons.json#honey" },
+  { "id": "burger", "name": "Burger", "emoji": "🍔", "sprite": "ui/icons.json#burger" },
+  { "id": "ice_cream", "name": "Ice cream", "emoji": "🍦", "sprite": "ui/icons.json#ice_cream" },
+  { "id": "milk", "name": "Milk", "emoji": "🥛", "sprite": "ui/icons.json#milk" },
+  { "id": "egg", "name": "Egg", "emoji": "🥚", "sprite": "ui/icons.json#egg" },
+  { "id": "wool", "name": "Wool", "emoji": "🧶", "sprite": "ui/icons.json#wool" },
+  { "id": "cheese", "name": "Cheese", "emoji": "🧀", "sprite": "ui/icons.json#cheese" }
 ]

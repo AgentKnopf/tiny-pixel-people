@@ -1,10 +1,16 @@
 import type { LearnedFact } from '../cognition/types.ts';
+import type { AnimalChange } from '../sim/types.ts';
 import { SAY_MAX_LENGTH, type ClientMessage, type ServerMessage } from '../../shared/protocol.ts';
 import {
   PLAYER_HOME_ID,
   PLAYER_ID,
   type DoorNote,
+  type FoodStock,
+  type GameMinutes,
   type GroundItem,
+  type HotelState,
+  type ItemId,
+  type LocationId,
   type Memory,
   type PlanBlock,
   type PlayerState,
@@ -13,6 +19,7 @@ import {
   type VillagerId,
   type VillagerProfile,
   type VillagerState,
+  type VisitorInfo,
   type Weather,
   type WorldEvent,
 } from '../../shared/types.ts';
@@ -20,6 +27,8 @@ import { loadCatalogs, type WorldCatalogs } from './catalog.ts';
 import { Ctx, type PlayerWorldConfig } from './context.ts';
 import { DecorController } from './decor.ts';
 import { Economy } from './economy.ts';
+import { Farm, isOpen, nearLocation } from './farm-economy.ts';
+import { Hotel } from './hotel.ts';
 import { distance, isWalkable, stepAlong, tileOf, walkableNeighbours } from './geometry.ts';
 import type { PlayerHost } from './host.ts';
 import { addToBackpack, countOf, ItemField, removeFromBackpack } from './inventory.ts';
@@ -27,6 +36,7 @@ import { PetController } from './pet.ts';
 import { Rumors } from './rumors.ts';
 import { Strangers } from './strangers.ts';
 import type { CommandResult, PlayerService } from './types.ts';
+import { Visitors } from './visitors.ts';
 import { WeatherController } from './weather.ts';
 import { WorldEventLog } from './world-event-log.ts';
 import { WorldEvents } from './world-events.ts';
@@ -43,7 +53,13 @@ export interface PlayerWorldSave {
   weather: Weather;
   items: GroundItem[];
   worldEvents: WorldEvent[];
+  /** Transient profiles: v1 strangers and train visitors (`visitor: true`). */
   strangers: VillagerProfile[];
+  // v2
+  stock: FoodStock;
+  /** null in a migrated v1 save: the hotel is built from config. */
+  hotel: HotelState | null;
+  visitors: VisitorInfo[];
 }
 
 export interface CreatePlayerWorldOptions {
@@ -57,7 +73,7 @@ export interface CreatePlayerWorldOptions {
 type PlayerCommand = Exclude<
   Extract<ClientMessage, { type: `player.${string}` | 'world.trigger' | 'decor.toggle' | 'pet.command' }>,
   // v2 player commands (spec v2 §14): not handled yet.
-  { type: 'player.enter' | 'player.exit' | 'player.ride' | 'player.buy' }
+  { type: 'player.enter' | 'player.exit' }
 >;
 
 const HANDLED = new Set<string>([
@@ -69,6 +85,8 @@ const HANDLED = new Set<string>([
   'world.trigger',
   'decor.toggle',
   'pet.command',
+  'player.buy',
+  'player.ride',
 ]);
 
 /**
@@ -87,6 +105,9 @@ export class PlayerWorld implements PlayerService {
   readonly economy: Economy;
   readonly decor: DecorController;
   readonly pet: PetController;
+  readonly farm: Farm;
+  readonly hotel: Hotel;
+  readonly visitors: Visitors;
   private readonly log: WorldEventLog;
   private readonly player: PlayerState;
 
@@ -98,9 +119,27 @@ export class PlayerWorld implements PlayerService {
     this.rumors = new Rumors(this.ctx, restore.rumors);
     this.weatherCtl = new WeatherController(this.ctx, this.log, restore.weather);
     this.items = new ItemField(this.ctx, restore.items);
-    this.strangers = new Strangers(this.ctx, this.log, restore.strangers);
+    const transients = restore.strangers ?? [];
+    this.strangers = new Strangers(
+      this.ctx,
+      this.log,
+      transients.filter((p) => !p.visitor),
+    );
     this.events = new WorldEvents(this.ctx, this.log, this.weatherCtl, this.strangers);
     this.economy = new Economy(this.ctx, this.player);
+    this.farm = new Farm(this.ctx, this.player, (d, why) => this.economy.addGold(d, why), restore.stock);
+    this.hotel = new Hotel(Math.max(this.ctx.hotel.rooms, this.ctx.visitors.max), restore.hotel);
+    this.visitors = new Visitors(
+      this.ctx,
+      this.hotel,
+      {
+        updated: (visitor) => {
+          this.ctx.emit({ type: 'visitor.updated', visitor: structuredClone(visitor) });
+          this.ctx.emit({ type: 'hotel.updated', hotel: structuredClone(this.hotel.state()) });
+        },
+      },
+      { infos: restore.visitors, profiles: transients.filter((p) => p.visitor) },
+    );
     this.decor = new DecorController(this.ctx, this.player, (d, why) => this.economy.addGold(d, why));
     this.pet = new PetController(this.ctx);
   }
@@ -127,6 +166,9 @@ export class PlayerWorld implements PlayerService {
     this.log.update();
     this.economy.update(dt);
     this.decor.update();
+    const now = this.ctx.host.now();
+    if (this.farm.update(now)) this.broadcastStock();
+    this.visitors.update(now);
   }
 
   /** Handles player.*, world.trigger, decor.toggle and pet.command; null for anything else. */
@@ -160,6 +202,10 @@ export class PlayerWorld implements PlayerService {
         return this.toggleDecoration(cmd.itemId);
       case 'pet.command':
         return this.petCommand(cmd.action, cmd.name);
+      case 'player.buy':
+        return this.buy(cmd.locationId, cmd.itemId);
+      case 'player.ride':
+        return this.ride(cmd.locationId);
     }
   }
 
@@ -190,6 +236,49 @@ export class PlayerWorld implements PlayerService {
     return this.rumors.considerMemory(memory);
   }
 
+  // ---------- v2 engine hooks (spec v2 §3.4, §5) ----------
+
+  /** AnimalSim step result: products and butcher yields become stock. */
+  onAnimalChange(change: AnimalChange): void {
+    const res = this.farm.onAnimalChange(change, this.ctx.host.now());
+    for (const t of res.toasts) this.ctx.toast('🍔', t);
+    if (res.changed) this.broadcastStock();
+  }
+
+  /**
+   * A villager eats or buys at a food venue. Returns whether the item came from stock; a burger
+   * that is sold out becomes a veggie burger, so villagers never wait (needs are the engine's job).
+   */
+  consumeFood(venueId: LocationId, itemId: ItemId): boolean {
+    const fromStock = this.farm.take(venueId, itemId);
+    if (fromStock && !venueId.startsWith('ice_cream_truck')) this.broadcastStock();
+    return fromStock;
+  }
+
+  /** The train reached `boarding`: profiles for the engine to spawn on the platform. */
+  onTrainArrived(now: GameMinutes): VillagerProfile[] {
+    const arriving = this.visitors.onTrainArrived(now);
+    if (arriving.length > 0) {
+      const names = arriving.map((p) => p.name);
+      this.ctx.toast(
+        '🚂',
+        `${names.join(' and ')} arrived by train${arriving.length === 1 ? '' : ' to stay at the hotel'}`,
+      );
+    }
+    return arriving;
+  }
+
+  /** The train is leaving: ids of visitors that board now (the engine removes them). */
+  onTrainDeparting(now: GameMinutes, onPlatform: readonly VillagerId[]): VillagerId[] {
+    const names = new Map(onPlatform.map((id) => [id, this.ctx.nameOf(id)]));
+    const boarding = this.visitors.onTrainDeparting(now, onPlatform);
+    if (boarding.length > 0) {
+      const who = boarding.map((id) => names.get(id) ?? this.ctx.nameOf(id));
+      this.ctx.toast('👋', `${who.join(' and ')} left on the train`);
+    }
+    return boarding;
+  }
+
   /** Mailbox placed: villagers may leave notes for the player (spec §7.16 stretch). */
   mailboxPlaced(): boolean {
     return this.player.placedDecorations.includes('mailbox');
@@ -205,6 +294,9 @@ export class PlayerWorld implements PlayerService {
       weather: s.weather,
       items: s.items,
       worldEvents: s.worldEvents,
+      stock: s.stock,
+      hotel: s.hotel,
+      visitors: s.visitors,
     };
   }
 
@@ -215,7 +307,10 @@ export class PlayerWorld implements PlayerService {
       weather: this.weatherCtl.weather,
       items: this.items.items,
       worldEvents: this.log.events,
-      strangers: this.strangers.profiles,
+      strangers: [...this.strangers.profiles, ...this.visitors.profiles.values()],
+      stock: this.farm.stock(),
+      hotel: this.hotel.state(),
+      visitors: [...this.visitors.visitors()],
     });
   }
 
@@ -345,6 +440,32 @@ export class PlayerWorld implements PlayerService {
     return { ok: true };
   }
 
+  private buy(locationId: LocationId, itemId: ItemId): CommandResult {
+    const res = this.farm.buy(locationId, itemId, this.ctx.host.now());
+    if (res.ok) {
+      if (!locationId.startsWith('ice_cream_truck')) this.broadcastStock();
+      this.broadcastPlayer();
+    }
+    return res;
+  }
+
+  private ride(locationId: LocationId): CommandResult {
+    const loc = this.ctx.location(locationId);
+    if (!loc?.ride) return { ok: false, reason: `"${locationId}" is not a ride` };
+    if (!isOpen(loc, this.ctx.host.now(), this.ctx.zoo))
+      return { ok: false, reason: `The ${loc.name} is closed right now` };
+    if (!nearLocation(loc, this.player.pos)) return { ok: false, reason: `Walk to the ${loc.name} first` };
+    const cost = loc.ride.playerCost;
+    if (this.player.gold < cost) return { ok: false, reason: `A ride costs ${cost} gold` };
+    const join = this.ctx.host.joinRide;
+    if (!join) return { ok: false, reason: 'The rides are not running yet' };
+    const res = join.call(this.ctx.host, locationId);
+    if (!res.ok) return res;
+    this.economy.addGold(-cost, `ride on the ${loc.name}`);
+    this.ctx.toast('🎢', `You joined the queue for the ${loc.name} (${cost} gold)`);
+    return { ok: true };
+  }
+
   private pairTalk(aId: VillagerId, bId: VillagerId): CommandResult {
     if (aId === bId) return { ok: false, reason: 'Pick two different villagers' };
     for (const id of [aId, bId])
@@ -430,6 +551,10 @@ export class PlayerWorld implements PlayerService {
     if (!villager) return { ok: false, reason: `Unknown villager "${id}"` };
     if (villager.status === 'sleeping') return { ok: false, reason: `${this.ctx.nameOf(id)} is asleep` };
     return { ok: true, villager };
+  }
+
+  private broadcastStock(): void {
+    this.ctx.emit({ type: 'stock.updated', stock: structuredClone(this.farm.stock()) });
   }
 
   private broadcastPlayer(): void {
