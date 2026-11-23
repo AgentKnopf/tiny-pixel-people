@@ -88,12 +88,21 @@ describe.skipIf(!ready(...BAG))(`§14.1 backpack and gifts${waitingFor(...BAG)}`
     const v = w.state().villagers.find(awake)!;
     const mems = w.memories(v.id).length;
     const aff = w.villager(v.id).relationships[PLAYER_ID]?.affinity ?? 0;
+    const toasts0 = w.of('toast').length;
     w.command({ type: 'player.gift', villagerId: v.id, itemId: item.itemId });
     await w.until(
       (x) => x.of('conversation.message').some((m) => m.speakerId === v.id && m.listenerId === PLAYER_ID),
       30,
     );
-    expect(count(w, item.itemId)).toBe(0);
+    // The walk to the villager may cross the spawn area and pick up a respawned item of the same kind.
+    const name = (JSON.parse(readFileSync(repoPath('data/items.json'), 'utf8')) as { id: string; name: string }[]).find(
+      (d) => d.id === item.itemId,
+    )!.name;
+    const pickedSince = w
+      .of('toast')
+      .slice(toasts0)
+      .filter((t) => t.text === `Picked up ${name.toLowerCase()}`).length;
+    expect(count(w, item.itemId)).toBe(pickedSince);
     expect(w.memories(v.id).length).toBeGreaterThan(mems);
     expect(w.villager(v.id).relationships[PLAYER_ID]?.affinity ?? 0).toBeGreaterThanOrEqual(aff + 1);
     expect(w.of('conversation.message').some((m) => m.speakerId === v.id && m.listenerId === PLAYER_ID)).toBe(
