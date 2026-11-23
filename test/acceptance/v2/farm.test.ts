@@ -55,6 +55,8 @@ interface UnitLog {
   productTimes: Set<number>;
   burgerProblems: string[];
   butcherToasts: string[];
+  /** Steps where the butcher toasts (AnimalSim plus PlayerWorld) do not match the removals 1:1. */
+  butcherToastProblems: string[];
   toasts: string[];
 }
 
@@ -86,12 +88,13 @@ async function runUnit(): Promise<UnitLog> {
     productTimes: new Set(),
     burgerProblems: [],
     butcherToasts: [],
+    butcherToastProblems: [],
     toasts: [],
   };
   const cap = Math.min(config.farm.capPerSpecies, FARM_CAP_PER_SPECIES);
   const isFarm = (s: string): s is FarmSpecies => (FARM_SPECIES as readonly string[]).includes(s);
   for (let t = start + 1; t <= start + DAYS * 1440; t++) {
-    const change: AnimalChange = sim.step(t, []);
+    const change: AnimalChange & { toasts?: string[] } = sim.step(t, []);
     // Villagers eat at the burger joint twice a day, so the low-stock butcher rule also fires.
     const mod = minuteOfDay(t);
     if (mod === parseClock('12:30') || mod === parseClock('18:30')) pw.consumeFood('burger_joint', 'burger');
@@ -100,9 +103,11 @@ async function runUnit(): Promise<UnitLog> {
     pw.onAnimalChange(change);
     const after = burgers(pw.farm.stock());
     const all = host.of('toast');
-    const toasts = all.slice(seenToasts).map((m) => m.text);
+    // The engine broadcasts AnimalSim's own toasts as well as the ones PlayerWorld sends.
+    const toasts = [...(change.toasts ?? []), ...all.slice(seenToasts).map((m) => m.text)];
     seenToasts = all.length;
     log.toasts.push(...toasts);
+    const butcherToasts = toasts.filter((x) => /butcher/i.test(x));
     for (const a of change.added) if (a.group === 'farm' && isFarm(a.species)) log.births[a.species]++;
     let expectedBurgers = 0;
     for (const r of change.removed) {
@@ -117,8 +122,13 @@ async function runUnit(): Promise<UnitLog> {
       const want = Math.min(STOCK_CAP, before + expectedBurgers);
       if (after !== want)
         log.burgerProblems.push(`day ${dayOf(t)}: burgers ${before} -> ${after}, expected ${want}`);
-      log.butcherToasts.push(...toasts.filter((x) => /butcher/i.test(x)));
     }
+    const removals = change.removed.filter((r) => r.reason === 'butcher').length;
+    log.butcherToasts.push(...butcherToasts);
+    if (butcherToasts.length !== removals)
+      log.butcherToastProblems.push(
+        `day ${dayOf(t)} ${mod}: ${removals} butcher removal(s), toasts: ${JSON.stringify(butcherToasts)}`,
+      );
     for (const p of change.produced) {
       const day = dayOf(t);
       const counts = log.productsByDay.get(day) ?? {};
@@ -169,6 +179,7 @@ describe.skipIf(!readyV2(...F))(`AC10: farm lifecycle${waitingForV2(...F)}`, () 
     it('adds burger stock for each butcher removal and toasts without graphic words', () => {
       expect(log.burgerProblems.slice(0, 10)).toEqual([]);
       expect(log.butcherToasts.length).toBeGreaterThanOrEqual(1);
+      expect(log.butcherToastProblems.slice(0, 10), 'one butcher toast per removal').toEqual([]);
       const graphic = log.toasts.flatMap((t) => graphicWords(t).map((w) => `"${w}" in: ${t}`));
       expect(graphic).toEqual([]);
     });
@@ -210,9 +221,11 @@ describe.skipIf(!readyV2(...F))(`AC10: farm lifecycle${waitingForV2(...F)}`, () 
       const toasts = w.of('toast').map((t) => `${t.icon} ${t.text}`);
       expect(toasts.filter((t) => FARM_TOAST.test(t)).length).toBeGreaterThanOrEqual(1);
       expect(toasts.flatMap((t) => graphicWords(t))).toEqual([]);
-      const butchered = changes.some((m) => m.removed.some((r) => r.reason === 'butcher'));
+      const butchered = changes.flatMap((m) => m.removed).filter((r) => r.reason === 'butcher').length;
+      expect(toasts.filter((t) => /butcher/i.test(t)).length, 'one butcher toast per removal').toBe(
+        butchered,
+      );
       if (butchered) {
-        expect(toasts.some((t) => /butcher/i.test(t))).toBe(true);
         expect(w.of('stock.updated').some((m) => burgers(m.stock) > 0)).toBe(true);
       }
       expect(w.errors()).toEqual([]);
