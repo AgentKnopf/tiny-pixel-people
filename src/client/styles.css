@@ -1058,13 +1058,10 @@ select:focus {
 }
 
 /* ---------- Small screens ---------- */
-@media (max-width: 1560px) {
+@media (max-width: 900px) {
   .toolbar .btn-label {
     display: none;
   }
-}
-
-@media (max-width: 900px) {
   .dock-tile {
     width: 58px;
   }

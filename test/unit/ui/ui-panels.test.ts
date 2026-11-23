@@ -165,6 +165,16 @@ describe('toolbar', () => {
     expect(download).toHaveBeenCalledWith('/api/replay', 'replay.jsonl');
   });
 
+  it('labels every button like the reference toolbar', () => {
+    const labels = ['rain', 'party', 'stranger', 'birthday', 'townEvent'].map(
+      (k) => byTestId(`event-${k}`).querySelector('.btn-label')?.textContent,
+    );
+    expect(labels).toEqual(['Rain', 'Party', 'Stranger', 'Birthday', 'Town event']);
+    expect(byTestId('btn-save').querySelector('.btn-label')?.textContent).toBe('Save replay');
+    expect(byTestId('btn-pause').textContent).toContain('PAUSE');
+    for (const el of root.querySelectorAll('#toolbar button')) expect(el.getAttribute('title')).toBeTruthy();
+  });
+
   it('zoom buttons call the camera', () => {
     click($('[aria-label="Zoom in"]'));
     click($('[aria-label="Zoom out"]'));

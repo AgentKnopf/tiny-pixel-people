@@ -33,7 +33,14 @@ export function createToolbar(ctx: UiContext): HTMLElement {
   const speedButtons = SPEEDS.filter((s) => s > 0).map((s) =>
     h(
       'button',
-      { class: 'seg', 'data-speed': s, 'data-testid': `speed-${s}`, onclick: () => setSpeed(s) },
+      {
+        class: 'seg',
+        'data-speed': s,
+        'data-testid': `speed-${s}`,
+        title: `Speed ${s}×`,
+        'aria-label': `Speed ${s}×`,
+        onclick: () => setSpeed(s),
+      },
       `${s}×`,
     ),
   );
