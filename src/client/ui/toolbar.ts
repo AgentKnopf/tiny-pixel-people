@@ -10,6 +10,7 @@ const EVENT_BUTTONS: { kind: WorldEventKind; sprite: string; emoji: string; labe
   { kind: 'stranger', sprite: 'stranger', emoji: '🕵️', label: 'Stranger' },
   { kind: 'birthday', sprite: 'birthday', emoji: '🎂', label: 'Birthday' },
   { kind: 'townEvent', sprite: 'town_event', emoji: '🗓️', label: 'Town event' },
+  { kind: 'train', sprite: 'train', emoji: '🚂', label: 'Train' },
 ];
 
 /** Bottom toolbar: pause, zoom, speed segmented control, world-event triggers, save replay. */
