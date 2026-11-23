@@ -31,6 +31,8 @@ const LATENCY_MS = 250;
 const PACE_MS = 5;
 const START = at(0, '06:00');
 const END = at(1, '06:00');
+/** After the morning's house visit and letter. */
+const PAIR_TALK_FROM = at(0, '10:00');
 const NEW_TASKS: LlmTask[] = [
   'visit.greet',
   'letter.reply',
@@ -60,6 +62,9 @@ describe.skipIf(!readyV2(...F))(`AC16: slow model, v2 tasks${waitingForV2(...F)}
   let sent: Letter | undefined;
   let byTask: Record<string, unknown> = {};
   let thrown: unknown = null;
+  /** Conversations of the crush pair, with the load level when each ended (an ask would follow). */
+  const pairTalks: { at: GameMinutes; level: LoadLevel }[] = [];
+  let pairTalkRequestedAt = -Infinity;
 
   async function paced(until: GameMinutes): Promise<void> {
     while (w.now() < until) {
@@ -68,6 +73,16 @@ describe.skipIf(!readyV2(...F))(`AC16: slow model, v2 tasks${waitingForV2(...F)}
       stepMs.push(performance.now() - t0);
       levels.push({ at: w.now(), level: level() });
       for (const v of w.state().visitors ?? []) visitors.set(v.villagerId, v);
+      // "Have them talk" while overloaded, so the pair has a real chance to ask that must be skipped.
+      const now = w.now();
+      if (
+        now >= PAIR_TALK_FROM &&
+        !pairTalks.some((t) => t.level === 'overloaded') &&
+        level() === 'overloaded' &&
+        now - pairTalkRequestedAt >= 60 &&
+        w.command({ type: 'player.pairTalk', aId: A, bId: B }).length === 0
+      )
+        pairTalkRequestedAt = now;
       await sleep(PACE_MS);
     }
   }
@@ -135,6 +150,8 @@ describe.skipIf(!readyV2(...F))(`AC16: slow model, v2 tasks${waitingForV2(...F)}
       return enqueue(req, opts);
     };
     w.engine.onMessage((m) => {
+      if (m.type === 'conversation.ended' && m.participants.every((id) => id === A || id === B))
+        pairTalks.push({ at: w.now(), level: level() });
       if (
         m.type === 'letter.updated' &&
         m.letter.status === 'posted' &&
@@ -191,6 +208,10 @@ describe.skipIf(!readyV2(...F))(`AC16: slow model, v2 tasks${waitingForV2(...F)}
   });
 
   it('date.ask and letter.write are skipped while overloaded', () => {
+    expect(
+      pairTalks.filter((t) => t.level === 'overloaded').length,
+      'the crush pair never finished a talk while overloaded, so no ask was ever due',
+    ).toBeGreaterThanOrEqual(1);
     expect(overloadedEnqueues('date.ask')).toEqual([]);
     expect(overloadedEnqueues('letter.write')).toEqual([]);
     expect(villagerLetters.filter((l) => l.level === 'overloaded').map((l) => l.letter.id)).toEqual([]);
