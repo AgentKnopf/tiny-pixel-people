@@ -63,7 +63,7 @@ export interface WorldEventService {
 /** Turns animal products and butcher removals into stock; handles player.buy. */
 export interface FarmEconomy {
   stock(): Readonly<FoodStock>;
-  onAnimalChange(change: AnimalChange, now: GameMinutes): { toasts: string[]; changed: boolean };
+  onAnimalChange(change: AnimalChange, now: GameMinutes): { changed: boolean };
   /** A villager eats at a venue; never blocks (veggie burger when out of stock). */
   consume(venueId: LocationId, itemId: ItemId): void;
   buy(venueId: LocationId, itemId: ItemId, now: GameMinutes): CommandResult;
