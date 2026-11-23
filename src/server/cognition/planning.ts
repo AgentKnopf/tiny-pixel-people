@@ -257,6 +257,63 @@ export function insertBlock(blocks: readonly PlanBlock[], block: PlanBlock): Pla
   return sortBlocks(out.filter((b) => b.end - b.start >= 1));
 }
 
+/**
+ * A day plan takes the villager to at least two places, so the plan is visible on the map. A
+ * one-place plan (model or fallback) gets a short break somewhere it does not already use: lunch
+ * at the bakery or on the square, or an evening walk in the park. The break goes after minute
+ * `from` when it fits there, and never over an event or task block.
+ */
+export function ensureVariety(
+  blocks: readonly PlanBlock[],
+  w: WakeWindow,
+  locations: readonly Location[],
+  from = 0,
+): PlanBlock[] {
+  const used = new Set(blocks.map((b) => b.locationId));
+  if (used.size >= 2 || blocks.length === 0) return [...blocks];
+  const unused = (l: Location | undefined) => (l && l.kind !== 'house' && !used.has(l.id) ? l : undefined);
+  const lo = w.wake + 30;
+  const hi = planEnd(w) - 15;
+  const mid = Math.round((lo + hi) / 2 / 15) * 15;
+  const options: { loc: Location | undefined; activity: string; emoji: string; slots: number[] }[] = [
+    { loc: unused(foodPlace(locations)), activity: 'have lunch', emoji: '🍲', slots: [720, 780] },
+    {
+      loc: unused(socialPlace(locations)),
+      activity: 'eat lunch on the square',
+      emoji: '🍲',
+      slots: [720, 780],
+    },
+    {
+      loc: unused(funPlace(locations)),
+      activity: 'take an evening walk',
+      emoji: '🚶',
+      slots: [1080, 1020, 1140],
+    },
+    {
+      loc: locations.find((l) => unused(l)),
+      activity: 'take a short walk',
+      emoji: '🚶',
+      slots: [720, 1080, mid],
+    },
+  ];
+  const pinned = blocks.filter((b) => b.eventId || b.taskId);
+  const fits = (s: number) => s >= lo && s + 60 <= hi && !pinned.some((p) => p.start < s + 60 && p.end > s);
+  for (const later of [true, false])
+    for (const o of options) {
+      if (!o.loc) continue;
+      const start = [...o.slots, mid].find((s) => fits(s) && (!later || s >= from));
+      if (start === undefined) continue;
+      return insertBlock(blocks, {
+        start,
+        end: start + 60,
+        locationId: o.loc.id,
+        activity: o.activity,
+        emoji: o.emoji,
+      });
+    }
+  return [...blocks];
+}
+
 export function blockAt(plan: DayPlan | null, mod: number): PlanBlock | undefined {
   return plan?.blocks.find((b) => mod >= b.start && mod < b.end);
 }
@@ -382,7 +439,7 @@ export function fallbackBlocks(profile: VillagerProfile, locations: readonly Loc
       emoji: '🍲',
     },
   ];
-  return normalizeBlocks(raw, w, profile.homeId);
+  return ensureVariety(normalizeBlocks(raw, w, profile.homeId), w, locations);
 }
 
 export function makePlan(

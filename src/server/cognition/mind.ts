@@ -54,6 +54,7 @@ import {
   blockAt,
   describeBlocks,
   emojiFor,
+  ensureVariety,
   eventBlock,
   insertBlock,
   isAwake,
@@ -629,7 +630,15 @@ export class Mind implements VillagerMind {
     if (!prepared) this.requestDayPlan(view, day);
   }
 
-  private setPlan(plan: DayPlan): void {
+  private setPlan(input: DayPlan): void {
+    const locations = this.lastView?.locations ?? [];
+    const now = this.deps.now();
+    const from = input.day === dayOf(now) ? minuteOfDay(now) : 0;
+    const blocks = ensureVariety(input.blocks, this.window, locations, from);
+    const plan =
+      blocks.length === input.blocks.length && blocks.every((b, i) => b === input.blocks[i])
+        ? input
+        : { ...input, blocks };
     this.plan = plan;
     this.lastPlanJson = JSON.stringify(plan);
     this.bookkeeping.lastPlanAt = this.deps.now();
