@@ -610,3 +610,16 @@ describe('pending walk-ins under overlapping input', () => {
     expect(sentOf('player.enter')).toHaveLength(0);
   });
 });
+
+describe('venue buttons within the server reach', () => {
+  it('shows the burger button near the entry even when 2+ tiles from the area', () => {
+    hello.map.locations.find((l) => l.id === 'burger_joint')!.entry = { x: 7, y: 6 };
+    hello.snapshot.stock = { burger_joint: { burger: 2 } };
+    ui.handleMessage(hello);
+    at(7, 8, 12 * 60);
+    const btn = byTestId<HTMLButtonElement>('buy-burger_joint-burger');
+    expect(btn.disabled).toBe(false);
+    btn.click();
+    expect(last()).toEqual({ type: 'player.buy', locationId: 'burger_joint', itemId: 'burger' });
+  });
+});
