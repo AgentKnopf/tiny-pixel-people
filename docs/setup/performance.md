@@ -32,12 +32,18 @@ of memory and no GPU, with the default settings (12 villagers, `llm.concurrency`
 
 Each morning's wait ended at its limit with 6, 6 and 8 of 12 plans ready, so 10 of 15 day plans
 (residents and visitors) came from the model and the rest were fallbacks. Every villager still
-followed its plan. Gossip, the door-note reply, the bake-offs, the visitors and the reply to your
-letter all worked; the door-note reply, the bake-offs and the letter reply came from the model. About half the conversation lines were fallbacks, and
-no pair got far enough for a new crush or a date in 3 days. The live check passed 10 of its 12
-checks; the two failures were the day plans (AC2) and romance (AC15). On a machine like this, the
-bigger village needs more model throughput than one small model on a CPU gives: see the settings
-below, or use a GPU or Apple Silicon machine.
+followed its plan. The model was busy about 93 % of the time; at about 31 s per day plan it can't
+finish 15 plans in the 300 s wait (that would take about 20 s per plan). Gossip, the door-note
+reply, the bake-offs, the visitors and the reply to your letter all worked; the door-note reply,
+the bake-offs and the letter reply came from the model.
+
+The live check passed 10 of its 12 checks. The day plans (AC2) failed for the reason above.
+Romance (AC15) also failed, but that result is inconclusive: no pair met the conditions for a new
+crush or a date within the 3 days (about half the conversation lines were fallbacks), and Laude and
+Franzi's shy crush can't lead to a date before day 5. It is not shown that faster hardware alone
+would fix it; that needs a run on a faster machine or a longer run. To give the model more time
+per game hour on a machine like this, see the settings below, or use a GPU or Apple Silicon
+machine.
 
 An earlier v1 run (10 villagers, before the bigger village) on the same machine and settings:
 
