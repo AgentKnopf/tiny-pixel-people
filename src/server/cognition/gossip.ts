@@ -27,7 +27,8 @@ export function selectNews(
   now: GameMinutes,
   max = 3,
 ): Memory[] {
-  const byOrigin = new Map<string, { m: Memory; score: number; told: number }>();
+  /** Best copy per origin; `first` is when this villager first knew the fact (any copy). */
+  const byOrigin = new Map<string, { m: Memory; score: number; told: number; first: GameMinutes }>();
   const partnerKnows = new Set<string>();
   const toldTo = new Map<string, Set<VillagerId>>();
   for (const m of memories) {
@@ -48,7 +49,10 @@ export function selectNews(
     const weight = m.kind === 'reflection' ? 0.5 : 1;
     const score = weight * m.importance * (1 - 0.5 * age);
     const prev = byOrigin.get(origin);
-    if (!prev || score > prev.score) byOrigin.set(origin, { m, score, told: toldTo.get(origin)?.size ?? 0 });
+    const first = Math.min(prev?.first ?? Infinity, m.createdAt);
+    if (!prev || score > prev.score)
+      byOrigin.set(origin, { m, score, told: toldTo.get(origin)?.size ?? 0, first });
+    else prev.first = first;
   }
   const queued = (x: { m: Memory; told: number }) => x.m.kind !== 'reflection' && x.told < NEWS_FAIR_SHARE;
   return [...byOrigin.values()]
@@ -56,7 +60,8 @@ export function selectNews(
       const qa = queued(a);
       const qb = queued(b);
       if (qa !== qb) return qa ? -1 : 1;
-      if (qa) return a.m.createdAt - b.m.createdAt || b.score - a.score;
+      // Reading a notice again later does not send it to the back of the queue.
+      if (qa) return a.first - b.first || b.score - a.score;
       return b.score - a.score || b.m.createdAt - a.m.createdAt;
     })
     .slice(0, max)

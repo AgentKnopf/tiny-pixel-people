@@ -204,7 +204,14 @@ export function addVisit(
   blocks: readonly PlanBlock[],
   place: Location,
   ctx: SanitizeContext,
-  opts: { key: string; activity: string; emoji: string; from?: number },
+  opts: {
+    key: string;
+    activity: string;
+    emoji: string;
+    from?: number;
+    /** Windows [start, end) to visit in when one fits (the shy partner's time at the place). */
+    prefer?: readonly (readonly [number, number])[];
+  },
 ): PlanBlock[] {
   if (blocks.some((b) => b.locationId === place.id)) return [...blocks];
   const h = hoursOf(place, ctx.zoo) ?? { open: ctx.window.wake, close: planEnd(ctx.window) };
@@ -217,7 +224,9 @@ export function addVisit(
     if (!pinned.some((p) => p.start < s + len && p.end > s)) slots.push(s);
   if (slots.length === 0) return [...blocks];
   const later = slots.filter((s) => s >= (opts.from ?? 0));
-  const pool = later.length ? later : slots;
+  const timely = later.length ? later : slots;
+  const preferred = timely.filter((s) => opts.prefer?.some(([a, b]) => s >= a && s + len <= b));
+  const pool = preferred.length ? preferred : timely;
   const start = pool[Math.floor(hashUnit(`${opts.key}:slot`) * pool.length)]!;
   return insertBlock(blocks, {
     start,

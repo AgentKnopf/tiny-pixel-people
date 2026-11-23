@@ -94,10 +94,20 @@ export interface MindBookkeeping {
   lastPlanAt: GameMinutes | null;
 }
 
+/** Romance state kept outside the memory stream (spec v2 §7). */
+export interface RomanceSnapshot {
+  /** Eligible crush nights in a row without a crush. */
+  crushStreak: number;
+  /** Day number of the last crush draw counted in `crushStreak`. */
+  crushStreakNight: number;
+}
+
 export interface MindSnapshot {
   villagerId: VillagerId;
   memories: Memory[];
   bookkeeping: MindBookkeeping;
+  /** Missing in saves from before the crush guarantee. */
+  romance?: RomanceSnapshot;
 }
 
 export interface VillagerMind {
