@@ -22,9 +22,11 @@ The file isn't valid JSON. Comments and trailing commas aren't allowed.
 The path given with `--config` or `TPP_CONFIG` doesn't exist. Paths are relative to the folder you
 run `npm start` from.
 
-**`EADDRINUSE` / the port is already in use.**
-Another program (or another copy of the game) uses port 3000. Stop it, or start on another port:
-`TPP_PORT=3001 npm start`.
+**`Error: listen EADDRINUSE: address already in use 127.0.0.1:3000`.**
+Another program (or another copy of the game) already uses port 3000, and the server exits. Stop
+the other program, or start on another port, either for one run with `TPP_PORT=3001 npm start` or
+permanently with `"server": { "port": 3001 }` in `config.json`. Then open the address the log
+prints (`Tiny Pixel People running at …`).
 
 **The page says `Client not built. Run "npm start"`.**
 The server was started without building the client (for example with `npm run dev:server`). Use
@@ -128,7 +130,7 @@ Check that `persistence.loadOnStart` is `true`, that you didn't pass `--new`, an
 minutes and on `Ctrl+C`; if the process was killed hard (`kill -9`, a crash), the last few game
 minutes are lost.
 
-**The log says `could not load save "default": …; starting a new world`.**
+**The log says `could not load save "default": …`, then `starting new world (save "default")`.**
 A save file is damaged or from an incompatible version. The server starts a new village, and its
 next save **overwrites the old slot**. To keep the old save, stop the server right away and copy the
 slot folder (`saves/default/`) somewhere else.
