@@ -1,11 +1,15 @@
-import { dayOf, formatClock } from '../../shared/time.ts';
+import { dayOf, formatClock, MINUTES_PER_DAY } from '../../shared/time.ts';
 import {
   PLAYER_ID,
   type Conversation,
   type GameMinutes,
+  type KeepEntryKind,
+  type Letter,
   type Memory,
   type MemoryKind,
   type Needs,
+  type Romance,
+  type AnimalGroup,
   type VillagerId,
   type VillagerState,
 } from '../../shared/types.ts';
@@ -32,6 +36,9 @@ export type ObserverSource = Pick<
   | 'events'
   | 'conversations'
   | 'memories'
+  | 'romances'
+  | 'animals'
+  | 'train'
 >;
 
 export class BadRequest extends Error {}
@@ -114,6 +121,9 @@ export function relationshipKind(affinity: number): string {
   return 'acquaintance';
 }
 
+const KEEP_KINDS: readonly KeepEntryKind[] = ['note', 'letter', 'notice', 'rumor', 'reply'];
+const ANIMAL_GROUPS: readonly AnimalGroup[] = ['farm', 'zoo', 'ambient'];
+
 const MEMORY_KINDS = ['observation', 'reflection', 'plan', 'chat', 'note'] as const;
 type ObserverMemoryKind = (typeof MEMORY_KINDS)[number];
 const KIND_MAP: Record<MemoryKind, ObserverMemoryKind> = {
@@ -146,8 +156,10 @@ export class ObserverViews {
     return this.src.townLog.tsOf(t);
   }
 
-  private kindOf(id: VillagerId): 'villager' | 'visitor' {
-    return this.src.profile(id)?.transient ? 'visitor' : 'villager';
+  private kindOf(id: VillagerId): 'villager' | 'visitor' | 'stranger' {
+    const p = this.src.profile(id);
+    if (p?.visitor) return 'visitor';
+    return p?.transient ? 'stranger' : 'villager';
   }
 
   private talkingTo(): Map<VillagerId, VillagerId> {
@@ -209,14 +221,24 @@ export class ObserverViews {
           }
         : null,
       agents: this.src.villagerIds().map((id) => this.agentSummary(id, talking)),
+      ...this.v2State(),
       player: {
         id: PLAYER_ID,
+        kind: 'player',
         name: p.name,
         x: round2(p.pos.x),
         y: round2(p.pos.y),
         location: pLoc?.id ?? null,
         location_name: pLoc?.name ?? null,
         gold: p.gold,
+        inside: p.inside
+          ? {
+              location: p.inside.locationId,
+              location_name: this.placeName(p.inside.locationId),
+              x: round2(p.inside.pos.x),
+              y: round2(p.inside.pos.y),
+            }
+          : null,
       },
     };
   }
@@ -232,12 +254,24 @@ export class ObserverViews {
       .map(([other, r]) => ({
         with: other,
         with_name: this.nameOf(other),
-        kind: relationshipKind(r.affinity),
+        kind: this.romanceKind(id, other) ?? relationshipKind(r.affinity),
         score: r.affinity,
         note: r.summary ?? null,
         ...(r.lastTalkedAt !== undefined ? { last_talked: this.ts(r.lastTalkedAt) } : {}),
       }))
       .sort((a, b) => b.score - a.score);
+    // Romance partners without a relationship entry yet still show up.
+    for (const r of this.src.romances()) {
+      if (!r.pair.includes(id)) continue;
+      const other = r.pair[0] === id ? r.pair[1] : r.pair[0];
+      const kind = this.romanceKind(id, other);
+      if (kind && !relationships.some((x) => x.with === other))
+        relationships.push({ with: other, with_name: this.nameOf(other), kind, score: 0, note: null });
+    }
+    const romance = this.romanceFor(id);
+    const visitor = profile.visitor
+      ? this.src.playerWorld.snapshot().visitors.find((v) => v.villagerId === id)
+      : undefined;
     return {
       ...this.agentSummary(id, this.talkingTo()),
       age: profile.age,
@@ -247,6 +281,38 @@ export class ObserverViews {
       home: profile.homeId,
       home_name: this.placeName(profile.homeId),
       relationships,
+      romance: romance
+        ? {
+            id: romance.id,
+            stage: romance.stage,
+            partner: romance.pair[0] === id ? romance.pair[1] : romance.pair[0],
+            partner_name: this.nameOf(romance.pair[0] === id ? romance.pair[1] : romance.pair[0]),
+            since: this.ts(romance.since),
+            crush_from: [...romance.crushFrom],
+            ...(romance.shy ? { shy: true } : {}),
+            dates: romance.dates.map((d) => ({
+              event: d.eventId,
+              ts: this.ts(d.at),
+              ...clock(d.at),
+              location: d.locationId,
+              location_name: this.placeName(d.locationId),
+              asked_by: d.askedBy,
+              status: d.status,
+            })),
+          }
+        : null,
+      ...(visitor
+        ? {
+            visitor: {
+              status: visitor.status,
+              origin: visitor.origin,
+              ...(visitor.reason ? { reason: visitor.reason } : {}),
+              room: visitor.roomId,
+              arrived: this.ts(visitor.arrivedAt),
+              departs: this.ts(visitor.departsAt),
+            },
+          }
+        : {}),
       plan_summary: plan?.summary ?? null,
       plan_source: plan?.source ?? null,
       plan_today: (plan?.blocks ?? []).map((b) => ({
@@ -380,6 +446,182 @@ export class ObserverViews {
     return { items, nextSince: items.at(-1)?.ts ?? null };
   }
 
+  /** v2 parts of /api/state (spec v2 §17). */
+  private v2State() {
+    const pw = this.src.playerWorld.snapshot();
+    const now = this.src.now();
+    const t = this.src.train?.state(now) ?? null;
+    const farm: Record<string, number> = {};
+    for (const a of this.src.animals.all())
+      if (a.group === 'farm') farm[a.species] = (farm[a.species] ?? 0) + 1;
+    const hotel = pw.hotel;
+    return {
+      train: t
+        ? {
+            status: t.status,
+            next_arrival: this.ts(t.arrivesAt),
+            ...clock(t.arrivesAt),
+            arrives_tick: t.arrivesAt,
+            departs_tick: t.departsAt,
+            departs_time: formatClock(t.departsAt),
+            arriving: [...t.arriving],
+            departing: [...t.departing],
+          }
+        : null,
+      hotel: hotel
+        ? {
+            location: hotel.locationId,
+            rooms: hotel.rooms.length,
+            occupied: hotel.rooms.filter((r) => r.guestId).length,
+            room_list: hotel.rooms.map((r) => ({
+              id: r.id,
+              guest: r.guestId,
+              ...(r.since !== null ? { since: this.ts(r.since) } : {}),
+            })),
+          }
+        : null,
+      visitors: pw.visitors.map((v) => ({
+        id: v.villagerId,
+        name: this.nameOf(v.villagerId),
+        status: v.status,
+        room: v.roomId,
+        origin: v.origin,
+        arrived: this.ts(v.arrivedAt),
+        departs: this.ts(v.departsAt),
+        departs_tick: v.departsAt,
+        ...clock(v.departsAt),
+      })),
+      farm,
+      stock: structuredClone(pw.stock),
+    };
+  }
+
+  private romanceFor(id: VillagerId): Romance | null {
+    const rank: Record<string, number> = { couple: 0, dating: 1, crush: 2 };
+    let best: Romance | null = null;
+    for (const r of this.src.romances()) {
+      if (!r.pair.includes(id) || r.stage === 'ended') continue;
+      if (r.stage === 'crush' && !r.crushFrom.includes(id)) continue;
+      if (!best || rank[r.stage]! < rank[best.stage]!) best = r;
+    }
+    return best;
+  }
+
+  /** Romance kind of id's relationship to other, or null when there is none from id's side. */
+  private romanceKind(id: VillagerId, other: VillagerId): string | null {
+    for (const r of this.src.romances()) {
+      if (!r.pair.includes(id) || !r.pair.includes(other)) continue;
+      if (r.stage === 'couple') return 'partner';
+      if (r.stage === 'dating') return 'dating';
+      if (r.stage === 'crush' && r.crushFrom.includes(id)) return r.shy ? 'shy_crush' : 'crush';
+    }
+    return null;
+  }
+
+  letters(q: URLSearchParams): Paged<unknown> {
+    const since = parseSince(q.get('since'));
+    const limit = parseLimit(q.get('limit'), 100, 1000);
+    const agent = q.get('agent');
+    const all = this.src.playerWorld.snapshot().letters;
+    const replies = new Map<string, string>();
+    for (const l of all) if (l.replyTo && !replies.has(l.replyTo)) replies.set(l.replyTo, l.text);
+    const updated = (l: Letter) => Math.max(l.postedAt, l.deliveredAt ?? 0, l.readAt ?? 0);
+    const rows = all
+      .filter((l) => !agent || l.from === agent || l.to === agent)
+      .map((l) => ({ l, ms: this.src.townLog.msOf(l.postedAt) }))
+      .filter((r) => newer(since, r.l.postedAt, r.ms))
+      .sort((a, b) => a.l.postedAt - b.l.postedAt);
+    const items = window(rows, since, limit).map(({ l, ms }) => ({
+      id: l.id,
+      ts: new Date(ms).toISOString(),
+      tick: l.postedAt,
+      ...clock(l.postedAt),
+      from: l.from,
+      from_name: this.nameOf(l.from),
+      to: l.to,
+      to_name: this.nameOf(l.to),
+      text: l.text,
+      status: l.status,
+      ...(l.deliveredAt !== undefined ? { delivered_ts: this.ts(l.deliveredAt) } : {}),
+      ...(l.readAt !== undefined ? { read_ts: this.ts(l.readAt) } : {}),
+      ...(l.replyTo ? { reply_to: l.replyTo } : {}),
+      ...(replies.has(l.id) ? { reply: replies.get(l.id)! } : {}),
+      updated_tick: updated(l),
+      ...(l.source ? { source: l.source } : {}),
+    }));
+    return { items, nextSince: items.at(-1)?.ts ?? null };
+  }
+
+  /** Active notices, oldest first. */
+  notices() {
+    const now = this.src.now();
+    return this.src.playerWorld
+      .snapshot()
+      .notices.filter((n) => n.expiresAt > now)
+      .sort((a, b) => a.postedAt - b.postedAt)
+      .map((n) => ({
+        id: n.id,
+        ts: this.ts(n.postedAt),
+        tick: n.postedAt,
+        ...clock(n.postedAt),
+        author: n.authorId,
+        author_name: this.nameOf(n.authorId),
+        text: n.text,
+        expires: this.ts(n.expiresAt),
+        expires_tick: n.expiresAt,
+        ...(n.eventId ? { event: n.eventId } : {}),
+      }));
+  }
+
+  keep(q: URLSearchParams): Paged<unknown> {
+    const since = parseSince(q.get('since'));
+    const limit = parseLimit(q.get('limit'), 100, 1000);
+    const kinds = parseList(q.get('kind'), KEEP_KINDS, 'kind');
+    const needle = q.get('q')?.trim().toLowerCase() ?? '';
+    const rows = this.src.playerWorld.post.keep
+      .all()
+      .filter((e) => (!kinds || kinds.has(e.kind)) && (!needle || e.text.toLowerCase().includes(needle)))
+      .map((e) => ({ e, ms: this.src.townLog.msOf(e.at) }))
+      .filter((r) => newer(since, r.e.at, r.ms));
+    const items = window(rows, since, limit).map(({ e, ms }) => ({
+      id: e.id,
+      ts: new Date(ms).toISOString(),
+      tick: e.at,
+      ...clock(e.at),
+      kind: e.kind,
+      ref: e.refId,
+      author: e.authorId,
+      author_name: this.nameOf(e.authorId),
+      ...(e.recipientId ? { recipient: e.recipientId, recipient_name: this.nameOf(e.recipientId) } : {}),
+      text: e.text,
+    }));
+    return { items, nextSince: items.at(-1)?.ts ?? null };
+  }
+
+  animals(q: URLSearchParams) {
+    const groups = parseList(q.get('group'), ANIMAL_GROUPS, 'group');
+    const species = q.get('species')?.trim();
+    const now = this.src.now();
+    return this.src.animals
+      .all()
+      .filter((a) => (!groups || groups.has(a.group)) && (!species || a.species === species))
+      .map((a) => ({
+        id: a.id,
+        species: a.species,
+        group: a.group,
+        ...(a.name ? { name: a.name } : {}),
+        ...(a.stage ? { stage: a.stage } : {}),
+        ...(a.sex ? { sex: a.sex } : {}),
+        ...(a.bornAt !== undefined
+          ? { ageDays: Math.max(0, Math.floor((now - a.bornAt) / MINUTES_PER_DAY)) }
+          : {}),
+        location: a.homeId,
+        location_name: this.placeName(a.homeId),
+        x: round2(a.pos.x),
+        y: round2(a.pos.y),
+        status: a.status,
+      }));
+  }
   stats() {
     const q = this.src.queue.stats();
     return {
