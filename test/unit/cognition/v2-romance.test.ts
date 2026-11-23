@@ -160,7 +160,10 @@ describe('the crush guarantee (v2 §7, AC15)', () => {
     expect(await draw(v, 1)).toBe(false);
     expect(await draw(v, 2)).toBe(false);
     expect(await draw(v, 3)).toBe(true);
-    expect(mia.town.romances.get(romanceId('mia', 'ben'))).toMatchObject({ stage: 'crush', crushFrom: ['mia'] });
+    expect(mia.town.romances.get(romanceId('mia', 'ben'))).toMatchObject({
+      stage: 'crush',
+      crushFrom: ['mia'],
+    });
   });
 
   it('goes to the best-affinity candidate on the guaranteed night', async () => {
@@ -217,7 +220,9 @@ describe('the crush guarantee (v2 §7, AC15)', () => {
     forceRandom(mia, 0.99);
     expect(await draw(v, 1)).toBe(false);
     expect(await draw(v, 2)).toBe(false);
-    const saved = JSON.parse(JSON.stringify(Object.fromEntries([...v.minds].map(([id, m]) => [id, m.serialize()]))));
+    const saved = JSON.parse(
+      JSON.stringify(Object.fromEntries([...v.minds].map(([id, m]) => [id, m.serialize()]))),
+    );
     expect(saved.mia.romance).toEqual({ crushStreak: 2, crushStreakNight: 2 });
 
     const restored = village(3, saved);
