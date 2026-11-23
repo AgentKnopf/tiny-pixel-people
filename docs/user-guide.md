@@ -360,7 +360,8 @@ wool and eggs, grow old and die, all on their own. No farm animal ever needs the
 - **Every morning at 06:00** the animals age by a day. Very old animals die peacefully
   (`🕊️ Old Bessie the cow passed away peacefully on the farm.`), and when there is a grown-up male
   and female and room on the farm, a baby may be born (`🐣 A chick hatched at the coop!`).
-- **At 07:00** the milk, eggs and wool go to the shop, where you can buy them from the place bar
+- **At 07:00** the milk, eggs and wool go to the shop, where you can buy them from the place bar (the farm shop in the farmhouse sells
+  the same stock)
   (milk 2, egg 1, wool 3 gold). Old animals give half as much. **At 18:00** the barn turns 2 milk into 1 cheese
   (4 gold).
 - **At most 10 of each kind** live on the farm at a time (`farm.capPerSpecies`). Config can lower
