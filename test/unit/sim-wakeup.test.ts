@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { CreateMind } from '../../src/server/cognition/types.ts';
-import type { Engine, SimStatusMsg } from '../../src/server/sim/engine.ts';
+import type { Engine } from '../../src/server/sim/engine.ts';
+import type { SimStatusMsg } from '../../src/shared/protocol.ts';
 import { StubMind } from '../../src/server/sim/stub-mind.ts';
 import { at } from '../../src/shared/time.ts';
 import { createSimTestWorld } from '../helpers/sim.ts';
@@ -20,9 +21,8 @@ function world(startAt: string, wakeUpTimeoutSec?: number) {
     createMind: slowMind,
     config: { sim: { villagers: 4, tickMs: 20 } },
   });
-  if (wakeUpTimeoutSec !== undefined) Object.assign(engine.config.sim, { wakeUpTimeoutSec });
-  const statuses = () =>
-    messages.filter((m) => (m as { type: string }).type === 'sim.status') as unknown as SimStatusMsg[];
+  if (wakeUpTimeoutSec !== undefined) engine.config.sim.wakeUpTimeoutSec = wakeUpTimeoutSec;
+  const statuses = () => messages.filter((m): m is SimStatusMsg => m.type === 'sim.status');
   return { engine, statuses };
 }
 
@@ -38,7 +38,7 @@ describe('morning wake-up hold', () => {
     const { engine, statuses } = world('05:50');
     let opened = false;
     engine.onMessage((m) => {
-      if ((m as { type: string }).type === 'sim.status' && !opened) {
+      if (m.type === 'sim.status' && !opened) {
         opened = true;
         gate.open = true;
       }
