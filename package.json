@@ -17,13 +17,14 @@
     "dev:client": "vite",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "vitest run --project default",
+    "test:perf": "vitest run --project perf",
+    "test:watch": "vitest --project default",
     "test:live": "tsx scripts/live-acceptance.ts",
     "art": "tsx scripts/art/generate.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "check": "npm run lint && npm run typecheck && npm test && npm run build"
+    "check": "npm run lint && npm run typecheck && npm test && npm run test:perf && npm run build"
   },
   "dependencies": {
     "tsx": "^4.23.15",
