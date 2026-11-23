@@ -1,5 +1,4 @@
 /** AC15: crushes, dates at fun places and couples; dates are gossip-worthy; couples show in the inspector. */
-import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { at, dayOf } from '../../../src/shared/time.ts';
 import type {
@@ -12,11 +11,8 @@ import type {
 } from '../../../src/shared/types.ts';
 import { ready, readyV2, waitingFor, waitingForV2 } from '../../helpers/features.ts';
 import { V2 } from '../../helpers/v2.ts';
-import { createTestWorld, inArea, mutualAffinity, type TestWorld } from '../../helpers/world.ts';
+import { createTestWorld, inArea, mutualAffinity, presetTalks, type TestWorld } from '../../helpers/world.ts';
 import { MockChatProvider } from '../../../src/server/llm/providers/mock.ts';
-import { MemoryStore } from '../../../src/server/cognition/memory.ts';
-import type { ScoreWeights } from '../../../src/server/cognition/retrieval.ts';
-import type { SaveData } from '../../../src/server/persistence/types.ts';
 import { createTestVillage, V2_LOCATIONS } from '../../unit/cognition/helpers.ts';
 
 const F = [...V2.romance];
@@ -38,45 +34,9 @@ const PAIR = [A, B].sort() as [VillagerId, VillagerId];
 
 const isPair = (r: Romance) => r.pair[0] === PAIR[0] && r.pair[1] === PAIR[1];
 
-const NAMES = new Map(
-  (
-    JSON.parse(readFileSync(new URL('../../../data/villagers.json', import.meta.url), 'utf8')) as {
-      id: VillagerId;
-      name: string;
-    }[]
-  ).map((p) => [p.id, p.name]),
-);
-
 /** Two finished A–B conversations before the first draw, so the §7 crush conditions hold on night 1. */
 const PRESET_TALKS = [at(0, '00:30'), at(0, '01:20')];
 
-/**
- * Presets the pair's recent history the way the engine records a finished conversation: each side
- * gets a `Talked with <name>:` conversation memory (built by the real MemoryStore) sharing the
- * conversation id, and the relationship's lastTalkedAt.
- */
-function presetTalks(save: SaveData): void {
-  for (const [self, other] of [
-    [A, B],
-    [B, A],
-  ] as const) {
-    const snap = save.minds.find((m) => m.villagerId === self);
-    const state = save.villagers.find((v) => v.id === self);
-    if (!snap || !state) throw new Error(`AC15 fixture: no mind or state for ${self}`);
-    const store = new MemoryStore(self, { weights: {} as ScoreWeights, defaultK: 8 });
-    store.load(snap.memories);
-    PRESET_TALKS.forEach((t, i) =>
-      store.add({
-        kind: 'conversation',
-        at: t,
-        text: `Talked with ${NAMES.get(other)}: I chatted with ${NAMES.get(other)} about the weather.`,
-        meta: { conversationId: `ac15-preset-${i + 1}` },
-      }),
-    );
-    snap.memories = [...store.all()];
-    state.relationships[other] = { ...state.relationships[other]!, lastTalkedAt: PRESET_TALKS.at(-1)! };
-  }
-}
 describe.skipIf(!readyV2(...F))(`AC15: romance${waitingForV2(...F)}`, () => {
   let w: TestWorld;
   const romances: { at: GameMinutes; romance: Romance }[] = [];
@@ -108,7 +68,7 @@ describe.skipIf(!readyV2(...F))(`AC15: romance${waitingForV2(...F)}`, () => {
       seed: 15,
       startAt: '06:00',
       affinities: [...mutualAffinity(A, B, 7), ...mutualAffinity(MINOR, MINOR_FRIEND, 9)],
-      patchSave: presetTalks,
+      patchSave: (s) => presetTalks(s, A, B, PRESET_TALKS, 'ac15'),
     });
     w.engine.onMessage((m) => {
       const now = w.now();

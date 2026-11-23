@@ -18,7 +18,7 @@ import {
 } from '../../../src/shared/types.ts';
 import { readyV2, waitingForV2 } from '../../helpers/features.ts';
 import { dist, loc, V2, walkPlayerTo } from '../../helpers/v2.ts';
-import { createTestWorld, mutualAffinity, sleep, type TestWorld } from '../../helpers/world.ts';
+import { createTestWorld, mutualAffinity, presetTalks, sleep, type TestWorld } from '../../helpers/world.ts';
 
 const F = [...new Set([...V2.visitors, ...V2.romance, ...V2.interiors, ...V2.post])];
 
@@ -225,6 +225,10 @@ describe.skipIf(!readyV2(...F))(`AC16: slow model, v2 tasks${waitingForV2(...F)}
  * model only after the load has become overloaded (forced here through the load tracker when the
  * provider picks the request up). The invitee's date.decide must then use its fallback without a
  * model call; fallback accepts at affinity 4+, so the pair (affinity 8) gets a date.
+ *
+ * All of it happens within the one game day: the pair starts ready to date (mutual crush, affinity
+ * 8, two earlier talks), and "Have them talk" (player.pairTalk) brings them together from TALK_AT,
+ * since an ask follows a conversation and a chance meeting is not guaranteed within a day.
  */
 describe.skipIf(!readyV2(...F))(
   `AC16: date.decide after the load turns overloaded${waitingForV2(...F)}`,
@@ -238,6 +242,10 @@ describe.skipIf(!readyV2(...F))(
     }[] = [];
     const decides: { asker: VillagerId; at: GameMinutes; level: LoadLevel }[] = [];
     const pairIds = new Set<VillagerId>([A, B]);
+    const TALK_AT = at(0, '09:00');
+    /** When the pair's first conversation of the day ended (an ask follows a finished talk). */
+    let pairTalkAt: GameMinutes | undefined;
+    let requestedAt = -Infinity;
     const pairRomance = (): Romance | undefined =>
       (w?.state().romances ?? []).find((r) => r.pair.length === 2 && r.pair.every((id) => pairIds.has(id)));
 
@@ -261,6 +269,7 @@ describe.skipIf(!readyV2(...F))(
         provider,
         affinities: mutualAffinity(A, B, 8),
         patchSave: (save) => {
+          presetTalks(save, A, B, [at(0, '00:30'), at(0, '01:20')], 'ac16');
           save.romances = [
             ...(save.romances ?? []),
             {
@@ -289,7 +298,27 @@ describe.skipIf(!readyV2(...F))(
           decides.push({ asker: String(req.meta?.askerId ?? ''), at: world.now(), level });
         return enqueue(req, opts);
       };
-      for (let d = 0; d < 3 && !pairRomance()?.dates.length; d++) await world.advanceTo(at(d + 1, '06:00'));
+      world.engine.onMessage((m) => {
+        if (
+          m.type === 'conversation.ended' &&
+          pairTalkAt === undefined &&
+          m.participants.every((id) => pairIds.has(id))
+        )
+          pairTalkAt = world.now();
+      });
+      await world.advanceTo(END, {
+        onStep: ({ time }) => {
+          // A accepted request has A walk over to B; ask again only if no talk came of it within an hour.
+          if (pairTalkAt !== undefined || time < TALK_AT || time - requestedAt < 60) return;
+          if (world.command({ type: 'player.pairTalk', aId: A, bId: B }).length === 0) requestedAt = time;
+        },
+      });
+      const first = asks[0];
+      console.info(
+        `[AC16] pair talk at ${pairTalkAt === undefined ? 'never' : formatClock(pairTalkAt)}; first ask queued at ${
+          first ? `${formatClock(first.queuedAt)} (${first.queuedLevel})` : 'never'
+        }, reached the model at ${first?.overloadedAt === undefined ? 'never' : formatClock(first.overloadedAt)}`,
+      );
     }, 600_000);
 
     afterAll(() => w?.dispose());
@@ -309,6 +338,17 @@ describe.skipIf(!readyV2(...F))(
       const rec = pairRomance()?.dates.find((d) => d.askedBy === first!.asker);
       expect(rec, 'no date record for the ask').toBeDefined();
       expect(rec!.status, 'fallback accepts at affinity 4+').not.toBe('declined');
+    });
+
+    it('the talk, the ask, the switch to overloaded and the fallback answer all happen on the one day', () => {
+      const first = asks.find((a) => a.overloadedAt !== undefined && a.queuedLevel !== 'overloaded');
+      expect(pairTalkAt, 'the pair never talked').toBeDefined();
+      expect(first).toBeDefined();
+      for (const t of [pairTalkAt!, first!.queuedAt, first!.overloadedAt!]) {
+        expect(t).toBeGreaterThanOrEqual(START);
+        expect(t).toBeLessThan(END);
+      }
+      expect(pairRomance()?.dates.some((d) => d.askedBy === first!.asker)).toBe(true);
     });
 
     it('no date.ask is queued while overloaded', () => {
