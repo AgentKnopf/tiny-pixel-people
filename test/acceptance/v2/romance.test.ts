@@ -1,4 +1,5 @@
 /** AC15: crushes, dates at fun places and couples; dates are gossip-worthy; couples show in the inspector. */
+import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { at, dayOf } from '../../../src/shared/time.ts';
 import type {
@@ -13,6 +14,9 @@ import { ready, readyV2, waitingFor, waitingForV2 } from '../../helpers/features
 import { V2 } from '../../helpers/v2.ts';
 import { createTestWorld, inArea, mutualAffinity, type TestWorld } from '../../helpers/world.ts';
 import { MockChatProvider } from '../../../src/server/llm/providers/mock.ts';
+import { MemoryStore } from '../../../src/server/cognition/memory.ts';
+import type { ScoreWeights } from '../../../src/server/cognition/retrieval.ts';
+import type { SaveData } from '../../../src/server/persistence/types.ts';
 import { createTestVillage, V2_LOCATIONS } from '../../unit/cognition/helpers.ts';
 
 const F = [...V2.romance];
@@ -21,17 +25,58 @@ const B = 'ivy';
 /** Under 18 (16): preset to a high mutual affinity so the age rule is what keeps them apart. */
 const MINOR = 'leo';
 const MINOR_FRIEND = 'lily';
-const MAX_DAYS = 8;
-
 /**
- * The preset A–B affinity makes a crush likely within 3 nights, but §7 aims each crush at the
- * villager's best-affinity candidate that night, and conversations move affinities. So the pair
- * under test is the first resident pair that actually forms a crush.
+ * Dates have no AC deadline, so the run goes on until the pair is a couple (plus a day for the
+ * gossip). This only bounds a run that never gets there; progress is logged every day.
  */
-let PAIR: [VillagerId, VillagerId] = [A, B].sort() as [VillagerId, VillagerId];
+const MAX_DAYS = 21;
+/** The first nightly crush draw (§7, 02:00) after the 06:00 start on day 0. */
+const FIRST_DRAW = at(1, '02:00');
+
+/** The preset pair (spec v2 AC15): every AC15 bullet is about Sam and Ivy only. */
+const PAIR = [A, B].sort() as [VillagerId, VillagerId];
 
 const isPair = (r: Romance) => r.pair[0] === PAIR[0] && r.pair[1] === PAIR[1];
 
+const NAMES = new Map(
+  (
+    JSON.parse(readFileSync(new URL('../../../data/villagers.json', import.meta.url), 'utf8')) as {
+      id: VillagerId;
+      name: string;
+    }[]
+  ).map((p) => [p.id, p.name]),
+);
+
+/** Two finished A–B conversations before the first draw, so the §7 crush conditions hold on night 1. */
+const PRESET_TALKS = [at(0, '00:30'), at(0, '01:20')];
+
+/**
+ * Presets the pair's recent history the way the engine records a finished conversation: each side
+ * gets a `Talked with <name>:` conversation memory (built by the real MemoryStore) sharing the
+ * conversation id, and the relationship's lastTalkedAt.
+ */
+function presetTalks(save: SaveData): void {
+  for (const [self, other] of [
+    [A, B],
+    [B, A],
+  ] as const) {
+    const snap = save.minds.find((m) => m.villagerId === self);
+    const state = save.villagers.find((v) => v.id === self);
+    if (!snap || !state) throw new Error(`AC15 fixture: no mind or state for ${self}`);
+    const store = new MemoryStore(self, { weights: {} as ScoreWeights, defaultK: 8 });
+    store.load(snap.memories);
+    PRESET_TALKS.forEach((t, i) =>
+      store.add({
+        kind: 'conversation',
+        at: t,
+        text: `Talked with ${NAMES.get(other)}: I chatted with ${NAMES.get(other)} about the weather.`,
+        meta: { conversationId: `ac15-preset-${i + 1}` },
+      }),
+    );
+    snap.memories = [...store.all()];
+    state.relationships[other] = { ...state.relationships[other]!, lastTalkedAt: PRESET_TALKS.at(-1)! };
+  }
+}
 describe.skipIf(!readyV2(...F))(`AC15: romance${waitingForV2(...F)}`, () => {
   let w: TestWorld;
   const romances: { at: GameMinutes; romance: Romance }[] = [];
@@ -63,17 +108,11 @@ describe.skipIf(!readyV2(...F))(`AC15: romance${waitingForV2(...F)}`, () => {
       seed: 15,
       startAt: '06:00',
       affinities: [...mutualAffinity(A, B, 7), ...mutualAffinity(MINOR, MINOR_FRIEND, 9)],
+      patchSave: presetTalks,
     });
     w.engine.onMessage((m) => {
       const now = w.now();
       if (m.type === 'romance.updated') {
-        const resident = m.romance.pair.every((id) => !visitorIds.has(id));
-        if (
-          resident &&
-          m.romance.crushFrom.length > 0 &&
-          !romances.some((r) => r.romance.crushFrom.length > 0)
-        )
-          PAIR = [...m.romance.pair].sort() as [VillagerId, VillagerId];
         if (isPair(m.romance) && m.romance.stage === 'couple' && coupleAt === null) coupleAt = now;
         romances.push({ at: now, romance: m.romance });
       } else if (m.type === 'event.updated') events.set(m.event.id, m.event);
@@ -90,17 +129,41 @@ describe.skipIf(!readyV2(...F))(`AC15: romance${waitingForV2(...F)}`, () => {
           for (const v of snapshot().visitors ?? []) visitorIds.add(v.villagerId);
         },
       });
+      const r = pairRomance();
+      console.info(
+        `[AC15] day ${day}: ${r ? `${r.stage}, crushFrom [${r.crushFrom.join(',')}], dates [${r.dates.map((d) => d.status).join(',')}]` : 'no romance'}`,
+      );
       // One extra day after the couple forms, so the last date's gossip has time to spread.
       if (coupleAt !== null && dayOf(w.now()) > dayOf(coupleAt) + 1) break;
     }
     for (const e of w.state().events) events.set(e.id, e);
-  }, 600_000);
+  }, 3_600_000);
+
+  it('the fixture gives the pair two recent talks before the first draw, and no preset romance', () => {
+    for (const [self, other] of [
+      [A, B],
+      [B, A],
+    ] as const) {
+      const talks = w
+        .memories(self)
+        .filter(
+          (m) =>
+            m.kind === 'conversation' &&
+            m.createdAt < FIRST_DRAW &&
+            m.createdAt >= FIRST_DRAW - 3 * 24 * 60 &&
+            m.text.startsWith(`Talked with ${w.profile(other).name}:`),
+        );
+      expect(new Set(talks.map((m) => m.meta.conversationId)).size).toBe(2);
+    }
+    expect(romances.filter((r) => isPair(r.romance) && r.at < FIRST_DRAW)).toEqual([]);
+  });
 
   afterAll(() => w?.dispose());
 
-  it('a crush forms within 3 nights', () => {
+  it('a crush forms within 3 nights, not before the first draw', () => {
     const first = romances.find((r) => isPair(r.romance) && r.romance.crushFrom.length > 0);
     expect(first).toBeDefined();
+    expect(first!.at).toBeGreaterThanOrEqual(FIRST_DRAW);
     expect(first!.at).toBeLessThanOrEqual(at(3, '03:00'));
     const who = first!.romance.crushFrom[0]!;
     const other = who === PAIR[0] ? PAIR[1] : PAIR[0];
