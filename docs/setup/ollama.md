@@ -49,20 +49,20 @@ everything works the card reads `✈ OFFLINE · RUNNING ON THIS MACHINE · QWEN2
 The model must follow JSON instructions reliably; Qwen 2.5 and Llama 3.x do this well. Sizes are
 for the default 4-bit quantisations Ollama downloads.
 
-| Machine                                                    | Chat model (`llm.model`)                    | Download | Suggested settings                                                                              |
-| ---------------------------------------------------------- | ------------------------------------------- | -------- | ----------------------------------------------------------------------------------------------- |
-| 8 GB RAM, no GPU (or a laptop on battery)                  | `gemma3:4b` or `qwen2.5:1.5b`               | ~1–3 GB  | `llm.concurrency: 1`, `sim.dayLengthMinutes: 60`–`120`, `cognition.importanceMode: "heuristic"` |
-| 16 GB Apple Silicon (M1 or newer), or a GPU with 8 GB VRAM | **`qwen2.5:7b`** (default) or `llama3.1:8b` | ~5 GB    | defaults                                                                                        |
-| 32 GB Apple Silicon, or a GPU with 12–16 GB VRAM           | `qwen2.5:14b`                               | ~9 GB    | defaults; try `llm.concurrency: 3`                                                              |
-| 64 GB+ Apple Silicon, or a GPU with 24 GB VRAM             | `qwen2.5:32b`                               | ~20 GB   | `sim.dayLengthMinutes: 20`, since big models are slower per call                                |
-| Old CPU-only machine                                       | `gemma3:4b` or `qwen2.5:1.5b`               | ~1–3 GB  | as for 8 GB but `sim.dayLengthMinutes: 90`, plus `sim.villagers: 6`. Expect simpler dialogue.   |
+| Machine                                                    | Chat model (`llm.model`)                    | Download | Suggested settings                                                                            |
+| ---------------------------------------------------------- | ------------------------------------------- | -------- | --------------------------------------------------------------------------------------------- |
+| 8 GB RAM, no GPU (or a laptop on battery)                  | `gemma3:4b` or `qwen2.5:1.5b`               | ~1–3 GB  | `sim.dayLengthMinutes: 60`–`120`, `cognition.importanceMode: "heuristic"`                     |
+| 16 GB Apple Silicon (M1 or newer), or a GPU with 8 GB VRAM | **`qwen2.5:7b`** (default) or `llama3.1:8b` | ~5 GB    | defaults                                                                                      |
+| 32 GB Apple Silicon, or a GPU with 12–16 GB VRAM           | `qwen2.5:14b`                               | ~9 GB    | try `llm.concurrency: 2`–`3` with `OLLAMA_NUM_PARALLEL` (see below)                           |
+| 64 GB+ Apple Silicon, or a GPU with 24 GB VRAM             | `qwen2.5:32b`                               | ~20 GB   | `sim.dayLengthMinutes: 20`, since big models are slower per call                              |
+| Old CPU-only machine                                       | `gemma3:4b` or `qwen2.5:1.5b`               | ~1–3 GB  | as for 8 GB but `sim.dayLengthMinutes: 90`, plus `sim.villagers: 6`. Expect simpler dialogue. |
 
 Rules of thumb:
 
 - The model needs to fit in GPU memory (or, on Apple Silicon, in about two thirds of RAM) with room
   to spare, or it gets very slow.
 - A game day makes roughly 200 model calls with 10 villagers. With the default 15-minute day at 1×
-  that is one call every 4.5 seconds, so about 9 seconds per call when two run at once. If your
+  that is one call every 4.5 seconds (Ollama runs one at a time by default). If your
   model is slower, villagers are still fine; they just talk and plan less. A longer day or fewer
   villagers gives each one more thinking time. See [Performance and slow hardware](performance.md).
 - Embeddings are cheap; keep `nomic-embed-text` on every machine. `mxbai-embed-large` also works.
@@ -86,10 +86,17 @@ shows what you have).
 
 ## Parallel requests
 
-`llm.concurrency` (default 2) is how many model calls the game sends at once. Ollama decides how
-many it actually runs in parallel with its own `OLLAMA_NUM_PARALLEL` setting; recent versions pick
-it automatically from free memory. If you raise `llm.concurrency`, also allow Ollama to run that
-many:
+`llm.concurrency` is how many model calls the game sends at once, and how many villager
+conversations can run at the same time. For Ollama it defaults to 1: one call at a time, so the
+game's priorities decide what runs next (your chats first). Extra calls sent to Ollama would only
+wait inside Ollama, where those priorities no longer apply. On a CPU-only machine keep 1.
+
+On a GPU or an Apple Silicon Mac, try 2–3. Ollama decides how many calls it really runs in parallel
+with its own `OLLAMA_NUM_PARALLEL` setting, so set both together:
+
+```json
+{ "llm": { "concurrency": 3 } }
+```
 
 ```sh
 OLLAMA_NUM_PARALLEL=3 ollama serve

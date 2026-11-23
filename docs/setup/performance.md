@@ -8,9 +8,10 @@ gossip less.
 ## How much the model has to do
 
 A game day with 10 villagers makes roughly 200 model calls, plus your own chats. With the default
-15-minute day at 1×, that is one call every 4.5 real seconds. With `llm.concurrency: 2` each call
-may take about 9 seconds and the model still keeps up, provided the machine really runs two calls
-in parallel. Higher speeds (2×, 4×, 8×) shrink that budget by the same factor.
+15-minute day at 1×, that is one call every 4.5 real seconds. With Ollama the game sends one call at
+a time by default (`llm.concurrency` 1; hosted providers default to 2). On a GPU or Apple Silicon
+Mac that really runs two calls in parallel, `llm.concurrency: 2` lets each call take about 9
+seconds. Higher speeds (2×, 4×, 8×) shrink that budget by the same factor.
 
 For comparison, a test run of `qwen2.5:1.5b` on a 4-core cloud machine with no GPU took 20–60
 seconds per call, and some calls took up to 110 seconds. Even with a 40-minute day, 6 of 10
@@ -33,14 +34,15 @@ more options. Hosted APIs (see [Providers](providers.md)) are usually fast enoug
 
 ```json
 {
-  "llm": { "provider": "ollama", "model": "gemma3:4b", "concurrency": 1 },
+  "llm": { "provider": "ollama", "model": "gemma3:4b" },
   "sim": { "dayLengthMinutes": 90, "villagers": 6 },
   "cognition": { "importanceMode": "heuristic", "maxConversationTurns": 4 }
 }
 ```
 
-- `llm.concurrency: 1`: a CPU runs one call at a time efficiently; sending more only makes each
-  one slower and makes timeouts more likely.
+- `llm.concurrency` stays at its Ollama default of 1: a CPU runs one call at a time efficiently;
+  sending more only makes each one slower and makes timeouts more likely. It also means one
+  villager conversation at a time.
 - `sim.dayLengthMinutes` 60–120: a longer day gives each call more real time. Play at 1×.
 - `sim.villagers`: fewer villagers make fewer calls.
 - `cognition.importanceMode: "heuristic"`: rates memories with a rule instead of a model call.
@@ -82,4 +84,4 @@ settings lively; above 20 seconds, use the CPU settings above.
   temporary errors (HTTP 429, 5xx, network) are retried up to twice.
 
 If the village feels quiet, follow the steps in this guide: a smaller or faster model, a
-longer day, fewer villagers, or `llm.concurrency: 1` on a CPU.
+longer day, fewer villagers, and `llm.concurrency` 1 on a CPU.

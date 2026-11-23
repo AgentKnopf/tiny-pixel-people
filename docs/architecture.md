@@ -152,7 +152,8 @@ _Generative Agents_ (Park et al., 2023), scaled down to small local models:
   | `mock`      | rule-based per task                    | hashed bag-of-words vectors               | always                              |
 
 - Every call names a **task** (`plan.day`, `convo.turn`, `note.reply`, `player.reply`, …). The
-  **LlmQueue** runs at most `llm.concurrency` calls at once, ordered by priority (the player's
+  **LlmQueue** runs at most `llm.concurrency` calls at once (default 1 for `ollama`, 2 otherwise;
+  the engine also caps simultaneous villager conversations at this number), ordered by priority (the player's
   replies first, then conversation turns, note replies, decisions, plans, summaries, reflections,
   importance ratings and day summaries last). Waiting jobs gain +1 priority per 2 s of real
   waiting (at most +50). Duplicate jobs are coalesced. Jobs whose `expiresAt` game time has passed
