@@ -1,13 +1,15 @@
 /**
  * Live-run attribution: did a check pass on real LLM output or on a deterministic fallback?
  *
- * Uses the per-item `source` tag where the shared types carry one (DayPlan.source today; optional
- * tags on conversation lines, events and note replies are read when present). Without a tag the
+ * Uses the per-item provenance tags from src/shared/types.ts (DayPlan.source, ConversationMessage
+ * .source, VillageEvent.source, DoorNote.replySource), which say 'llm' only when the model's answer
+ * parsed. The optional tags may be missing (older saves, servers without them); without a tag the
  * per-task queue stats are the only evidence, and they are one-sided: zero successful calls proves
  * a fallback, but a successful call can still fail to parse and fall back, so that case is
  * "unknown".
  */
 import type { StatsMsg } from '../../src/shared/protocol.ts';
+import type { Provenance as Source } from '../../src/shared/types.ts';
 import type { CheckResult } from './checks.ts';
 
 export type Via = 'llm' | 'fallback' | 'mixed' | 'unknown' | 'n/a';
@@ -19,16 +21,13 @@ export interface Provenance {
 
 export type TaskStats = NonNullable<StatsMsg['queue']['byTask']>;
 
-type Tagged = { source?: unknown };
+type Tagged = { source?: Source } | null;
 
-function tagOf(x: unknown): 'llm' | 'fallback' | undefined {
-  const s = (x as Tagged | null | undefined)?.source;
-  return s === 'llm' || s === 'fallback' ? s : undefined;
-}
+const tagOf = (x: Tagged) => x?.source;
 
 /** Combine per-item tags; `undefined` when no item carries one. */
-export function fromTags(tags: readonly ('llm' | 'fallback' | undefined)[], noun: string): Provenance | undefined {
-  const known = tags.filter((t): t is 'llm' | 'fallback' => t !== undefined);
+export function fromTags(tags: readonly (Source | undefined)[], noun: string): Provenance | undefined {
+  const known = tags.filter((t): t is Source => t !== undefined);
   if (known.length === 0) return undefined;
   const llm = known.filter((t) => t === 'llm').length;
   const via: Via = llm === known.length ? 'llm' : llm === 0 ? 'fallback' : 'mixed';
@@ -54,13 +53,13 @@ export function fromTaskStats(stats: TaskStats | undefined, tasks: readonly stri
 
 export interface ProvenanceInput {
   /** Plans judged by AC2 (midday snapshot). */
-  plans: readonly ({ source?: unknown } | null)[];
+  plans: readonly Tagged[];
   /** Conversation lines that satisfied AC3. */
-  gossipHits: readonly unknown[];
+  gossipHits: readonly Tagged[];
   /** The note AC4 judged. */
-  note: object | undefined;
+  note: { replySource?: Source } | undefined;
   /** Events that satisfied AC5 (done, enough attendees). */
-  goodEvents: readonly unknown[];
+  goodEvents: readonly Tagged[];
   taskStats: TaskStats | undefined;
 }
 
@@ -78,8 +77,8 @@ export function provenance(id: string, input: ProvenanceInput): Provenance {
       );
     case 'AC4': {
       if (!input.note) return { via: 'n/a', detail: 'no note' };
-      const s = (input.note as { replySource?: unknown }).replySource;
-      if (s === 'llm' || s === 'fallback') return { via: s, detail: `note reply tagged ${s}` };
+      const s = input.note.replySource;
+      if (s) return { via: s, detail: `note reply tagged ${s}` };
       return fromTaskStats(input.taskStats, ['note.reply']);
     }
     case 'AC5':

@@ -118,13 +118,15 @@ export function checkPlans(snapshot: WorldSnapshot, adherence: Adherence[], minR
 
 // ---------- AC3: gossip ----------
 
-export function gossipMentions(
-  messages: readonly Pick<ConversationMessageMsg, 'speakerId' | 'text' | 'time' | 'listenerId'>[],
+export function gossipMentions<
+  M extends Pick<ConversationMessageMsg, 'speakerId' | 'text' | 'time' | 'listenerId'>,
+>(
+  messages: readonly M[],
   keyword: string,
   sourceId: VillagerId,
   since: GameMinutes,
   until: GameMinutes,
-) {
+): M[] {
   const k = keyword.toLowerCase();
   return messages.filter(
     (m) => m.speakerId !== sourceId && m.time >= since && m.time <= until && m.text.toLowerCase().includes(k),

@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { formatReport, type CheckResult } from '../helpers/checks.ts';
+import type { Provenance } from '../../src/shared/types.ts';
 import { attachProvenance, fromTaskStats, provenance, type ProvenanceInput } from '../helpers/provenance.ts';
 
 const base: ProvenanceInput = { plans: [], gossipHits: [], note: undefined, goodEvents: [], taskStats: {} };
 
 describe('live provenance', () => {
   it('AC2 counts plan sources', () => {
-    const p = (source: string) => ({ source });
+    const p = (source: Provenance) => ({ source });
     expect(provenance('AC2', { ...base, plans: [p('llm'), p('llm')] }).via).toBe('llm');
     expect(provenance('AC2', { ...base, plans: [p('fallback'), null] }).via).toBe('fallback');
     const mixed = provenance('AC2', { ...base, plans: [p('llm'), p('fallback'), p('llm')] });
@@ -15,7 +16,7 @@ describe('live provenance', () => {
 
   it('prefers per-item tags over queue stats', () => {
     const stats = { 'convo.turn': { done: 0, failed: 4, avgLatencyMs: 0 } };
-    const hits = [{ text: 'Biscuit!', source: 'llm' }];
+    const hits = [{ text: 'Biscuit!', source: 'llm' as const }];
     expect(provenance('AC3', { ...base, gossipHits: hits, taskStats: stats }).via).toBe('llm');
     expect(provenance('AC4', { ...base, note: { replySource: 'fallback' } }).via).toBe('fallback');
   });
@@ -42,7 +43,7 @@ describe('live provenance', () => {
     const out = formatReport(
       attachProvenance(results, {
         ...base,
-        gossipHits: [{ source: 'llm' }],
+        gossipHits: [{ source: 'llm' as const }],
         goodEvents: [{}],
         taskStats: { 'event.propose': { done: 0, failed: 0, avgLatencyMs: 0 } },
       }),

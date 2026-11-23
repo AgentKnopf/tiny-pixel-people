@@ -274,10 +274,7 @@ async function main(): Promise<void> {
   const midday = samples.find((s) => s.time >= t('12:00'));
   const judgedVillagers = midday?.villagers ?? last.villagers;
   results.push(
-    checkPlans(
-      { ...last, villagers: judgedVillagers },
-      planAdherence(samples, hello.map.locations),
-    ),
+    checkPlans({ ...last, villagers: judgedVillagers }, planAdherence(samples, hello.map.locations)),
   );
 
   const wsLines = messages.filter((m): m is ConversationMessageMsg => m.type === 'conversation.message');
@@ -290,8 +287,7 @@ async function main(): Promise<void> {
       listenerId: c.participants.find((p) => p !== m.speakerId) ?? '',
       text: m.text,
       time: m.at,
-      // Optional per-line provenance, kept for the live report when the server provides it.
-      ...('source' in m ? { source: (m as { source?: unknown }).source } : {}),
+      ...(m.source ? { source: m.source } : {}),
     })),
   );
   const gossipHits = factSource
