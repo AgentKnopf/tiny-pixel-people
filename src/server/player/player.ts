@@ -324,10 +324,9 @@ export class PlayerWorld implements PlayerService {
 
   // ---------- v2 engine hooks (spec v2 §3.4, §5) ----------
 
-  /** AnimalSim step result: products and butcher yields become stock. */
+  /** AnimalSim step result: products and butcher yields become stock (AnimalSim sends the toasts). */
   onAnimalChange(change: AnimalChange): void {
     const res = this.farm.onAnimalChange(change, this.ctx.host.now());
-    for (const t of res.toasts) this.ctx.toast('🍔', t);
     if (res.changed) this.broadcastStock();
   }
 

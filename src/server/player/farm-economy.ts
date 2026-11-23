@@ -31,6 +31,16 @@ export const FOOD_PRICES: Readonly<Record<ItemId, number>> = {
   wool: 3,
 };
 
+/** Items sold by amount rather than one at a time: "some milk", not "a milk". */
+const MASS_ITEMS: ReadonlySet<ItemId> = new Set(['milk', 'wool', 'cheese']);
+
+/** "a burger", "an ice cream", "some milk". */
+export function withArticle(itemId: ItemId, name: string): string {
+  const noun = name.toLowerCase();
+  if (MASS_ITEMS.has(itemId)) return `some ${noun}`;
+  return `${/^[aeiou]/.test(noun) ? 'an' : 'a'} ${noun}`;
+}
+
 /** Burgers that reach the Burger Joint when an animal leaves for the butcher. */
 export const BUTCHER_YIELD: Readonly<Partial<Record<AnimalSpecies, number>>> = {
   cow: 4,
@@ -109,9 +119,9 @@ export class Farm implements FarmEconomy {
     return key ? (this.food[key]?.[itemId] ?? 0) : 0;
   }
 
-  onAnimalChange(change: AnimalChange, _now: GameMinutes): { toasts: string[]; changed: boolean } {
+  /** The butcher toast is AnimalSim's (`change.toasts`); this only moves stock. */
+  onAnimalChange(change: AnimalChange, _now: GameMinutes): { changed: boolean } {
     let changed = false;
-    const toasts: string[] = [];
     for (const p of change.produced) {
       if (SHOP_ITEMS.includes(p.itemId)) changed = this.add(SHOP_ID, p.itemId, p.count) || changed;
     }
@@ -120,11 +130,8 @@ export class Farm implements FarmEconomy {
       const burgers = BUTCHER_YIELD[r.species] ?? 0;
       if (burgers <= 0) continue;
       changed = this.add(BURGER_JOINT_ID, 'burger', burgers) || changed;
-      toasts.push(
-        `${this.farmerName()} took a ${r.species} to the butcher. Fresh burgers at the Burger Joint!`,
-      );
     }
-    return { toasts, changed };
+    return { changed };
   }
 
   /** Once a day at 18:00 the barn turns 2 milk into 1 cheese. Returns true when stock changed. */
@@ -166,12 +173,13 @@ export class Farm implements FarmEconomy {
     if (!nearLocation(loc, this.player.pos)) return { ok: false, reason: `Walk to ${loc.name} first` };
     if (this.count(venueId, itemId) < 1) return { ok: false, reason: `${def.name} is sold out` };
     if (this.player.gold < price)
-      return { ok: false, reason: `You need ${price} gold for a ${def.name.toLowerCase()}` };
+      return { ok: false, reason: `You need ${price} gold for ${withArticle(itemId, def.name)}` };
     this.take(venueId, itemId);
     this.spend(-price, `bought ${def.name.toLowerCase()}`);
     addToBackpack(this.player, itemId);
-    this.ctx.toast(def.emoji, `You bought a ${def.name.toLowerCase()} for ${price} gold`);
-    this.ctx.log(`${this.player.name} bought a ${def.name.toLowerCase()} at ${loc.name}`);
+    const what = withArticle(itemId, def.name);
+    this.ctx.toast(def.emoji, `You bought ${what} for ${price} gold`);
+    this.ctx.log(`${this.player.name} bought ${what} at ${loc.name}`);
     return { ok: true };
   }
 
@@ -183,13 +191,5 @@ export class Farm implements FarmEconomy {
     if (after === before) return false;
     bucket[itemId] = after;
     return true;
-  }
-
-  private farmerName(): string {
-    for (const v of this.ctx.host.villagers()) {
-      const p = this.ctx.host.profile(v.id);
-      if (p && !p.transient && /farmer/i.test(p.occupation)) return p.name;
-    }
-    return 'The farmer';
   }
 }
