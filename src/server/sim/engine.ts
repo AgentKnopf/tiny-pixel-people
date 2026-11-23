@@ -35,7 +35,7 @@ import type {
 import { createConversationRunner } from '../cognition/conversation.ts';
 import { createMind, Mind } from '../cognition/mind.ts';
 import type { AppConfig } from '../config.ts';
-import type { LlmQueue } from '../llm/types.ts';
+import { createLlmQueue, type PriorityLlmQueue } from '../llm/queue.ts';
 import { createLogger } from '../log.ts';
 import { Autosaver, JsonSaveStore, createReplayRecorder } from '../persistence/index.ts';
 import { SAVE_SCHEMA_VERSION, type SaveData } from '../persistence/types.ts';
@@ -48,7 +48,6 @@ import {
 } from '../player/index.ts';
 import { SimBus } from './bus.ts';
 import { SimClock } from './clock.ts';
-import { FallbackLlmQueue } from './fallback-queue.ts';
 import { advanceAlongPath, distance, facingFor, tileOf } from './movement.ts';
 import { CONVERSATION_SOCIAL_BONUS, initialNeeds, updateNeeds } from './needs.ts';
 import { PathFinder } from './pathfinding.ts';
@@ -121,7 +120,7 @@ export interface SimHost {
   readonly map: WorldMap;
   readonly config: AppConfig;
   readonly bus: SimBus;
-  readonly queue: LlmQueue;
+  readonly queue: PriorityLlmQueue;
   readonly playerWorld: PlayerWorld;
   readonly restoredFrom: SaveData | null;
   now(): GameMinutes;
@@ -173,7 +172,7 @@ export class Engine implements SimEngine, SimHost {
   readonly map: WorldMap;
   readonly config: AppConfig;
   readonly bus = new SimBus();
-  readonly queue: LlmQueue;
+  readonly queue: PriorityLlmQueue;
   readonly playerWorld: PlayerWorld;
   readonly restoredFrom: SaveData | null;
   readonly store: JsonSaveStore;
@@ -203,7 +202,6 @@ export class Engine implements SimEngine, SimHost {
   private ticksSinceStats = 0;
   private tickCount = 0;
   private lastFrames = new Map<VillagerId, string>();
-  private llmOnline = true;
   private stepping = false;
 
   constructor(opts: SimEngineOptions) {
@@ -222,7 +220,10 @@ export class Engine implements SimEngine, SimHost {
     this.rng = new Rng(cfg.sim.seed);
     if (restore) this.rng.state = restore.rngState;
     this.paths = new PathFinder(this.map);
-    this.queue = new FallbackLlmQueue(opts.providers, cfg.llm.concurrency);
+    this.queue = createLlmQueue(cfg.llm, opts.providers, {
+      now: () => this.now(),
+      embedConcurrency: cfg.embeddings.concurrency,
+    });
     this.createMindFn = opts.createMind ?? createMind;
     const runnerDeps = {
       config: cfg,
@@ -573,7 +574,7 @@ export class Engine implements SimEngine, SimHost {
   }
 
   setLlmOnline(online: boolean): void {
-    this.llmOnline = online;
+    this.queue.setOnline(online);
   }
 
   // ---------- setup ----------
@@ -755,7 +756,7 @@ export class Engine implements SimEngine, SimHost {
       this.broadcast({
         type: 'stats',
         queue: this.queue.stats(),
-        llmOnline: this.llmOnline,
+        llmOnline: this.queue.isOnline() ?? true,
         simTicksPerSecond: Math.round(tps * 10) / 10,
       });
     }

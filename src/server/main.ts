@@ -1,8 +1,6 @@
 import { loadConfig, redactConfig, resolveEmbeddingProvider, ConfigError, type AppConfig } from './config.ts';
 import { createLogger } from './log.ts';
-import { createProviders } from './llm/index.ts';
-import { MockChatProvider } from './llm/providers/mock.ts';
-import type { Providers } from './llm/types.ts';
+import { checkLlmHealth, createProviders } from './llm/index.ts';
 import { startServer } from './net/server.ts';
 import { installShutdownSave, JsonSaveStore, type SaveData } from './persistence/index.ts';
 import { createSimEngine } from './sim/engine.ts';
@@ -18,16 +16,6 @@ function parseArgs(argv: string[]): { configPath?: string; fresh: boolean } {
     else if (a === '--new') out.fresh = true;
   }
   return out;
-}
-
-function buildProviders(cfg: AppConfig): Providers {
-  try {
-    return createProviders(cfg);
-  } catch (err) {
-    // Skeleton only: real providers arrive with WP1.
-    log.warn(`${(err as Error).message}; falling back to the mock provider`);
-    return { chat: new MockChatProvider(cfg.llm.model), embeddings: null };
-  }
 }
 
 async function main(): Promise<void> {
@@ -52,9 +40,7 @@ async function main(): Promise<void> {
   log.info(`config: ${cfg.sourcePath ?? 'defaults (no config.json)'}`);
   log.debug('effective config', redactConfig(cfg));
 
-  const providers = buildProviders(cfg);
-  const health = await providers.chat.health();
-  log[health.ok ? 'info' : 'warn'](`LLM ${providers.chat.kind}/${providers.chat.model}: ${health.message}`);
+  const providers = createProviders(cfg);
 
   let restore: SaveData | undefined;
   if (cfg.persistence.loadOnStart && !args.fresh) {
@@ -79,7 +65,12 @@ async function main(): Promise<void> {
     }
     throw err;
   }
-  engine.setLlmOnline(health.ok);
+  const health = await checkLlmHealth(providers, engine.queue);
+  log[health.chat.ok ? 'info' : 'warn'](
+    `LLM ${providers.chat.kind}/${providers.chat.model}: ${health.chat.message}`,
+  );
+  if (health.embeddings)
+    log[health.embeddings.ok ? 'info' : 'warn'](`embeddings: ${health.embeddings.message}`);
   log.info(`world: ${engine.map.width}x${engine.map.height} tiles, ${engine.profiles.length} villagers`);
   const server = await startServer({
     host: cfg.server.host,
