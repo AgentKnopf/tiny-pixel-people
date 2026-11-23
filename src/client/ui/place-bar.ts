@@ -3,6 +3,7 @@ import { itemDef } from './catalog.ts';
 import type { UiContext } from './context.ts';
 import { h, replaceChildren } from './dom.ts';
 import { spriteIcon } from './icons.ts';
+import { nearVenue } from './walk-in.ts';
 import {
   canSendLetters,
   distanceToArea,
@@ -14,7 +15,7 @@ import {
   venueItems,
 } from './places.ts';
 
-/** How close (tiles from the area) the player must be for a venue's buttons to show. */
+/** Venue buttons show this close to the area, and anywhere the server accepts buy/ride. */
 const VENUE_RANGE = 1;
 
 /**
@@ -149,7 +150,10 @@ export function createPlaceBar(ctx: UiContext): HTMLElement {
     }
     const tile = store.playerTile();
     const inside = p.inside ?? null;
-    const near = inside || !tile ? [] : map.locations.filter((l) => distanceToArea(l, tile) <= VENUE_RANGE);
+    const near =
+      inside || !tile
+        ? []
+        : map.locations.filter((l) => distanceToArea(l, tile) <= VENUE_RANGE || nearVenue(l, tile));
     const venues = near.filter((l) => l.kind === 'ride' || venueItems(l).length > 0);
     const letters = !inside && canSendLetters(store);
     const board = nearNoticeBoard(store);
