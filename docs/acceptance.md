@@ -1,6 +1,6 @@
 # Acceptance tests
 
-There are two ways to check that the village works:
+There are three ways to check that the village works:
 
 - **`npm test`**: unit and acceptance tests with the deterministic `mock` provider on a virtual
   clock. No network, no model. CI runs this on Node 22 and 24.
