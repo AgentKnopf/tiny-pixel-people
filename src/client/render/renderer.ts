@@ -525,12 +525,22 @@ export class WorldRenderer {
     this.drawDoorLetters(map, now);
     this.drawEventMarkers(map, now);
     this.drawSleepers(map, now);
-    for (const d of drawn) this.drawLabels(d, now, ts);
+    // Front-most first so its tag keeps its place; the selected villager and the player go first of all.
+    const placed: Box[] = [];
+    const rank = (d: Drawn) => (this.store.selectedId === d.id ? 2 : d.kind === 'player' ? 1 : 0);
+    const labelOrder = [...drawn].sort((p, q) => rank(q) - rank(p) || q.pos.y - p.pos.y);
+    for (const d of labelOrder) this.drawLabels(d, now, ts, placed);
     this.drawBubbles(drawn, animals, now, ts);
 
     const interior = this.interiorView(map);
-    if (interior) this.drawInterior(map, interior, now, lit);
-    else this.insideGlide = null;
+    if (interior) {
+      // Entering: centre the dimmed world on the building so the view reads as "inside it".
+      if (!this.insideGlide && interior.loc.door) {
+        this.followId = null;
+        this.camera.centerOn({ x: (interior.loc.door.x + 0.5) * ts, y: interior.loc.door.y * ts }, true);
+      }
+      this.drawInterior(map, interior, now, lit);
+    } else this.insideGlide = null;
   }
 
   // ---------- Rides and the train ----------
@@ -902,7 +912,7 @@ export class WorldRenderer {
     return Math.max(Math.round(minCss * this.dpr()), Math.round(artPx * this.camera.zoom));
   }
 
-  private drawLabels(d: Drawn, now: number, ts: number): void {
+  private drawLabels(d: Drawn, now: number, ts: number, placed: Box[]): void {
     const { ctx, camera } = this;
     const feet = camera.worldToScreen(feetPoint(d.pos, ts));
     const top = camera.worldToScreen(spriteTopLeft(d.pos, ts));
@@ -923,10 +933,12 @@ export class WorldRenderer {
       const w = Math.ceil(ctx.measureText(d.name).width) + Math.round(px * 0.6);
       const h = Math.round(px * 1.35);
       const x = Math.round(feet.x - w / 2);
-      const y = Math.round(feet.y + z);
-      pill(ctx, x, y, w, h, Math.round(px / 3), selected ? ACCENT : TAG_FILL);
-      ctx.fillStyle = selected ? OUTLINE : TAG_TEXT;
-      ctx.fillText(d.name, x + w / 2, y + h / 2 + 1);
+      const y = placeLabel({ x, y: Math.round(feet.y + z), w, h }, placed, z < 1.5 && mayDrop(selected, d));
+      if (y !== null) {
+        pill(ctx, x, y, w, h, Math.round(px / 3), selected ? ACCENT : TAG_FILL);
+        ctx.fillStyle = selected ? OUTLINE : TAG_TEXT;
+        ctx.fillText(d.name, x + w / 2, y + h / 2 + 1);
+      }
     }
     // Activity emote at the top-right of the head.
     const e = d.entity;
@@ -1439,6 +1451,37 @@ export class WorldRenderer {
       this.ro.observe(c);
     }
   }
+}
+
+interface Box {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+function mayDrop(selected: boolean, d: { kind: PlaceholderKind }): boolean {
+  return !selected && d.kind !== 'player';
+}
+
+/**
+ * Top of a name tag that does not cover the tags already placed: the wanted spot, else up to two
+ * rows lower. When still covered it is dropped if `droppable` (crowded overview), else drawn anyway.
+ */
+export function placeLabel(want: Box, placed: Box[], droppable: boolean): number | null {
+  const gap = 1;
+  const hits = (b: Box) =>
+    placed.some((p) => b.x < p.x + p.w + gap && p.x < b.x + b.w + gap && b.y < p.y + p.h && p.y < b.y + b.h);
+  for (let k = 0; k <= 2; k++) {
+    const b = { ...want, y: want.y + k * (want.h + gap) };
+    if (!hits(b)) {
+      placed.push(b);
+      return b.y;
+    }
+  }
+  if (droppable) return null;
+  placed.push(want);
+  return want.y;
 }
 
 interface Glide {
