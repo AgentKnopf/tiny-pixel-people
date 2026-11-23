@@ -9,10 +9,11 @@ import type {
   VillagerId,
   WorldEvent,
 } from '../../../src/shared/types.ts';
-import { readyV2, waitingForV2 } from '../../helpers/features.ts';
+import { ready, readyV2, waitingFor, waitingForV2 } from '../../helpers/features.ts';
 import { V2 } from '../../helpers/v2.ts';
 import { createTestWorld, inArea, mutualAffinity, type TestWorld } from '../../helpers/world.ts';
 import { MockChatProvider } from '../../../src/server/llm/providers/mock.ts';
+import { createTestVillage, V2_LOCATIONS } from '../../unit/cognition/helpers.ts';
 
 const F = [...V2.romance];
 const A = 'sam';
@@ -349,4 +350,143 @@ describe.skipIf(!readyV2(...F))(`AC15: a date at a ride${waitingForV2(...F)}`, (
       expect(rec?.status).toBe('missed');
     });
   });
+});
+
+/**
+ * The §7 crush draw, seeded across many villages (spec v2 AC15, §7 guarantee). Mia and Ben are
+ * adults with affinity 7 both ways; Mia has talked with Ben twice (Ben never with Mia, so only Mia
+ * can get a crush). Each village has its own seed; the clock jumps between the 02:00 draws.
+ */
+describe.skipIf(!ready('romance'))(`AC15: nightly crush rate and guarantee${waitingFor('romance')}`, () => {
+  const SEEDS = 400;
+  const RATE = 0.3;
+  /** About 3 standard deviations of a 0.3 rate over the ~280 villages left on night 2. */
+  const TOLERANCE = 0.08;
+  const MIA = 'mia';
+  const BEN = 'ben';
+
+  type Village = ReturnType<typeof createTestVillage>;
+
+  const hasCrush = (v: Village) =>
+    v.minds
+      .get(MIA)!
+      .memory.all()
+      .some((m) => m.text.startsWith('I think I have a crush on Ben'));
+
+  function village(
+    seed: number,
+    night: number,
+    snapshots?: Parameters<typeof createTestVillage>[0]['snapshots'],
+  ) {
+    const v = createTestVillage({
+      start: at(night, '01:50'),
+      locations: V2_LOCATIONS,
+      seed,
+      ...(snapshots ? { snapshots } : {}),
+    });
+    setAffinity(v, 7);
+    return v;
+  }
+
+  function setAffinity(v: Village, affinity: number) {
+    v.worlds.get(MIA)!.relationships[BEN] = { affinity };
+    v.worlds.get(BEN)!.relationships[MIA] = { affinity };
+  }
+
+  function talked(v: Village, times: number) {
+    for (let i = 0; i < times; i++)
+      v.minds.get(MIA)!.addMemory({
+        kind: 'conversation',
+        at: at(0, '15:00') + i * 60,
+        text: 'Talked with Ben: we chatted about the weather.',
+        meta: { conversationId: `rate-${i}` },
+      });
+  }
+
+  /** Runs the 02:00 draw of `night` (the clock jumps there from the previous night). */
+  async function draw(v: Village, night: number): Promise<boolean> {
+    if (v.time.now < at(night, '01:50')) v.time.now = at(night, '01:50');
+    await v.advanceTo(at(night, '02:05'));
+    return hasCrush(v);
+  }
+
+  interface Outcome {
+    /** The night of Mia's crush (1–3), or null. */
+    night: number | null;
+  }
+
+  async function eligibleEveryNight(seed: number): Promise<Outcome> {
+    const v = village(seed, 1);
+    talked(v, 2);
+    for (let night = 1; night <= 3; night++) if (await draw(v, night)) return { night };
+    return { night: null };
+  }
+
+  const rate = (hits: number, of: number) => (of === 0 ? NaN : hits / of);
+  let outcomes: Outcome[] = [];
+
+  beforeAll(async () => {
+    outcomes = [];
+    for (let seed = 1; seed <= SEEDS; seed++) outcomes.push(await eligibleEveryNight(seed));
+  }, 300_000);
+
+  it('nights 1 and 2 stay random at 0.3 (the guarantee does not raise them)', () => {
+    const night1 = outcomes.filter((o) => o.night === 1).length;
+    const left = SEEDS - night1;
+    const night2 = outcomes.filter((o) => o.night === 2).length;
+    expect(rate(night1, SEEDS), `night 1: ${night1}/${SEEDS}`).toBeGreaterThanOrEqual(RATE - TOLERANCE);
+    expect(rate(night1, SEEDS), `night 1: ${night1}/${SEEDS}`).toBeLessThanOrEqual(RATE + TOLERANCE);
+    expect(rate(night2, left), `night 2: ${night2}/${left}`).toBeGreaterThanOrEqual(RATE - TOLERANCE);
+    expect(rate(night2, left), `night 2: ${night2}/${left}`).toBeLessThanOrEqual(RATE + TOLERANCE);
+  });
+
+  it('a villager eligible 3 nights in a row has a crush by the 3rd night, whatever the seed', () => {
+    const none = outcomes.flatMap((o, i) => (o.night === null ? [i + 1] : []));
+    expect(none, 'seeds without a crush after 3 eligible nights').toEqual([]);
+  });
+
+  it('never gives a crush while the conditions do not hold (one talk only)', async () => {
+    const crushed: number[] = [];
+    for (let seed = 1; seed <= 100; seed++) {
+      const v = village(seed, 1);
+      talked(v, 1);
+      for (let night = 1; night <= 3; night++) if (await draw(v, night)) crushed.push(seed);
+    }
+    expect(crushed).toEqual([]);
+  }, 120_000);
+
+  it('an ineligible night resets the count, so the 3rd night is random again', async () => {
+    let missedFirst = 0;
+    let night2 = 0;
+    let night3 = 0;
+    for (let seed = 1; seed <= SEEDS; seed++) {
+      const v = village(seed, 1);
+      talked(v, 2);
+      if (await draw(v, 1)) continue;
+      missedFirst++;
+      setAffinity(v, 5);
+      if (await draw(v, 2)) night2++;
+      setAffinity(v, 7);
+      if (await draw(v, 3)) night3++;
+    }
+    expect(night2, 'crushes on the ineligible night').toBe(0);
+    const night3Rate = rate(night3, missedFirst);
+    expect(night3Rate, `night 3: ${night3}/${missedFirst}`).toBeGreaterThanOrEqual(RATE - TOLERANCE);
+    expect(night3Rate, `night 3: ${night3}/${missedFirst}`).toBeLessThanOrEqual(RATE + TOLERANCE);
+  }, 300_000);
+
+  it('the count survives a restore of the mind state', async () => {
+    let restoredCount = 0;
+    const withoutCrush: number[] = [];
+    for (let seed = 1; seed <= SEEDS && restoredCount < 50; seed++) {
+      const v = village(seed, 1);
+      talked(v, 2);
+      if ((await draw(v, 1)) || (await draw(v, 2))) continue;
+      const snapshots = Object.fromEntries([...v.minds].map(([id, m]) => [id, m.serialize()]));
+      restoredCount++;
+      if (!(await draw(village(seed, 3, snapshots), 3))) withoutCrush.push(seed);
+    }
+    expect(restoredCount).toBeGreaterThanOrEqual(20);
+    expect(withoutCrush, 'seeds without a crush on the 3rd night after a restore').toEqual([]);
+  }, 300_000);
 });
