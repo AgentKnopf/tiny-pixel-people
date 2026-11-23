@@ -106,4 +106,6 @@ Point the game at it:
 ```
 
 On that machine, make Ollama listen on the network with `OLLAMA_HOST=0.0.0.0 ollama serve`.
-Embeddings use the same server unless you set `embeddings.baseUrl`.
+Embeddings use the same server unless you set `embeddings.baseUrl`. If that Ollama sits behind a
+proxy that wants a key, set `llm.apiKeyEnv` (or `llm.apiKey`); the game then sends
+`Authorization: Bearer <key>`, and the embeddings reuse it on the same server.
