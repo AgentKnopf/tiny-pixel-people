@@ -80,6 +80,21 @@ export const MAX_VILLAGERS = 20;
 /** Bubbles stay visible for this many real milliseconds. */
 export const BUBBLE_MS = 5000;
 const STATS_INTERVAL_MS = 2000;
+/** The clock waits here each morning until the villagers' plans for the day are settled. */
+export const WAKE_UP_MINUTE = 6 * 60;
+export const DEFAULT_WAKE_UP_TIMEOUT_SEC = 300;
+/** Virtual-clock mode gives up waiting after this many drain rounds. */
+const WAKE_UP_MAX_ROUNDS = 5;
+
+type Provenance = 'llm' | 'fallback';
+
+/** Broadcast while the morning wake-up hold is active and once when it ends. */
+export interface SimStatusMsg {
+  type: 'sim.status';
+  phase: 'wakingUp' | 'running';
+  plansReady: number;
+  villagers: number;
+}
 const FULL_FRAME_EVERY_TICKS = 50;
 
 export type CommandHandler = (cmd: ClientMessage, host: SimHost) => ServerMessage[] | void;
@@ -203,6 +218,8 @@ export class Engine implements SimEngine, SimHost {
   private tickCount = 0;
   private lastFrames = new Map<VillagerId, string>();
   private stepping = false;
+  private wokeDay = -1;
+  private wakeHold: { day: number; startedMs: number; ready: number; rounds: number } | null = null;
 
   constructor(opts: SimEngineOptions) {
     const cfg = opts.config;
@@ -328,6 +345,16 @@ export class Engine implements SimEngine, SimHost {
     let left = gameMinutes;
     while (left > 1e-9) {
       const dt = Math.min(step, left);
+      if (this.holdForWakeUp(this.clock.time + dt)) {
+        this.step(0);
+        this.emitTick(false);
+        const hold = this.wakeHold;
+        if (hold && ++hold.rounds > WAKE_UP_MAX_ROUNDS) this.endWakeUp(hold.day, true);
+        await this.queue.drain();
+        if (this.pending.size > 0) await Promise.race([Promise.allSettled([...this.pending]), settle()]);
+        await settle();
+        continue;
+      }
       left -= dt;
       this.step(dt);
       this.emitTick(false);
@@ -741,6 +768,10 @@ export class Engine implements SimEngine, SimHost {
       if (dt <= 0) this.step(0);
       while (dt > 1e-9) {
         const chunk = Math.min(1, dt);
+        if (this.holdForWakeUp(this.clock.time + chunk)) {
+          this.step(0);
+          break;
+        }
         dt -= chunk;
         this.step(chunk);
       }
@@ -759,7 +790,87 @@ export class Engine implements SimEngine, SimHost {
         llmOnline: this.queue.isOnline() ?? true,
         simTicksPerSecond: Math.round(tps * 10) / 10,
       });
+      // Repeated so clients that connect mid-hold see the overlay.
+      if (this.wakeHold) this.broadcastSimStatus('wakingUp', this.wakeHold.ready);
     }
+  }
+
+  private get wakeUpTimeoutSec(): number {
+    const v = (this.config.sim as { wakeUpTimeoutSec?: number }).wakeUpTimeoutSec;
+    return typeof v === 'number' && v >= 0 ? v : DEFAULT_WAKE_UP_TIMEOUT_SEC;
+  }
+
+  private planSettled(rt: Runtime, day: number): boolean {
+    const mind = rt.mind as VillagerMind & { isPlanSettled?: (day: number) => boolean };
+    if (typeof mind.isPlanSettled === 'function') return mind.isPlanSettled(day);
+    // Minds without an LLM plan (stubs, tests) never keep the village waiting.
+    if (!(rt.mind instanceof Mind)) return true;
+    const plan = rt.state.plan;
+    return !!plan && plan.day === day && plan.source === 'llm';
+  }
+
+  private wakeUpCounts(day: number): { ready: number; total: number } {
+    const all = [...this.runtimes.values()].filter((rt) => !rt.profile.transient);
+    return { ready: all.filter((rt) => this.planSettled(rt, day)).length, total: all.length };
+  }
+
+  /**
+   * True while the clock must not move to `target`: the first time each day reaches 06:00, it waits
+   * until every villager's plan for the day is settled, the LLM is offline, or the real-time cap expires.
+   */
+  private holdForWakeUp(target: GameMinutes): boolean {
+    const day = dayOf(target);
+    if (day <= this.wokeDay || minuteOfDay(target) < WAKE_UP_MINUTE) return false;
+    const timeout = this.wakeUpTimeoutSec;
+    if (timeout <= 0 || this.queue.isOnline() === false) {
+      this.endWakeUp(day, false);
+      return false;
+    }
+    let { ready, total } = this.wakeUpCounts(day);
+    if (ready >= total) {
+      this.endWakeUp(day, false);
+      return false;
+    }
+    const nowMs = performance.now();
+    if (!this.wakeHold || this.wakeHold.day !== day) {
+      this.wakeHold = { day, startedMs: nowMs, ready: -1, rounds: 0 };
+      this.log('info', 'Villagers are waking up…');
+      // Minds start their day plans from update(); on a fresh world nobody has thought yet.
+      for (const rt of [...this.runtimes.values()]) this.think(rt);
+      ({ ready, total } = this.wakeUpCounts(day));
+      if (ready >= total) {
+        this.endWakeUp(day, false);
+        return false;
+      }
+    }
+    if (nowMs - this.wakeHold.startedMs >= timeout * 1000) {
+      this.endWakeUp(day, true);
+      return false;
+    }
+    if (ready !== this.wakeHold.ready) {
+      this.wakeHold.ready = ready;
+      this.broadcastSimStatus('wakingUp', ready, total);
+    }
+    return true;
+  }
+
+  private endWakeUp(day: number, timedOut: boolean): void {
+    this.wokeDay = Math.max(this.wokeDay, day);
+    if (!this.wakeHold) return;
+    this.wakeHold = null;
+    const { ready, total } = this.wakeUpCounts(day);
+    if (timedOut) log.warn(`wake-up: only ${ready}/${total} plans ready, starting the day anyway`);
+    this.broadcastSimStatus('running', ready, total);
+  }
+
+  private broadcastSimStatus(phase: SimStatusMsg['phase'], plansReady: number, villagers?: number): void {
+    const msg: SimStatusMsg = {
+      type: 'sim.status',
+      phase,
+      plansReady: Math.max(0, plansReady),
+      villagers: villagers ?? [...this.runtimes.values()].filter((rt) => !rt.profile.transient).length,
+    };
+    this.broadcast(msg as unknown as ServerMessage);
   }
 
   private everyoneAsleep(): boolean {
@@ -1177,6 +1288,7 @@ export class Engine implements SimEngine, SimHost {
     while (entry.sent < c.messages.length) {
       const m = c.messages[entry.sent++]!;
       const listenerId = c.participants[0] === m.speakerId ? c.participants[1] : c.participants[0];
+      const source = (m as { source?: Provenance }).source;
       this.broadcast({
         type: 'conversation.message',
         conversationId: entry.publicId ?? c.id,
@@ -1184,6 +1296,7 @@ export class Engine implements SimEngine, SimHost {
         listenerId,
         text: m.text,
         time: m.at,
+        ...(source ? { source } : {}),
       });
       const speaker = this.runtimes.get(m.speakerId);
       if (speaker) {
@@ -1597,18 +1710,21 @@ export class Engine implements SimEngine, SimHost {
     const target = entry;
     const p = reply
       .then(
-        (r) => r,
-        (err: unknown): PlayerReply => {
+        (r): PlayerReply & { source?: Provenance } => r,
+        (err: unknown): PlayerReply & { source?: Provenance } => {
           log.warn(`replyToPlayer failed for ${id}: ${(err as Error).message}`);
-          return { reply: PLAYER_REPLY_FALLBACK };
+          return { reply: PLAYER_REPLY_FALLBACK, source: 'fallback' };
         },
       )
       .then((r) => {
         const live = this.runtimes.get(id);
         if (!live) return;
-        const text = (r.reply ?? '').trim() || PLAYER_REPLY_FALLBACK;
+        const given = (r.reply ?? '').trim();
+        const text = given || PLAYER_REPLY_FALLBACK;
+        const source: Provenance | undefined = given ? r.source : 'fallback';
+        const prov = source ? { source } : {};
         if (target && this.active.has(target.conversation.id)) {
-          target.conversation.messages.push({ speakerId: id, text, at: this.now() });
+          target.conversation.messages.push({ speakerId: id, text, at: this.now(), ...prov });
           this.flushMessages(target);
         } else {
           this.broadcast({
@@ -1618,6 +1734,7 @@ export class Engine implements SimEngine, SimHost {
             listenerId: PLAYER_ID,
             text,
             time: this.now(),
+            ...prov,
           });
           live.bubble = { text, untilMs: Date.now() + BUBBLE_MS, untilGame: this.now() + 10 };
         }
