@@ -12,7 +12,7 @@ import type {
   WorldMap,
   WorldSnapshot,
 } from '../../shared/types.ts';
-import type { CreateMind } from '../cognition/types.ts';
+import type { CreateConversationRunner, CreateMind } from '../cognition/types.ts';
 import type { AppConfig } from '../config.ts';
 import type { Providers } from '../llm/types.ts';
 import type { SaveData } from '../persistence/types.ts';
@@ -38,6 +38,8 @@ export interface SimEngineOptions {
   restore?: SaveData;
   /** Default: WP3's `createMind` from cognition/mind.ts. WP2 tests may pass a stub mind. */
   createMind?: CreateMind;
+  /** Default: WP3's `createConversationRunner` from cognition/conversation.ts. */
+  createConversationRunner?: CreateConversationRunner;
 }
 
 export type CreateSimEngine = (opts: SimEngineOptions) => SimEngine;

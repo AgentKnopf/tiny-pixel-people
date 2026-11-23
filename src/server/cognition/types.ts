@@ -4,17 +4,23 @@
  */
 import type {
   Conversation,
+  ConversationId,
+  DayPlan,
   DoorNote,
   GameMinutes,
   Location,
   LocationId,
+  ItemId,
   Memory,
+  MemoryId,
   MemoryKind,
   MemoryMeta,
+  PlanBlock,
   VillageEvent,
   VillagerId,
   VillagerProfile,
   VillagerState,
+  Weather,
 } from '../../shared/types.ts';
 import type { ServerMessage } from '../../shared/protocol.ts';
 import type { AppConfig } from '../config.ts';
@@ -42,6 +48,7 @@ export interface WorldView {
   /** Known/public events. */
   events: readonly VillageEvent[];
   villagerNames: Readonly<Record<VillagerId, string>>;
+  weather?: Readonly<Weather>;
 }
 
 export type Intent =
@@ -79,9 +86,44 @@ export interface VillagerMind {
   onArrive(view: WorldView, locationId: LocationId): void;
   wantsToTalkTo(view: WorldView, otherId: VillagerId): boolean;
   serialize(): MindSnapshot;
+  /** Player said/asked/gave something to this villager (inspector). The engine broadcasts the reply bubble. */
+  replyToPlayer(view: WorldView, input: PlayerInteraction): Promise<PlayerReply>;
+  /** Propose a village event soon (toolbar "Town event"); the result arrives via world.upsertEvent. */
+  requestEventProposal(): void;
 }
 
-/** Runs the dialogue of a conversation the engine has started (both villagers already stopped). */
+export interface PlayerInteraction {
+  text: string;
+  mode: 'say' | 'ask' | 'gift';
+  /** mode 'gift' */
+  itemId?: ItemId;
+  /** mode 'gift': item matches profile.likes (computed by WP8). */
+  liked?: boolean;
+}
+
+export interface PlayerReply {
+  reply: string;
+  /** mode 'ask': outcome of task.decide. Accepted tasks are also added to the plan via world.setPlan. */
+  task?: { taskId: string; accepted: boolean; activity: string; locationId: LocationId; start: number };
+}
+
+export interface LearnedFact {
+  from: VillagerId;
+  to: VillagerId;
+  originId: MemoryId;
+  /** The fact as learned. */
+  text: string;
+  /** The sentence in which it was said, if known. */
+  said?: string;
+  conversationId?: ConversationId;
+  at: GameMinutes;
+}
+
+/**
+ * Runs the dialogue of a conversation the engine has started (both villagers already stopped).
+ * The runner appends to `conversation.messages`; the engine diffs them each tick and broadcasts
+ * conversation.message + bubbles, so the runner must not emit conversation.message itself.
+ */
 export interface ConversationRunner {
   run(conversation: Conversation, minds: [VillagerMind, VillagerMind]): Promise<Conversation>;
 }
@@ -100,13 +142,37 @@ export interface MemoryStream {
   retrieve(query: string, now: GameMinutes, opts?: RetrieveOptions): Promise<Memory[]>;
 }
 
+/**
+ * Write access to the world for one mind; every method acts on behalf of that mind's villager.
+ * Minds change shared state only through this interface (never via `emit`).
+ */
+export interface MindWorld {
+  setPlan(plan: DayPlan | null): void;
+  /** CURRENT THOUGHT in the inspector. */
+  setThought(text: string): void;
+  /** Clamps affinity to -10..10 and sets lastTalkedAt = now. */
+  adjustRelationship(otherId: VillagerId, delta: number, summary?: string): void;
+  /** Create or update a door note; the engine broadcasts note.updated. */
+  upsertNote(note: DoorNote): void;
+  /** Create or update a village event; the engine broadcasts event.updated and tracks attendance. */
+  upsertEvent(event: VillageEvent): void;
+  events(): readonly VillageEvent[];
+  notes(): readonly DoorNote[];
+  /** A fact passed to this villager (the runner calls it on the listener's world); feeds RumorTracker.recordHop (WP8). */
+  recordLearned?(fact: LearnedFact): void;
+  /** A plan block tagged taskId finished; WP8 pays economy.taskReward. */
+  taskCompleted?(taskId: string, block: PlanBlock): void;
+}
+
 /** Services the engine hands to each mind. */
 export interface MindDeps {
   config: AppConfig;
   queue: LlmQueue;
   now: () => GameMinutes;
-  /** Broadcast to clients (conversation.message, log, …). */
+  /** Broadcast-only messages (log, toast). Not for notes, events or conversation messages. */
   emit: (msg: ServerMessage) => void;
+  /** Bound to this mind's villager. */
+  world: MindWorld;
   /** Seeded RNG in [0, 1) shared with the engine, for deterministic tests. */
   random: () => number;
   /** Restored state when loading a save. */
@@ -115,3 +181,14 @@ export interface MindDeps {
 
 /** WP3 exports `createMind: CreateMind` from ./mind.ts. */
 export type CreateMind = (profile: VillagerProfile, deps: MindDeps) => VillagerMind;
+
+/** Services for the conversation runner (shared by all conversations). */
+export interface ConversationRunnerDeps {
+  config: AppConfig;
+  queue: LlmQueue;
+  now: () => GameMinutes;
+  emit: (msg: ServerMessage) => void;
+}
+
+/** WP3 exports `createConversationRunner: CreateConversationRunner` from ./conversation.ts. */
+export type CreateConversationRunner = (deps: ConversationRunnerDeps) => ConversationRunner;
