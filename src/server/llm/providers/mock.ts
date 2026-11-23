@@ -19,15 +19,19 @@
  * - task.decide:     text
  * v2 (technical-spec-v2.md §11):
  * - plan.day:        day (number) or now; v2 places in `locations` (rides, burger_joint, ice cream trucks,
- *                    forest_grove, post_office) give some villagers outings, keyed on villager + day
+ *                    forest_grove, post_office) give some villagers outings, keyed on villager + day;
+ *                    visitors and strangers (profile.visitor / transient) spend the working day exploring a
+ *                    town place picked by villager + day instead of working
  * - visit.greet:     playerName, houseId, affinity, now          -> { reply } naming the player, time of day
  * - letter.reply:    letterText, fromName                         -> { reply } naming the sender, quoting the letter
  * - letter.write:    toName, reason ('thanks' | 'missYou' | 'shy') -> { text } short template per reason
- * - visitor.create:  existingNames, sprites                       -> a pool-style visitor with a unique name
+ * - visitor.create:  existingNames, sprites, now                  -> a data/visitors.json profile whose name is
+ *                    free (picked by `now`), or one with a numbered name once every pool name is taken
  * - date.ask:        partnerName, venues [{ id, name }], shy      -> the first venue at 17:00
  * - date.decide:     askerName, affinity, locationId, start       -> accept when affinity >= 4
  */
 import { formatClock, minuteOfDay, parseClock } from '../../../shared/time.ts';
+import visitorCatalog from '../../../../data/visitors.json' with { type: 'json' };
 import { LlmError } from '../errors.ts';
 import type {
   ChatProvider,
@@ -265,6 +269,9 @@ function villagerId(meta: Obj): string {
   return str(meta.villagerId, str(profileOf(meta).id, 'someone'));
 }
 
+/** Locale-free ordering: localeCompare pays a one-off ICU start-up cost inside the first sim step. */
+const byCodeUnits = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
 function hash(s: string): number {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
@@ -333,7 +340,26 @@ const WORKPLACES: [RegExp, RegExp, string, string][] = [
   [/artist|paint|music/i, /park|plaza|square/i, 'Making art', '🎨'],
 ];
 
+function planDayOf(meta: Obj): number {
+  return typeof meta.day === 'number' ? meta.day : Math.floor(num(meta.now, 0) / 1440);
+}
+
+/** Places a guest in town can spend the day at; ids are used when the kinds are unknown. */
+function sightseeingSpots(locs: Loc[], homeId: string): Loc[] {
+  const kinds = new Set(['shop', 'public', 'nature', 'zoo', 'ride', 'food']);
+  return locs.filter((l) =>
+    l.kind ? kinds.has(l.kind) : l.id !== homeId && !/house|home|hotel|station/i.test(l.id),
+  );
+}
+
 function workplace(meta: Obj, locs: Loc[], homeId: string): { loc: string; activity: string; emoji: string } {
+  const guest = profileOf(meta);
+  if (guest.visitor === true || guest.transient === true) {
+    // Visitors are on holiday: they spend the day out in town, not at the hotel they sleep in.
+    const spots = sightseeingSpots(locs, homeId);
+    const spot = spots[hash(`${villagerId(meta)}:${planDayOf(meta)}`) % Math.max(1, spots.length)];
+    if (spot) return { loc: spot.id, activity: `Exploring the ${spot.name.replace(/_/g, ' ')}`, emoji: '🧭' };
+  }
   const occupation = str(profileOf(meta).occupation);
   for (const [occ, place, activity, emoji] of WORKPLACES) {
     if (!occ.test(occupation)) continue;
@@ -400,6 +426,75 @@ function eventBlocks(meta: Obj): Block[] {
   }));
 }
 
+/** A v2 outing (spec v2 §2.1, §10): a place, a time window and what the villager does there. */
+interface Outing {
+  match: RegExp;
+  /** 'lunch' replaces the lunch block; 'afternoon' starts when work ends. */
+  slot: 'lunch' | 'afternoon';
+  minutes: number;
+  activity: (name: string) => string;
+  emoji: string;
+}
+
+const OUTINGS: Outing[] = [
+  {
+    match: /^(rollercoaster|ferris_wheel|carousel)$/,
+    slot: 'afternoon',
+    minutes: 60,
+    activity: (n) => `A ride on the ${n}`,
+    emoji: '🎢',
+  },
+  {
+    match: /^burger_joint$/,
+    slot: 'lunch',
+    minutes: 60,
+    activity: () => 'Burger lunch at the zoo',
+    emoji: '🍔',
+  },
+  {
+    match: /^ice_cream_truck_\d+$/,
+    slot: 'afternoon',
+    minutes: 30,
+    activity: () => 'An ice cream at the zoo',
+    emoji: '🍦',
+  },
+  {
+    match: /^forest_grove$/,
+    slot: 'afternoon',
+    minutes: 60,
+    activity: () => 'A walk and a picnic in the grove',
+    emoji: '🌳',
+  },
+  { match: /^post_office$/, slot: 'afternoon', minutes: 30, activity: () => 'Posting letters', emoji: '✉️' },
+  { match: /^zoo_gate$/, slot: 'afternoon', minutes: 60, activity: () => 'A visit to the zoo', emoji: '🦁' },
+];
+
+/**
+ * About a third of the villagers go on an outing each day, keyed on villager + day so a day's plans
+ * are stable. The outing kind rotates by day, so a few days cover every v2 place the map has.
+ */
+function outingBlock(
+  meta: Obj,
+  locs: Loc[],
+  times: { lunchAt: number; workEnd: number; eveningEnd: number },
+): Block | null {
+  const available = OUTINGS.map((o) => ({ o, places: locs.filter((l) => o.match.test(l.id)) })).filter(
+    (x) => x.places.length > 0,
+  );
+  if (available.length === 0) return null;
+  const id = villagerId(meta);
+  const day = planDayOf(meta);
+  const h = hash(id);
+  if ((h + day) % 3 !== 0) return null;
+  const { o, places } = available[(Math.floor(h / 3) + day) % available.length]!;
+  const place = places[hash(`${id}:${day}`) % places.length]!;
+  const start = o.slot === 'lunch' ? times.lunchAt : times.workEnd;
+  const end = start + o.minutes;
+  if (o.slot === 'afternoon' && end > times.eveningEnd) return null;
+  const name = place.name === place.id ? place.id.replace(/_/g, ' ') : place.name;
+  return { start, end, location: place.id, activity: o.activity(name), emoji: o.emoji };
+}
+
 function dayPlan(meta: Obj) {
   const locs = locations(meta);
   const p = profileOf(meta);
@@ -420,6 +515,8 @@ function dayPlan(meta: Obj) {
     { start: workEnd, end: eveningEnd, location: social, activity: 'Chatting with neighbours', emoji: '💬' },
     { start: eveningEnd, end: sleepAt, location: home, activity: 'Dinner and a good book', emoji: '📖' },
   ].filter((b) => b.end > b.start);
+  const outing = outingBlock(meta, locs, { lunchAt, workEnd, eveningEnd });
+  if (outing) blocks = insertBlock(blocks, outing);
   for (const ev of eventBlocks(meta)) blocks = insertBlock(blocks, ev);
   const name = str(p.name, 'I');
   return { summary: `${name} works, has lunch, then catches up with neighbours.`, blocks: blocks.map(toOut) };
@@ -528,7 +625,12 @@ function proposeEvent(meta: Obj) {
   const start = Math.min(Math.max(15 * 60, earliest), 20 * 60);
   const invitees = objs(meta.villagers)
     .filter((v) => str(v.id) !== self && str(v.name))
-    .sort((x, y) => num(y.affinity, 0) - num(x.affinity, 0) || str(x.name).localeCompare(str(y.name)))
+    .sort(
+      (x, y) =>
+        num(y.affinity, 0) - num(x.affinity, 0) ||
+        byCodeUnits(str(x.name), str(y.name)) ||
+        byCodeUnits(str(x.id), str(y.id)),
+    )
     .slice(0, 5)
     .map((v) => str(v.name));
   return {
@@ -624,23 +726,45 @@ export function hashEmbed(text: string, dims: number): number[] {
   return v.map((x) => x / norm);
 }
 
+interface VisitorProfileData {
+  name: string;
+  age: number;
+  occupation: string;
+  bio: string;
+  traits: string[];
+  sprite: string;
+  origin: string;
+  reason: string;
+  likes?: string[];
+}
+
+/** The shipped visitor profiles (statically bundled, so answering stays free of I/O). */
+const VISITOR_POOL: readonly VisitorProfileData[] = visitorCatalog;
+
 function mockVisitor(meta: Obj): Record<string, unknown> {
-  const taken = new Set(arr(meta.existingNames).map((n) => str(n)));
-  let n = 1;
-  while (taken.has(`Visitor ${n}`)) n += 1;
-  const sprites = arr(meta.sprites)
-    .map((s) => str(s))
-    .filter(Boolean);
+  const taken = new Set(arr(meta.existingNames).map((n) => str(n).trim().toLowerCase()));
+  const sprites = new Set(
+    arr(meta.sprites)
+      .map((s) => str(s))
+      .filter(Boolean),
+  );
+  const usable = VISITOR_POOL.filter((p) => sprites.size === 0 || sprites.has(p.sprite));
+  const pool = usable.length > 0 ? usable : VISITOR_POOL;
+  const free = pool.filter((p) => !taken.has(p.name.toLowerCase()));
+  const from = free.length > 0 ? free : pool;
+  const base = from[hash(`${num(meta.now, 0)}:${taken.size}`) % from.length]!;
+  let name = base.name;
+  for (let n = 2; taken.has(name.toLowerCase()); n++) name = `${base.name} ${n}`;
   return {
-    name: `Visitor ${n}`,
-    age: 35,
-    occupation: 'Traveller',
-    bio: 'A friendly traveller who came by train to see the zoo and the forest.',
-    traits: ['curious', 'friendly'],
-    sprite: sprites[0] ?? 'characters/stranger.png',
-    origin: 'the city',
-    reason: 'a short holiday',
-    likes: ['ice_cream'],
+    name,
+    age: base.age,
+    occupation: base.occupation,
+    bio: base.bio,
+    traits: base.traits,
+    sprite: base.sprite,
+    origin: base.origin,
+    reason: base.reason,
+    likes: base.likes ?? [],
   };
 }
 

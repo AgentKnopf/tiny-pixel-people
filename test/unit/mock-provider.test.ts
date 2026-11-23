@@ -4,6 +4,7 @@ import { MockChatProvider, MockEmbeddingProvider, mockAnswer } from '../../src/s
 import type { ChatRequest, LlmTask } from '../../src/server/llm/types.ts';
 import type { Location, VillagerProfile } from '../../src/shared/types.ts';
 import { parseClock } from '../../src/shared/time.ts';
+import visitorPool from '../../data/visitors.json' with { type: 'json' };
 
 const loc = (id: string, kind: Location['kind']): Location => ({
   id,
@@ -147,6 +148,65 @@ describe('mock provider: per-task answers (spec §13)', () => {
     expect(blocks[0]!.location).toBe('house_01');
   });
 
+  it('plan.day: v2 places give about a third of the villagers an outing each day, within opening hours', () => {
+    const v2Ids = [
+      ...LOCATIONS.map((l) => l.id),
+      'rollercoaster',
+      'ferris_wheel',
+      'carousel',
+      'burger_joint',
+      'ice_cream_truck_1',
+      'ice_cream_truck_2',
+      'forest_grove',
+      'post_office',
+      'zoo_gate',
+    ];
+    const OUTING =
+      /^(rollercoaster|ferris_wheel|carousel|burger_joint|ice_cream_truck_\d|forest_grove|post_office|zoo_gate)$/;
+    const ids = Array.from({ length: 12 }, (_, i) => `v${i}`);
+    const kinds = new Set<string>();
+    const firstThreeDays = new Set<string>();
+    for (let day = 0; day < 6; day++) {
+      let outings = 0;
+      for (const id of ids) {
+        const meta = { villagerId: id, profile: { ...BAKER, id, occupation: '' }, locations: v2Ids, day };
+        const { blocks } = ask('plan.day', meta) as { blocks: Block[] };
+        expect(ask('plan.day', meta)).toEqual(ask('plan.day', meta));
+        for (let i = 1; i < blocks.length; i++) expect(blocks[i]!.start).toBe(blocks[i - 1]!.end);
+        const out = blocks.filter((b) => OUTING.test(b.location));
+        if (out.length) outings++;
+        for (const b of out) {
+          const kind = b.location.replace(/_\d$/, '').replace(/^(ferris_wheel|carousel)$/, 'rollercoaster');
+          kinds.add(kind);
+          if (day < 3) firstThreeDays.add(kind);
+          const close = b.location === 'post_office' ? '18:00' : '21:00';
+          expect(parseClock(b.start), b.activity).toBeGreaterThanOrEqual(parseClock('08:00'));
+          expect(parseClock(b.end), b.activity).toBeLessThanOrEqual(parseClock(close));
+        }
+      }
+      expect(outings, `day ${day}`).toBeGreaterThanOrEqual(2);
+      expect(outings, `day ${day}`).toBeLessThanOrEqual(7);
+    }
+    // AC9 runs 3 default days: a ride and zoo food both come up in that window.
+    expect(firstThreeDays.has('rollercoaster')).toBe(true);
+    expect(firstThreeDays.has('burger_joint') || firstThreeDays.has('ice_cream_truck')).toBe(true);
+    expect([...kinds].sort()).toEqual(
+      ['burger_joint', 'forest_grove', 'ice_cream_truck', 'post_office', 'rollercoaster', 'zoo_gate'].sort(),
+    );
+    // A v1 map has none of these places, so v1 plans are unchanged.
+    for (const id of ids) {
+      const { blocks } = ask('plan.day', {
+        villagerId: id,
+        profile: { ...BAKER, id },
+        locations: LOCATIONS,
+        day: 0,
+      }) as {
+        blocks: Block[];
+      };
+      expect(blocks.some((b) => OUTING.test(b.location))).toBe(false);
+    }
+  });
+
   it('plan.day / plan.revise: accepted events become blocks', () => {
     const event = { id: 'ev1', title: 'Bake-off', locationId: 'square', start: 15 * 60, end: 17 * 60 };
     const { blocks } = ask('plan.day', { profile: BAKER, locations: LOCATIONS, acceptedEvents: [event] }) as {
@@ -240,6 +300,21 @@ describe('mock provider: per-task answers (spec §13)', () => {
       now: 16 * 60,
     });
     expect(late.start).toBe('17:30');
+  });
+
+  it('event.propose breaks affinity ties by name, then id, independent of input order', () => {
+    const villagers = [
+      { id: 'b2', name: 'Bo', affinity: 3 },
+      { id: 'zed', name: 'Zed', affinity: 3 },
+      { id: 'b1', name: 'Bo', affinity: 3 },
+      { id: 'al', name: 'Al', affinity: 3 },
+      { id: 'cy', name: 'Cy', affinity: 5 },
+      { id: 'di', name: 'Di', affinity: 1 },
+    ];
+    const meta = { villagerId: 'mia', profile: BAKER, locations: LOCATIONS, now: 600 };
+    const e = ask('event.propose', { ...meta, villagers });
+    expect(e.invitees).toEqual(['Cy', 'Al', 'Bo', 'Bo', 'Zed']);
+    expect(ask('event.propose', { ...meta, villagers: [...villagers].reverse() })).toEqual(e);
   });
 
   it('event.decide: accepts when affinity >= 0', () => {
@@ -337,12 +412,61 @@ describe('mock provider: v2 tasks (spec v2 §11)', () => {
     expect(texts[0]).toMatch(/thank/i);
   });
 
-  it('visitor.create picks the first free "Visitor N" name and an offered sprite', () => {
-    const v = ask('visitor.create', {
-      existingNames: ['Visitor 1', 'Visitor 3'],
-      sprites: ['characters/v4.png'],
-    });
-    expect(v).toMatchObject({ name: 'Visitor 2', sprite: 'characters/v4.png', origin: expect.any(String) });
+  it('plan.day: a visitor spends the working day out in town, not at the hotel it sleeps in', () => {
+    const ids = [...LOCATIONS.map((l) => l.id), 'hotel', 'station', 'zoo_gate', 'carousel', 'forest_grove'];
+    const typed = [...LOCATIONS, loc('hotel', 'hotel'), loc('station', 'station'), loc('zoo_gate', 'zoo')];
+    const guest = { ...BAKER, id: 'visitor_1', occupation: 'Photographer', homeId: 'hotel', visitor: true };
+    const spots = new Set<string>();
+    for (const locations of [ids, typed])
+      for (let day = 0; day < 4; day++) {
+        const meta = { villagerId: guest.id, profile: guest, locations, day };
+        const { blocks } = ask('plan.day', meta) as { blocks: Block[] };
+        const daytime = blocks.filter(
+          (b) => parseClock(b.start) >= parseClock('09:00') && parseClock(b.end) <= parseClock('17:00'),
+        );
+        expect(daytime.length).toBeGreaterThan(0);
+        for (const b of daytime) expect(['hotel', 'station', 'house_01']).not.toContain(b.location);
+        for (const b of daytime) spots.add(b.location);
+      }
+    expect(spots.size).toBeGreaterThan(1);
+    const baker = ask('plan.day', { villagerId: 'mia', profile: BAKER, locations: LOCATIONS, day: 0 }) as {
+      blocks: Block[];
+    };
+    expect(baker.blocks.some((b) => b.location === 'bakery')).toBe(true);
+  });
+  it('visitor.create answers with a data/visitors.json profile whose name is free', () => {
+    const sprites = [...new Set(visitorPool.map((p) => p.sprite))];
+    const existingNames = [visitorPool[0]!.name, visitorPool[1]!.name.toUpperCase(), 'Mia'];
+    const answers = Array.from({ length: 24 }, (_, i) =>
+      ask('visitor.create', { existingNames, sprites, now: 600 + i * 360 }),
+    );
+    for (const v of answers) {
+      const profile = visitorPool.find((p) => p.name === v.name);
+      expect(profile, String(v.name)).toBeDefined();
+      expect(v).toMatchObject({
+        occupation: profile!.occupation,
+        bio: profile!.bio,
+        sprite: profile!.sprite,
+        origin: profile!.origin,
+        reason: profile!.reason,
+      });
+      expect(existingNames.map((n) => n.toLowerCase())).not.toContain(String(v.name).toLowerCase());
+    }
+    expect(new Set(answers.map((v) => v.occupation)).size).toBeGreaterThan(3);
+    expect(ask('visitor.create', { existingNames, sprites, now: 600 })).toEqual(answers[0]);
+  });
+
+  it('visitor.create keeps to the offered sprites and numbers the name once every pool name is taken', () => {
+    const sprite = visitorPool[2]!.sprite;
+    const withSprite = visitorPool.filter((p) => p.sprite === sprite);
+    for (let now = 0; now < 10; now++)
+      expect(ask('visitor.create', { sprites: [sprite], now }).sprite).toBe(sprite);
+    const existingNames = [...visitorPool.map((p) => p.name), ...withSprite.map((p) => `${p.name} 2`)];
+    const v = ask('visitor.create', { existingNames, sprites: [sprite] });
+    const base = withSprite.find((p) => v.name === `${p.name} 3`);
+    expect(base, String(v.name)).toBeDefined();
+    expect(v).toMatchObject({ occupation: base!.occupation, sprite });
+    expect(v).not.toHaveProperty('id');
   });
 
   it('date.ask picks the first venue at 17:00; date.decide accepts from affinity 4', () => {
