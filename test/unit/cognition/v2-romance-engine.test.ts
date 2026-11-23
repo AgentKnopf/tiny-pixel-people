@@ -2,6 +2,9 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { Romance } from '../../../src/shared/types.ts';
+import type { SaveData } from '../../../src/server/persistence/types.ts';
+import { MemoryStore } from '../../../src/server/cognition/memory.ts';
+import type { ScoreWeights } from '../../../src/server/cognition/retrieval.ts';
 import { ready, SIM_FEATURES, waitingFor } from '../../helpers/features.ts';
 import { createTestWorld, mutualAffinity, type TestWorld } from '../../helpers/world.ts';
 import { DATE_VENUE_RE } from '../../../src/server/cognition/romance.ts';
@@ -31,6 +34,41 @@ const crush = (a: string, b: string): Romance => ({
   updatedAt: 0,
 });
 
+const NAMES = new Map(
+  (
+    JSON.parse(readFileSync(new URL('../../../data/villagers.json', import.meta.url), 'utf8')) as {
+      id: string;
+      name: string;
+    }[]
+  ).map((p) => [p.id, p.name]),
+);
+
+/**
+ * Finished conversations between `a` and `b` before the sim starts, recorded as the engine records
+ * them (a `Talked with` memory on each side sharing the conversation id, plus lastTalkedAt), so a
+ * crush test does not hinge on chance meetings.
+ */
+function priorTalks(save: SaveData, a: string, b: string, times: readonly number[]): void {
+  for (const [self, other] of [
+    [a, b],
+    [b, a],
+  ] as const) {
+    const snap = save.minds.find((m) => m.villagerId === self)!;
+    const state = save.villagers.find((v) => v.id === self)!;
+    const store = new MemoryStore(self, { weights: {} as ScoreWeights, defaultK: 8 });
+    store.load(snap.memories);
+    times.forEach((t, i) =>
+      store.add({
+        kind: 'conversation',
+        at: t,
+        text: `Talked with ${NAMES.get(other)}: I chatted with ${NAMES.get(other)} about the weather.`,
+        meta: { conversationId: `prior-${[a, b].sort().join('-')}-${i + 1}` },
+      }),
+    );
+    snap.memories = [...store.all()];
+    state.relationships[other] = { ...state.relationships[other]!, lastTalkedAt: Math.max(...times) };
+  }
+}
 async function days(w: TestWorld, n: number, each?: (day: number) => void): Promise<void> {
   for (let d = 0; d < n; d++) {
     await w.advanceTo('23:59', { chunk: 5 });
@@ -48,13 +86,15 @@ describe.skipIf(!ready(...FEATURES) || !STORES_ROMANCE)(
       expect(seed).toMatchObject({ id: 'romance-franzi-laude', stage: 'crush', shy: true });
       expect(w.inspect('laude')?.romance).toMatchObject({ shy: true, stage: 'crush' });
       const max = w.config.romance!.shyMaxTurns;
-      await days(w, 1);
       const shyChats = () =>
         w
           .conversations()
           .filter((c) => c.participants.includes('laude') && c.participants.includes('franzi'));
-      // Franzi's post office visit falls in Laude's time there.
-      expect(shyChats().some((c) => c.locationId === 'post_office')).toBe(true);
+      // Chance meetings depend on the day's plans, so the player brings them together once.
+      await w.advanceTo('10:00');
+      w.command({ type: 'player.pairTalk', aId: 'laude', bId: 'franzi' });
+      await days(w, 1);
+      expect(shyChats().length).toBeGreaterThan(0);
       // The runner may add one canned reaction line after the cap.
       for (const c of shyChats()) expect(c.messages.length).toBeLessThanOrEqual(max + 1);
       expect(
@@ -76,14 +116,18 @@ describe.skipIf(!ready(...FEATURES) || !STORES_ROMANCE)(
       w2.dispose();
     }, 120_000);
 
-    it('a pair at affinity 7 gets a crush within a few nights; a 16-year-old never does', async () => {
+    it('a pair at affinity 7 with two talks gets a crush within 3 nights; a 16-year-old never does', async () => {
       const w = await createTestWorld({
         villagers: 12,
         startAt: '06:00',
         affinities: [...mutualAffinity('sam', 'ivy', 7), ...mutualAffinity('leo', 'nora', 9)],
+        patchSave: (s) => {
+          priorTalks(s, 'sam', 'ivy', [30, 80]);
+          priorTalks(s, 'leo', 'nora', [30, 80]);
+        },
       });
       let crushDay = -1;
-      await days(w, 5, (d) => {
+      await days(w, 3, (d) => {
         if (crushDay < 0 && between(w, 'sam', 'ivy')) crushDay = d;
       });
       expect(crushDay).toBeGreaterThanOrEqual(0);

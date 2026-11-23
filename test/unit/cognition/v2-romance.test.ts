@@ -112,6 +112,18 @@ describe('nightly crushes (v2 §7)', () => {
     expect(mia.town.romances.of('mia')).toHaveLength(0);
     expect(mia.town.romances.of('cleo')).toHaveLength(0);
   });
+  it('never forms a crush on someone who is dating or partnered with another villager', async () => {
+    for (const stage of ['dating', 'couple'] as const) {
+      const v = createTestVillage({ start: at(1, '01:50'), locations: V2_LOCATIONS });
+      mutual(v, 'mia', 'ben', 7);
+      const mia = v.minds.get('mia')!;
+      talked(mia, 'Ben', 2, at(0, '15:00'));
+      mia.town.romances.put(romance('ben', 'cleo', { stage, crushFrom: ['ben', 'cleo'] }));
+      for (const id of ['mia', 'ben', 'cleo', 'dan']) forceRandom(v.minds.get(id)!, 0);
+      await v.advanceTo(at(1, '02:05'));
+      expect(mia.town.romances.of('mia'), stage).toHaveLength(0);
+    }
+  });
 });
 
 describe('the crush guarantee (v2 §7, AC15)', () => {
@@ -415,6 +427,23 @@ describe('declining without a model call', () => {
     expect(taken.accept).toBe(false);
     expect(v.queue.count('date.decide')).toBe(0);
     expect((await ben.romance.decide('cleo', 'Again?', park, at(2, '17:00'))).accept).toBe(true);
+  });
+  it('turns down a date while having a crush on someone else, but not for being someone’s crush', async () => {
+    const v = createTestVillage({ start: at(1, '10:00'), locations: V2_LOCATIONS });
+    mutual(v, 'ben', 'mia', 9);
+    mutual(v, 'ben', 'cleo', 9);
+    await v.advanceTo(at(1, '10:01'));
+    const ben = v.minds.get('ben')!;
+    const park = V2_LOCATIONS.find((l) => l.id === 'park')!;
+    ben.town.romances.put(romance('cleo', 'ben'));
+    const admired = await ben.romance.decide('mia', 'Park?', park, at(1, '17:00'));
+    expect(admired.source).not.toBe('fallback');
+    expect(v.queue.count('date.decide')).toBe(1);
+
+    ben.town.romances.put(romance('ben', 'cleo', { crushFrom: ['cleo', 'ben'] }));
+    const smitten = await ben.romance.decide('mia', 'Park tomorrow?', park, at(2, '17:00'));
+    expect(smitten).toMatchObject({ accept: false, source: 'fallback' });
+    expect(v.queue.count('date.decide')).toBe(1);
   });
 });
 
