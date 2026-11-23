@@ -136,11 +136,7 @@ function eligibleProducers(animals: readonly AnimalState[], at: number): string[
   return out.sort();
 }
 
-function cow(
-  id: string,
-  sex: 'female' | 'male',
-  extra: Partial<AnimalState> & { lastBirthAt?: number } = {},
-) {
+function cow(id: string, sex: 'female' | 'male', extra: Partial<AnimalState> = {}) {
   return {
     id,
     species: 'cow' as const,
@@ -192,7 +188,7 @@ describe('AnimalSim breeding, restock and butcher guards', () => {
     });
     expect(calves(at6 + MINUTES_PER_DAY, at6 + MINUTES_PER_DAY + 10, restored)).toBe(1);
     const saved2 = JSON.parse(JSON.stringify(restored.serialize())) as ReturnType<typeof sim.serialize>;
-    const m2 = saved2.animals.find((a) => a.id === 'cow_m') as AnimalState & { lastBirthAt?: number };
+    const m2 = saved2.animals.find((a) => a.id === 'cow_m') as AnimalState;
     expect(m2.lastBirthAt).toBe(at6 + MINUTES_PER_DAY);
     const again = makeSim({
       now: at6 + 2 * MINUTES_PER_DAY - 1,
@@ -373,7 +369,7 @@ describe('AnimalSim zoo', () => {
     run(sim, START, 2 * MINUTES_PER_DAY, () => {
       for (const a of sim.all())
         if (a.group === 'zoo')
-          expect(inRect(a.pos, pens.get(a.homeId)), `${a.id} at ${a.pos.x},${a.pos.y}`).toBe(true);
+          expect(inRect(a.pos, pens.get(a.homeId)!), `${a.id} at ${a.pos.x},${a.pos.y}`).toBe(true);
     });
   });
 
@@ -411,13 +407,14 @@ describe('AnimalSim forest', () => {
         .map((a) => a.species),
     );
     expect(species.size).toBeGreaterThanOrEqual(7);
-    run(sim, START, 2 * MINUTES_PER_DAY, (t) => {
-      const people = t % 40 < 5 ? [{ x: 100, y: 38 }] : [];
-      void people;
+    // A villager walks through the forest now and then, so fleeing animals are checked too.
+    for (let t = START + 1; t <= START + 2 * MINUTES_PER_DAY; t++) {
+      const people = t % 40 < 5 ? [{ x: 100 + (t % 7), y: 38 }] : [];
+      sim.step(t, people);
       for (const a of sim.all())
         if (a.group === 'ambient' && a.species !== 'crow')
-          expect(inRect(a.pos, pens.get(a.homeId)), `${a.id} at ${a.pos.x},${a.pos.y}`).toBe(true);
-    });
+          expect(inRect(a.pos, pens.get(a.homeId)!), `${a.id} at ${a.pos.x},${a.pos.y}`).toBe(true);
+    }
   });
 
   it('keeps ducks on the water by day and on the shore at night', () => {

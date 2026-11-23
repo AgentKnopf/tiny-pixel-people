@@ -44,9 +44,6 @@ interface FarmSpec {
   emoji: string;
 }
 
-/** `lastBirthAt` is saved with the animal (plain JSON) so the per-mother gap survives a restore. */
-type FarmAnimal = AnimalState & { lastBirthAt?: GameMinutes };
-
 export const FARM_TABLE: Record<FarmSpecies, FarmSpec> = {
   cow: {
     adultAt: 3,
@@ -641,8 +638,9 @@ export class DeterministicAnimalSim implements AnimalSim {
     // Breeding is per mother (each female at most once per BIRTH_GAP_DAYS); a species-wide gap
     // cannot sustain the herds with the spec lifespans.
     let born = 0;
-    for (const mother of animals) {
-      const m = mother.s as FarmAnimal;
+    const byId = (a: Runtime, b: Runtime) => (a.s.id < b.s.id ? -1 : a.s.id > b.s.id ? 1 : 0);
+    for (const mother of [...animals].sort(byId)) {
+      const m = mother.s;
       if (m.sex !== 'female' || m.stage === 'baby') continue;
       if (this.count(species) >= this.cap) break;
       if (m.lastBirthAt !== undefined && now - m.lastBirthAt < BIRTH_GAP_DAYS * MINUTES_PER_DAY) continue;
