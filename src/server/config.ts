@@ -154,7 +154,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   server: { host: '127.0.0.1', port: 3000 },
   persistence: { dir: './saves', slot: 'default', loadOnStart: true, autosaveGameMinutes: 60 },
   needs: { enabled: true, decayPerHour: { hunger: 6, energy: 4, social: 5, fun: 4 } },
-  player: { name: 'You', petName: 'Pip', petSpecies: 'dog' },
+  player: { name: 'You', petName: 'Pip', petSpecies: 'cat' },
   economy: { startGold: 50, eventReward: 10, taskReward: 12, itemRespawnGameMinutes: 180 },
   world: { randomWeather: false, llmStrangers: false },
   debug: false,

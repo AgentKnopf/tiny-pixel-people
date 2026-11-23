@@ -1,0 +1,40 @@
+[
+  { "id": "welcome_rug", "name": "Welcome rug", "emoji": "🟥", "cost": 6, "sprite": "deco_rug", "slot": 0 },
+  {
+    "id": "porch_cushion",
+    "name": "Porch cushion",
+    "emoji": "🪑",
+    "cost": 6,
+    "sprite": "deco_cushion",
+    "slot": 1
+  },
+  { "id": "flower_vase", "name": "Flower vase", "emoji": "🏺", "cost": 8, "sprite": "deco_vase", "slot": 2 },
+  { "id": "lanterns", "name": "Lanterns", "emoji": "🏮", "cost": 10, "sprite": "deco_lantern", "slot": 3 },
+  {
+    "id": "flower_pots",
+    "name": "Flower pots",
+    "emoji": "🪴",
+    "cost": 8,
+    "sprite": "deco_flowerpots",
+    "slot": 4
+  },
+  {
+    "id": "garden_bench",
+    "name": "Garden bench",
+    "emoji": "🪵",
+    "cost": 12,
+    "sprite": "deco_bench",
+    "slot": 5
+  },
+  {
+    "id": "string_lights",
+    "name": "String lights",
+    "emoji": "✨",
+    "cost": 15,
+    "sprite": "deco_string_lights",
+    "slot": 6
+  },
+  { "id": "mailbox", "name": "Mailbox", "emoji": "📮", "cost": 6, "sprite": "deco_mailbox", "slot": 7 },
+  { "id": "flag", "name": "Flag", "emoji": "🚩", "cost": 6, "sprite": "deco_flag", "slot": 8 },
+  { "id": "bird_bath", "name": "Bird bath", "emoji": "🐦", "cost": 10, "sprite": "deco_birdbath", "slot": 9 }
+]
