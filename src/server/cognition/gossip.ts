@@ -7,6 +7,8 @@ const NEWS_WINDOW = 24 * 60;
 
 export function isNewsworthy(m: Memory): boolean {
   if (m.meta.archived) return false;
+  // A notice read at the board is news like a door note, whatever its importance.
+  if (m.meta.noticeId) return true;
   return NEWS_KINDS.has(m.kind) || (m.kind === 'observation' && m.importance >= 6);
 }
 
@@ -31,7 +33,9 @@ export function selectNews(
     const origin = m.meta.originId ?? m.id;
     if (partnerKnows.has(origin)) continue;
     const age = (now - m.createdAt) / NEWS_WINDOW;
-    const score = m.importance * (1 - 0.5 * age);
+    // Each retelling lowers a fact's score, so one big story cannot crowd out every other one.
+    const told = m.meta.toldTo?.length ?? 0;
+    const score = (m.importance * (1 - 0.5 * age)) / (1 + 0.5 * told);
     const prev = byOrigin.get(origin);
     if (!prev || score > prev.score) byOrigin.set(origin, { m, score });
   }
