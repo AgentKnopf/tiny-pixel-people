@@ -488,6 +488,8 @@ export function needOverride(
   homeId: LocationId,
   mod: number,
   recentlyFixed: (need: keyof Needs) => boolean,
+  /** Where to eat from the villager's current position (default: the first café or bakery). */
+  food?: () => { locationId: LocationId; activity: string; emoji: string },
 ): { need: keyof Needs; block: PlanBlock } | null {
   if (current?.eventId || current?.taskId) return null;
   const order: (keyof Needs)[] = ['energy', 'hunger', 'social', 'fun'];
@@ -495,7 +497,9 @@ export function needOverride(
     if (needs[need] >= 20 || recentlyFixed(need)) continue;
     if (current && ADDRESSES[need].test(current.activity)) continue;
     const plan: Record<keyof Needs, { loc: LocationId; activity: string; emoji: string }> = {
-      hunger: { loc: foodPlace(locations)?.id ?? homeId, activity: 'grab a bite to eat', emoji: '🥐' },
+      hunger: food
+        ? (({ locationId, ...rest }) => ({ loc: locationId, ...rest }))(food())
+        : { loc: foodPlace(locations)?.id ?? homeId, activity: 'grab a bite to eat', emoji: '🥐' },
       energy: { loc: homeId, activity: 'take a nap', emoji: '😴' },
       social: {
         loc: socialPlace(locations)?.id ?? homeId,
