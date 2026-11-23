@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { at, dayOf, minuteOfDay } from '../../shared/time.ts';
+import { at, dayOf } from '../../shared/time.ts';
 import type { Point, VillagerId, VillagerProfile, WorldEvent } from '../../shared/types.ts';
 import type { StrangerTemplate } from './catalog.ts';
 import type { Ctx } from './context.ts';
@@ -8,8 +8,10 @@ import type { CommandResult } from './types.ts';
 import type { WorldEventLog } from './world-event-log.ts';
 
 export const DEFAULT_MAX_VILLAGERS = 20;
-/** Strangers leave at this time on the day they arrive (next day if they arrive later than 20:00). */
+/** Strangers leave at this time on the day they arrive. */
 export const STRANGER_LEAVES_AT = '22:00';
+/** Late arrivals (less than an hour before STRANGER_LEAVES_AT, or after it) leave at this time the next morning. */
+export const LATE_STRANGER_LEAVES_AT = '02:00';
 
 const llmStrangerSchema = z.object({
   name: z.string().min(1).max(24),
@@ -131,8 +133,7 @@ export class Strangers {
       likes: t.likes,
       transient: true,
     };
-    const leaveToday = at(dayOf(now), STRANGER_LEAVES_AT);
-    const departsAt = minuteOfDay(now) < 20 * 60 ? leaveToday : leaveToday + 1440;
+    const departsAt = departureTime(now);
     this.profiles.push(profile);
     this.ctx.host.spawnVillager(profile, this.entryPoint());
     this.log.open('stranger', departsAt, { strangerId: profile.id, name: t.name });
@@ -194,6 +195,17 @@ export class Strangers {
     }
     return { x: 0, y: 0 };
   }
+}
+
+/** End of the arrival day, or 02:00 the next morning for late arrivals. */
+export function departureTime(now: number): number {
+  const day = dayOf(now);
+  // Just after midnight counts as the same night.
+  const early = at(day, LATE_STRANGER_LEAVES_AT);
+  if (now < early) return Math.max(early, now + 30);
+  const evening = at(day, STRANGER_LEAVES_AT);
+  if (now < evening - 60) return evening;
+  return at(day + 1, LATE_STRANGER_LEAVES_AT);
 }
 
 export function strangerId(templateId: string): VillagerId {

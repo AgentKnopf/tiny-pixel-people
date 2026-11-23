@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ChatRequest, LlmQueue } from '../../../src/server/llm/types.ts';
 import { at, minuteOfDay } from '../../../src/shared/time.ts';
 import { PLAYER_ID, type DayPlan } from '../../../src/shared/types.ts';
+import { departureTime } from '../../../src/server/player/strangers.ts';
 import { advance, setup } from './fake-host.ts';
 
 function plan(): DayPlan {
@@ -111,7 +112,7 @@ describe('birthday', () => {
     const ada = host.states.find((v) => v.id === 'ada')!;
     ada.relationships = { ben: { affinity: 5 }, cy: { affinity: 3 }, dot: { affinity: 2 } };
     expect(pw.handleCommand({ type: 'world.trigger', kind: 'birthday', villagerId: 'ada' })).toEqual([]);
-    expect(host.memoriesOf('ada')[0]!.text).toBe('Today is my birthday!');
+    expect(host.memoriesOf('ada')[0]!.text).toBe("Today is my birthday! It's Ada's big day");
     for (const id of ['ben', 'cy', 'dot'])
       expect(host.memoriesOf(id)[0]!.text).toBe("Today is Ada's birthday");
     const ev = host.events[0]!;
@@ -170,11 +171,18 @@ describe('stranger', () => {
     expect(pw.strangers.profiles).toEqual([]);
   });
 
-  it('arriving late means leaving the next night; respects the 20-villager cap', () => {
+  it('late arrivals leave by 02:00 the next morning; respects the 20-villager cap', () => {
+    expect(departureTime(at(0, '09:00'))).toBe(at(0, '22:00'));
+    expect(departureTime(at(0, '21:00'))).toBe(at(1, '02:00'));
+    expect(departureTime(at(0, '23:30'))).toBe(at(1, '02:00'));
+    expect(departureTime(at(1, '00:30'))).toBe(at(1, '02:00'));
+    expect(departureTime(at(1, '01:50'))).toBe(at(1, '02:20'));
     const { host, pw } = setup();
     host.time = at(0, '21:00');
     pw.handleCommand({ type: 'world.trigger', kind: 'stranger' });
-    expect(host.of('world.event')[0]!.event.endsAt).toBe(at(1, '22:00'));
+    expect(host.of('world.event')[0]!.event.endsAt).toBe(at(1, '02:00'));
+    advance(host, pw, at(1, '02:00') - host.time, 10);
+    expect(host.removed).toHaveLength(1);
     const capped = setup();
     capped.pw.ctx.cfg.maxVillagers = 4;
     expect(capped.pw.handleCommand({ type: 'world.trigger', kind: 'stranger' })?.[0]).toMatchObject({
