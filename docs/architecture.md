@@ -107,12 +107,22 @@ _Generative Agents_ (Park et al., 2023), scaled down to small local models:
   the listener hasn't heard from it yet; facts the listener learns keep the original `originId`
   and record who they came from. This is how gossip and rumors are traced.
 - **Events.** Villagers propose events in their day plan or on request; at least one per day with
-  `events.ensureDaily`. Invitees decide with a model call; accepting inserts a plan block.
+  `events.ensureDaily` (asked from 07:00 until 15:00). Invitees decide with a model call; accepting inserts a plan block.
   Attendance counts villagers inside the area for at least half the window.
 - **Door notes.** A note waits on the door until the owner next arrives home awake, becomes an
   importance-8 memory, and gets a reply that refers to its content.
-- **Nightly.** While asleep: a day summary, pruning of old trivial observations from retrieval, and
-  the next day's plan.
+- **Next day.** In the last 90 minutes before bedtime (unless overloaded) and again overnight, the
+  villager asks for tomorrow's plan. While asleep: a day summary and pruning of old trivial
+  observations from retrieval.
+- **Load levels** (`cognition/llm.ts`, `LoadTracker`). Per queue, cognition tracks a smoothed lag
+  in game minutes from asking to answer (raised by the oldest call still waiting; it halves per
+  idle game hour). Below 12 the level is `normal`, from 12 `busy`, from 35 `overloaded`. Busy:
+  conversations of at most 4 turns with a 20-minute deadline per line and no repair round, fewer
+  conversations without news, and no LLM importance ratings, plan revisions (replaced by a 45-minute
+  "share the news" block at a social place), reflections, conversation summaries or day summaries.
+  Overloaded additionally: only conversations that carry news, at most 3 turns of canned lines
+  (which still pass on and echo the news), heuristic RSVPs, and no evening planning. Calls with a
+  deadline are aborted when the game clock passes it, and the fallback is used.
 
 ## The player world
 
@@ -152,12 +162,19 @@ _Generative Agents_ (Park et al., 2023), scaled down to small local models:
   | `mock`      | rule-based per task                    | hashed bag-of-words vectors               | always                              |
 
 - Every call names a **task** (`plan.day`, `convo.turn`, `note.reply`, `player.reply`, …). The
-  **LlmQueue** runs at most `llm.concurrency` calls at once, ordered by priority (the player's
-  replies first, then conversation turns, note replies, decisions, plans, summaries, reflections,
-  importance ratings and day summaries last). Duplicate jobs are coalesced, and jobs whose
-  `expiresAt` game time has passed before they start are dropped. Retryable errors (408, 409, 429,
-  5xx, network, timeout) are retried twice with jittered exponential backoff from 500 ms, honouring
-  `retry-after` up to 30 s. Errors are `LlmError`s of kind `network`, `http`, `timeout`, `parse`,
+  **LlmQueue** runs at most `llm.concurrency` calls at once (default 1 for `ollama`, 2 otherwise;
+  the engine also caps simultaneous villager conversations at this number), ordered by priority. The defaults are in `TASK_PRIORITY` (`llm/types.ts`); cognition overrides
+  some (`PRIORITY` in `cognition/mind.ts`). The resulting order is: player replies (110), note
+  replies (108), today's plan (105), conversation turns (100), the event proposal (95), RSVPs (92),
+  plan retries (90), player task requests (85), tomorrow's plan and plan revisions (70),
+  conversation summaries (60), importance ratings (30), reflections and day summaries (20). Waiting jobs gain +1 priority per 2 s of real
+  waiting (at most +50). Duplicate jobs are coalesced. Jobs whose `expiresAt` game time has passed
+  before they start are dropped; without an explicit `expiresAt`, background tasks get a default
+  lifetime (`DEFAULT_TASK_TTL_MINUTES` in `queue.ts`, e.g. 30 game minutes for `convo.turn`, 360
+  for `plan.day`), while player-facing tasks never expire. At most 64 jobs wait; beyond that the
+  lowest-priority one is dropped. Retryable errors (408, 409, 429, 5xx, network) are retried twice
+  with jittered exponential backoff from 500 ms, honouring `retry-after` up to 30 s; timeouts are
+  not retried. Errors are `LlmError`s of kind `network`, `http`, `timeout`, `parse`,
   `config`, `expired` (dropped before it started) or `aborted` (cancelled by the caller).
   Embeddings run in their own lane (batches of up to 16 texts, `embeddings.concurrency` in
   parallel); a permanent embeddings error (unknown model, bad key) switches retrieval to keywords

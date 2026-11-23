@@ -36,7 +36,7 @@ The village fills the window. A dark, see-through interface floats on top of it:
 | Where        | What                                                                                                                                                                                                                                                                                        |
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Top left     | The HUD: `TINY PIXEL PEOPLE`, a status badge (`LIVE`, `PAUSED`, or `CONNECTING` / `OFFLINE` when the browser lost the server), the weather, the day and the clock. The rumor tracker opens below it.                                                                                        |
-| Top right    | The stats card: `REAL MODEL CALLS` (calls · total time · tokens), your gold and up to three item counts, and how many players are online and villagers live here.                                                                                                                           |
+| Top right    | The stats card: `REAL MODEL CALLS` (calls · total time · tokens), your gold and up to three item counts, how many players are online and villagers live here, and, while calls are waiting, `N in queue · F failed`. See [Performance](setup/performance.md) for what the numbers mean.     |
 | Bottom left  | The LLM card: where the villagers think. `✈ OFFLINE` with `RUNNING ON THIS MACHINE · QWEN2.5:7B VIA OLLAMA` means a local model, no internet needed; `☁ ONLINE` means a hosted API. `⚠ MODEL UNREACHABLE` means the model doesn't answer. The last line shows how long the last reply took. |
 | Bottom       | The toolbar: `PAUSE`, zoom (`−`, fit, `+`), the speed buttons `1× 2× 4× 8×`, and the world event buttons. On narrower windows the event buttons show only their icons; hover for the name.                                                                                                  |
 | Bottom right | The dock: `Backpack`, `Map`, `Pet`, `Decorate`, `Home`, `Mail` and `Gold`.                                                                                                                                                                                                                  |
@@ -169,7 +169,8 @@ Villagers organise small events on their own: a bake-off, a picnic, a book club.
 place and a time and invites some neighbours. Each invitee decides whether to go, based on its plans
 and how much it likes the host; others hear about it through gossip and may join. When the event
 starts, the guests walk there and a banner floats over the place. If nobody has proposed an event by
-10:00, the best-suited villager is asked to (`events.ensureDaily`).
+07:00, the best-suited villager is asked to (`events.ensureDaily`), so there is time to invite
+guests even on a slow model.
 
 Go to an event yourself and stay for at least half of it to earn gold (see [Gold](#gold)).
 
@@ -265,6 +266,27 @@ letters yet, so the mailbox stays empty.
 - Saves live in `saves/<slot>/`: `world.json`, one memory file per villager in `memories/`, and
   `replay.jsonl`. Use `persistence.slot` to keep several villages side by side, for example
   `"slot": "experiment"`.
+
+## When the model is slow
+
+The village adapts on its own when the model falls behind; there is nothing to configure. It
+measures how long answers take in game time and works in one of three modes:
+
+- **Normal**: everything as described in this guide.
+- **Busy** (answers take about 12 game minutes or more): conversations are at most 4 lines and
+  mostly happen when someone has news to share. Villagers skip optional model work: no plan
+  revisions (instead, a villager with news spends 45 minutes at a meeting place to pass it on), no
+  reflections, and memories, conversations and the day are summarised by simple rules.
+- **Overloaded** (about 35 game minutes or more): only villagers with news start conversations,
+  at most 3 lines, and the lines are canned (`Did you hear? …`, `Really? …? I had no idea!`), so
+  gossip still spreads. Invitees decide about events by a simple rule (how much they like the host
+  and whether they're free).
+
+In every mode your chats and door-note replies come first, followed by today's plans for villagers
+still on a default plan. Each
+villager plans tomorrow in the evening, about 90 minutes before bedtime, while the model is less
+busy (except when overloaded). The mode recovers as soon as answers come back faster. For how to
+make a slow machine keep up, see [Performance and slow hardware](setup/performance.md).
 
 ## Tips
 

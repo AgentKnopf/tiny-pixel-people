@@ -13,6 +13,8 @@ Start with the [README](../README.md) for the one-command quick start.
 - [Ollama setup](setup/ollama.md): run local models, and which model fits your machine.
 - [Providers](setup/providers.md): OpenAI-compatible servers (OpenAI, LM Studio, vLLM, llama.cpp,
   OpenRouter, Groq), Anthropic and Gemini, with API keys in environment variables.
+- [Performance and slow hardware](setup/performance.md): models and settings for CPU-only
+  machines, and what the stats card numbers mean.
 - [Configuration reference](setup/configuration.md): every config key, default and environment
   variable.
 
