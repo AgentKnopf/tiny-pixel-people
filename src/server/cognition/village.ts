@@ -7,6 +7,7 @@ import type { GameMinutes, Memory, VillagerId, VillagerProfile } from '../../sha
 import type { LlmQueue } from '../llm/types.ts';
 import type { Embedder } from './memory.ts';
 import { LetterBudget } from './post.ts';
+import { RomanceBook } from './romance.ts';
 import { compareIds } from './rng.ts';
 
 interface MindLike {
@@ -34,6 +35,8 @@ export class Village<M extends MindLike = MindLike> {
   readonly embedder: QueueEmbedder;
   /** Villager-written letters across the town (spec v2 §8.1). */
   readonly letters = new LetterBudget();
+  /** Romance records (spec v2 §7); the engine's copies win when newer. */
+  readonly romances = new RomanceBook();
   private proposals = new Map<number, number>();
   private claims = new Map<number, VillagerId>();
   private statsLogged = new Set<number>();
