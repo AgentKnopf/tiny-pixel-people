@@ -191,6 +191,7 @@ async function main(): Promise<void> {
 
   const messages: ServerMessage[] = [];
   let lastStats: StatsMsg | null = null;
+  let lastStatus = '';
   const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
   const hello = await new Promise<HelloMessage>((res, rej) => {
     ws.on('message', (data) => {
@@ -198,9 +199,12 @@ async function main(): Promise<void> {
       if (msg.type === 'hello') res(msg);
       else if (msg.type === 'stats') lastStats = msg;
       else if (msg.type !== 'tick') messages.push(msg);
-      if (msg.type === 'sim.status')
-        log(`sim ${msg.phase}: ${msg.plansReady}/${msg.villagers} plans ready (real ${new Date().toISOString().slice(11, 19)})`);
-      else if (msg.type === 'log' && msg.text.startsWith('LLM use so far'))
+      if (msg.type === 'sim.status') {
+        // The server repeats the wakingUp status every few seconds for late-joining clients.
+        const status = `${msg.phase}: ${msg.plansReady}/${msg.villagers} plans ready`;
+        if (status !== lastStatus) log(`sim ${status} (real ${new Date().toISOString().slice(11, 19)})`);
+        lastStatus = status;
+      } else if (msg.type === 'log' && msg.text.startsWith('LLM use so far'))
         log(`server at ${formatClock(msg.time)}: ${msg.text}`);
     });
     ws.once('error', rej);
