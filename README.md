@@ -12,7 +12,7 @@ It runs fully offline with a local [Ollama](https://ollama.com), or against any 
 server (LM Studio, vLLM, llama.cpp, OpenRouter, …), Anthropic or Gemini. The provider and model are
 chosen in a config file; no code changes needed.
 
-![The village by day, with the HUD, stats card, LLM card, toolbar and dock](docs/images/screenshot.png)
+![The whole village by day: the old town, the zoo, the farm, the forest with its lake and the station, with the HUD, stats card, LLM card, toolbar and dock](docs/images/screenshot.png)
 
 ## Quick start
 

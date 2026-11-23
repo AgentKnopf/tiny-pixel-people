@@ -11,7 +11,7 @@ into their houses, start rumors, and stir things up with rain or a party.
 This guide assumes the game is running. If it isn't, see the [README](../README.md) quick start or
 [Installation](setup/installation.md).
 
-![The village with the HUD, stats card, LLM card, toolbar and dock](images/screenshot.png)
+![The whole village by day: the old town, the zoo, the farm, the forest with its lake and the station, with the HUD, stats card, LLM card, toolbar and dock](images/screenshot.png)
 
 - [The screen](#the-screen)
 - [Time and speed](#time-and-speed)
@@ -423,6 +423,8 @@ the porch. Door notes still work from outside the door.
 
 The post office stands on the post row, next to Laude's and Franzi's houses. It is open from 08:00
 to 18:00; the post box at its door takes letters at any time. Laude, the postmaster, works there.
+
+![Inside the post office: the counter, the Keep cupboard on the right, and the place bar with Open the Keep, Write a letter and Exit](images/post-office.png)
 
 ### Letters
 
