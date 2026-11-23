@@ -745,6 +745,12 @@ export class Engine implements SimEngine, SimHost {
     for (const a of [...this.active.values()]) {
       if (a.conversation.participants.includes(id)) this.endConversation(a, 'aborted');
     }
+    // Nobody steps a departed villager's mind again, so a romance between two who both left would
+    // otherwise stay open forever.
+    const now = this.now();
+    for (const r of [...this.romanceList])
+      if (r.pair.includes(id) && r.stage !== 'ended')
+        this.upsertRomance({ ...r, stage: 'ended', updatedAt: now });
     this.runtimes.delete(id);
     this.visitorsMet.delete(id);
     this.lastFrames.delete(id);
@@ -1541,6 +1547,8 @@ export class Engine implements SimEngine, SimHost {
 
   private applyIntent(rt: Runtime, intent: Intent): void {
     const s = rt.state;
+    // A boarded rider stays on for the whole cycle; the next intent applies once it ends.
+    if (this.rides.isRiding(rt.profile.id)) return;
     if (rt.doneRide) {
       const done = rt.doneRide;
       const atRide = intent.type === 'act' && s.locationId === done.rideId;
