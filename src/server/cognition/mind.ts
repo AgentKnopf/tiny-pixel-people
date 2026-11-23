@@ -205,7 +205,8 @@ export class Mind implements VillagerMind {
   private readonly planDoneAt = new Map<number, number>();
   /** Day of the plan.day job in flight at planToday priority, if any. */
   private urgentPlanDay: number | null = null;
-  private readonly needFixedAt: Partial<Record<keyof Needs, GameMinutes>> = {};
+  /** End (game minutes) of the latest override block per need. */
+  private readonly needFixUntil: Partial<Record<keyof Needs, GameMinutes>> = {};
   private readonly lastTalkedAt = new Map<VillagerId, GameMinutes>();
   private lastArchiveDay = -1;
   private eventRequested = false;
@@ -1297,14 +1298,17 @@ export class Mind implements VillagerMind {
         view.locations,
         this.profile.homeId,
         mod,
-        (need) => {
-          const at = this.needFixedAt[need];
-          return at !== undefined && view.now - at < 120;
-        },
+        // Only while its override block runs: a need still critical once the block is over (the
+        // villager went back to work half fed) gets a fresh override at once.
+        (need) => view.now < (this.needFixUntil[need] ?? -Infinity),
         () => nearestFood(view.locations, this.profile.homeId, view.self.pos, mod, this.zooHours()),
+        (id) => {
+          const l = view.locations.find((x) => x.id === id);
+          return l ? Math.abs(l.entry.x - view.self.pos.x) + Math.abs(l.entry.y - view.self.pos.y) : Infinity;
+        },
       );
       if (o) {
-        this.needFixedAt[o.need] = view.now;
+        this.needFixUntil[o.need] = view.now - mod + o.block.end;
         this.setPlan({
           ...this.plan,
           blocks: normalizeBlocks(insertBlock(this.plan.blocks, o.block), this.window, this.profile.homeId),

@@ -1,0 +1,4 @@
+{
+  "crow": { "name": "Quill" },
+  "forest": { "deer": 3, "rabbit": 5, "squirrel": 4, "hedgehog": 2, "fox": 2, "bird": 6, "duck": 5 }
+}

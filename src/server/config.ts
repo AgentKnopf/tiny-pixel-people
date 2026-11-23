@@ -216,7 +216,7 @@ export const DEFAULT_CONFIG: AppConfig = {
     concurrency: 1,
   },
   sim: {
-    villagers: 10,
+    villagers: 12,
     dayLengthMinutes: 15,
     startTime: '06:00',
     speed: 1,
