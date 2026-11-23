@@ -407,6 +407,15 @@ describe('http error mapping', () => {
     expect(await ask('junk')).toMatchObject({ kind: 'parse' });
   });
 
+  it('closes the connection on timeout so the server can cancel generation', async () => {
+    const s = await fake(() => ({ delayMs: 1000, body: {} }));
+    const p = new OllamaChatProvider({ baseUrl: s.url, model: 'm', timeoutMs: 50 });
+    const started = Date.now();
+    await expect(p.chat({ task: 'reflect', messages: [] })).rejects.toMatchObject({ kind: 'timeout' });
+    expect(Date.now() - started).toBeLessThan(500);
+    expect(await s.waitForClientAbort(500)).toBe(true);
+  });
+
   it('maps a caller abort to an aborted error', async () => {
     const s = await fake(() => ({ delayMs: 500, body: {} }));
     const ctrl = new AbortController();
