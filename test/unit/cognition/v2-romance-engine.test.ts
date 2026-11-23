@@ -21,6 +21,16 @@ const romances = (w: TestWorld): Romance[] => w.state().romances ?? [];
 const between = (w: TestWorld, a: string, b: string) =>
   romances(w).find((r) => r.pair.includes(a) && r.pair.includes(b) && r.stage !== 'ended');
 
+const crush = (a: string, b: string): Romance => ({
+  id: `romance-${[a, b].sort().join('-')}`,
+  pair: [a, b].sort() as [string, string],
+  stage: 'crush',
+  since: 0,
+  crushFrom: [a],
+  dates: [],
+  updatedAt: 0,
+});
+
 async function days(w: TestWorld, n: number, each?: (day: number) => void): Promise<void> {
   for (let d = 0; d < n; d++) {
     await w.advanceTo('23:59', { chunk: 5 });
@@ -148,5 +158,98 @@ describe.skipIf(!ready(...FEATURES) || !STORES_ROMANCE)(
       expect(w.errors()).toEqual([]);
       w.dispose();
     }, 180_000);
+    // Skipped until the engine counts riders as attending an event at their ride (WP2).
+    it.skip('a date at a ride counts when both ride together', async () => {
+      const w = await createTestWorld({
+        villagers: 12,
+        startAt: '06:00',
+        affinities: mutualAffinity('sam', 'ivy', 7),
+        patchSave: (s) => {
+          s.romances = [...(s.romances ?? []), crush('sam', 'ivy')];
+        },
+      });
+      w.provider.setScript('date.ask', (req) => {
+        const venues = (req.meta?.venues ?? []) as { id: string; name: string }[];
+        const ride = venues.find((v) => w.location(v.id)?.kind === 'ride') ?? venues[0]!;
+        return JSON.stringify({
+          text: `Ride the ${ride.name} with me?`,
+          locationId: ride.id,
+          start: '17:00',
+        });
+      });
+      await days(w, 2);
+      const rideDates = w
+        .state()
+        .events.filter(
+          (e) => e.kind === 'date' && e.hostId === 'sam' && w.location(e.locationId)?.kind === 'ride',
+        );
+      expect(rideDates.length).toBeGreaterThan(0);
+      const both = rideDates.filter((e) => e.attendees.includes('sam') && e.attendees.includes('ivy'));
+      expect(both.length, JSON.stringify(rideDates.map((e) => [e.locationId, e.attendees]))).toBeGreaterThan(
+        0,
+      );
+      const r = between(w, 'sam', 'ivy')!;
+      expect(
+        r.dates.filter((d) => both.some((e) => e.id === d.eventId)).every((d) => d.status === 'done'),
+      ).toBe(true);
+      w.dispose();
+    }, 120_000);
+
+    it('a partner who never comes makes the date missed and costs the waiter 1 affinity', async () => {
+      const start = 10 * 60;
+      const w = await createTestWorld({
+        villagers: 12,
+        startAt: '06:00',
+        affinities: mutualAffinity('sam', 'ivy', 7),
+        patchSave: (s) => {
+          // Ivy never accepted, so she has no plan block for it; Sam goes and waits.
+          s.events.push({
+            id: 'date-sam-ivy-control',
+            title: 'Date at the park',
+            description: 'A walk in the park?',
+            hostId: 'sam',
+            locationId: 'park',
+            start,
+            end: start + 90,
+            invitees: ['ivy'],
+            accepted: [],
+            declined: [],
+            attendees: [],
+            status: 'scheduled',
+            source: 'llm',
+            kind: 'date',
+          });
+          s.romances = [
+            ...(s.romances ?? []),
+            {
+              ...crush('sam', 'ivy'),
+              stage: 'dating',
+              dates: [
+                {
+                  eventId: 'date-sam-ivy-control',
+                  locationId: 'park',
+                  at: start,
+                  askedBy: 'sam',
+                  status: 'planned',
+                  source: 'llm',
+                },
+              ],
+            },
+          ];
+        },
+      });
+      // No new dates during the control.
+      w.provider.setScript('date.decide', () => JSON.stringify({ accept: false, reply: 'Not today.' }));
+      await w.advanceTo('13:00');
+      const e = w.state().events.find((x) => x.id === 'date-sam-ivy-control')!;
+      expect(e.attendees).toContain('sam');
+      expect(e.attendees).not.toContain('ivy');
+      const rec = between(w, 'sam', 'ivy')!.dates.find((d) => d.eventId === e.id)!;
+      expect(rec.status).toBe('missed');
+      expect(w.villager('sam').relationships.ivy!.affinity).toBe(6);
+      expect(w.villager('ivy').relationships.sam!.affinity).toBe(7);
+      expect(w.memories('sam').some((m) => /never came to our date/.test(m.text))).toBe(true);
+      w.dispose();
+    }, 120_000);
   },
 );
