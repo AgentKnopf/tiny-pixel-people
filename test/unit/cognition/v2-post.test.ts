@@ -175,6 +175,24 @@ describe("Laude's Keep (v2)", () => {
     ).toBe(false);
   }, 30_000);
 
+  it('forgets a log memory exactly a day after it was written, not at the next hourly sweep', async () => {
+    const v = createTestVillage({ start: at(0, '09:00'), profiles: [LAUDE], locations: V2_LOCATIONS });
+    await v.advanceTo(at(0, '09:31'));
+    const laude = v.minds.get('laude')!;
+    laude.observe({
+      at: v.time.now,
+      kind: 'note',
+      text: 'Mia pinned a note on the board about the harvest',
+      importance: 3,
+      meta: { keepId: 'k-late' },
+    });
+    const log = laude.memory.all().find((m) => m.meta.keepId === 'k-late')!;
+    await v.advanceTo(at(1, '09:00'), 30);
+    await v.advanceTo(at(1, '09:30'));
+    expect(log.meta.archived).toBeFalsy();
+    await v.advanceTo(at(1, '09:31'));
+    expect(log.meta.archived).toBe(true);
+  }, 30_000);
   it('writes in the Keep for 5 minutes at the post office when an entry arrives', async () => {
     const v = createTestVillage({ start: at(0, '10:00'), profiles: [LAUDE], locations: V2_LOCATIONS });
     await v.advanceTo(at(0, '10:01'));
