@@ -40,7 +40,7 @@ export const DEFAULT_SETTINGS: CognitionSettings = {
   maxConversationGameMinutes: 60,
   importanceBatchSize: 8,
   ensureDailyEvent: true,
-  ensureDailyAt: 600,
+  ensureDailyAt: 420,
   maxProposalsPerDay: 2,
   needsEnabled: true,
   temperature: 0.7,

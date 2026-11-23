@@ -39,9 +39,9 @@ export function planDayPrompt(i: PlanPromptInput): { system: string; user: strin
     needsLine(i.needs),
     weatherLine(i.weather),
     `Places (use these ids): ${locationLines(i.locations, i.profile.homeId)}`,
-    `Write 5-8 blocks covering the whole day in order, with 24h times "HH:MM".`,
+    `Write 5-7 blocks covering the whole day in order, with 24h times "HH:MM". Each block is ["start","end","place id","short activity"].`,
     i.allowProposal && EVENT_HINT,
-    `Example: {"summary":"Bake bread and see friends","blocks":[{"start":"07:00","end":"11:00","location":"bakery","activity":"bake bread","emoji":"🍞"}]}`,
+    `Example: {"summary":"Bake bread and see friends","blocks":[["07:00","11:00","bakery","bake bread"],["11:00","12:00","cafe","lunch with friends"]]}`,
   );
   return { system: systemFor(i.profile), user };
 }
@@ -68,7 +68,8 @@ export function planRevisePrompt(i: RevisePromptInput): { system: string; user: 
     weatherLine(i.weather),
     `Places (use these ids): ${locationLines(i.locations, i.profile.homeId)}`,
     `Rewrite the plan from ${formatClock(i.now)} to ${formatClock(i.endOfDay)} (2-5 blocks). Keep events you agreed to.`,
-    `Example: {"summary":"...","blocks":[{"start":"${formatClock(i.now)}","end":"${formatClock(Math.min(i.endOfDay, i.now + 60))}","location":"square","activity":"tell friends the news","emoji":"💬"}]}`,
+    `Each block is ["start","end","place id","short activity"].`,
+    `Example: {"summary":"...","blocks":[["${formatClock(i.now)}","${formatClock(Math.min(i.endOfDay, i.now + 60))}","square","tell friends the news"]]}`,
   );
   return { system: systemFor(i.profile), user };
 }

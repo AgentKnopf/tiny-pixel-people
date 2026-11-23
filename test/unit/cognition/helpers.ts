@@ -4,6 +4,7 @@ import type {
   ChatRequest,
   ChatResponse,
   EmbeddingProvider,
+  EnqueueOptions,
   LlmQueue,
   LlmTask,
 } from '../../../src/server/llm/types.ts';
@@ -38,9 +39,19 @@ export class DirectQueue implements LlmQueue {
     return this.embeddings !== null;
   }
 
-  enqueue(req: ChatRequest): Promise<ChatResponse> {
+  readonly priorities = new Map<ChatRequest, number | undefined>();
+
+  enqueue(req: ChatRequest, opts?: EnqueueOptions): Promise<ChatResponse> {
     this.requests.push(req);
-    return this.track(this.chat.chat(req));
+    this.priorities.set(req, opts?.priority);
+    const signal = req.signal;
+    if (!signal) return this.track(this.chat.chat(req));
+    // Like the real queue: an aborted caller stops waiting for the provider.
+    const aborted = new Promise<never>((_, reject) => {
+      if (signal.aborted) reject(new Error('aborted'));
+      signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+    });
+    return this.track(Promise.race([this.chat.chat(req), aborted]));
   }
 
   embed(texts: string[]): Promise<number[][] | null> {
