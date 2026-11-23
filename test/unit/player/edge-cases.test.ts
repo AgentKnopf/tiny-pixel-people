@@ -114,6 +114,10 @@ describe('save / restore of all player state', () => {
       stock: saved.stock,
       hotel: saved.hotel,
       visitors: saved.visitors,
+      houseVisits: saved.houseVisits,
+      letters: saved.letters,
+      notices: saved.notices,
+      keepSize: saved.keep.length,
     });
   });
 

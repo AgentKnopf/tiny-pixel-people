@@ -3,10 +3,10 @@ import { P } from './palette.ts';
 
 /**
  * Animal sprite sheets (side view). Every sheet: 2 rows (0 = facing left, 1 = facing right) ×
- * 6 columns (0-1 idle, 2-5 walk). The crow has extra columns, see CROW_FRAMES.
+ * 7 columns (0-1 idle, 2-5 walk, 6 sleep). The crow has extra columns, see CROW_FRAMES.
  */
 export const ANIMAL_ROWS = ['left', 'right'] as const;
-export const ANIMAL_FRAMES = { idle: [0, 1], walk: [2, 3, 4, 5] } as const;
+export const ANIMAL_FRAMES = { idle: [0, 1], walk: [2, 3, 4, 5], sleep: [6] } as const;
 const COLS = 6;
 
 type Px = (x: number, y: number, c: Color) => void;
@@ -42,16 +42,37 @@ function frameCanvas(spec: AnimalSpec, frame: number): PixelCanvas {
   return c;
 }
 
+/** Sleep frame: idle frame 0 with the body lowered onto the legs. */
+function sleepFrame(spec: AnimalSpec): PixelCanvas {
+  const src = frameCanvas(spec, 0);
+  const out = new PixelCanvas(spec.w, spec.h);
+  const drop = Math.max(1, Math.round(spec.h / 8));
+  const ground = spec.h - 2;
+  for (let y = ground; y >= 0; y--)
+    for (let x = 0; x < spec.w; x++) {
+      const c = src.get(x, y);
+      if (!c[3]) continue;
+      const ny = y >= ground - 1 ? y : Math.min(ground - 1, y + drop);
+      out.set(x, ny, c);
+    }
+  return out;
+}
+
 export function drawAnimalSheet(spec: AnimalSpec, cols = COLS): PixelCanvas {
-  const sheet = new PixelCanvas(spec.w * cols, spec.h * 2);
-  for (let f = 0; f < cols; f++) {
-    const right = frameCanvas(spec, f);
+  const sheet = new PixelCanvas(spec.w * (cols + 1), spec.h * 2);
+  for (let f = 0; f <= cols; f++) {
+    const right = f === cols ? sleepFrame(spec) : frameCanvas(spec, f);
     sheet.blit(mirror(right), f * spec.w, 0);
     sheet.blit(right, f * spec.w, spec.h);
   }
+  // drawn after mirroring so the "z" reads the right way round in both rows
+  for (const [row, zx] of [
+    [0, 2],
+    [1, spec.w - 5],
+  ] as const)
+    sheet.pattern(cols * spec.w + zx, row * spec.h, ['###', '..#', '.#.', '###'], { '#': P.white });
   return sheet;
 }
-
 /** Walk leg offset for leg pair `pair` (0/1) at frame f; idle frames stand still. */
 function legShift(f: number, pair: number): number {
   if (f < 2) return 0;
@@ -765,18 +786,40 @@ const duck = (): AnimalSpec => ({
   },
 });
 
-/** The post office crow: columns 0-1 idle, 2-4 hop, 5-6 caw (beak open). */
-export const CROW_FRAMES = { idle: [0, 1], hop: [2, 3, 4], caw: [5, 6] } as const;
+/** The post office crow: 0-1 idle, 2-4 hop, 5-6 caw (beak open), 7-10 flying, 11 sleep. */
+export const CROW_COLS = 11;
+export const CROW_FRAMES = {
+  idle: [0, 1],
+  hop: [2, 3, 4],
+  caw: [5, 6],
+  fly: [7, 8, 9, 10],
+  sleep: [11],
+} as const;
 export const crow = (): AnimalSpec => ({
   key: 'crow',
   w: 16,
   h: 16,
-  description: 'the post office crow; idle, hop and caw frames',
+  description: 'the post office crow; idle, hop, caw, fly and sleep frames',
   draw: (b, f) => {
-    const lift = f === 3 ? -3 : f === 2 || f === 4 ? -1 : 0;
-    const g = 14 + lift;
     const blk = '#22222e';
     const sheen = '#4a4a6a';
+    if (f >= 7) {
+      // flying: body level, legs tucked, wings cycle up / mid / down / mid
+      const g = 9 + (f === 9 ? 1 : 0);
+      for (let i = 0; i < 3; i++) b.rect(1 + i, g - 1 + Math.floor(i / 2), 1, 2, blk);
+      b.ellipse(8, g, 4, 2, blk);
+      b.ellipse(12, g - 1, 2, 2, blk);
+      b.set(12, g - 2, '#f2f2f2');
+      b.rect(14, g - 1, 2, 1, '#5a5a5a');
+      const wing = [-5, -2, 2, -2][f - 7]!;
+      if (wing < 0) {
+        b.rect(6, g + wing, 4, -wing, sheen);
+        b.rect(5, g + wing, 2, 1, blk);
+      } else b.rect(6, g + 1, 4, wing + 1, sheen);
+      return;
+    }
+    const lift = f === 3 ? -3 : f === 2 || f === 4 ? -1 : 0;
+    const g = 14 + lift;
     for (let i = 0; i < 3; i++) b.rect(2 + i, g - 4 + Math.floor(i / 2), 1, 2, blk);
     b.ellipse(8, g - 4, 3.6, 2.6, blk);
     b.ellipse(7, g - 4.5, 2.4, 1.3, sheen);
