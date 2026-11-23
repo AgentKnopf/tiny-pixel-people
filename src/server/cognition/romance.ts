@@ -318,7 +318,9 @@ export class RomanceAgent {
       if (id === me || !this.present(id, view) || !this.eligible(id)) continue;
       if (rel.affinity < (this.cfg?.crushAffinity ?? 6)) continue;
       const theirs = this.book.of(id).filter(isActive);
-      if (theirs.some((r) => r.stage === 'couple' && !r.pair.includes(me))) continue;
+      // Someone dating or partnered with another villager is not eligible (§7: one partner).
+      if (theirs.some((r) => (r.stage === 'couple' || r.stage === 'dating') && !r.pair.includes(me)))
+        continue;
       if (this.talks(id, since) < CRUSH_TALKS) continue;
       if (!best || rel.affinity > best.a || (rel.affinity === best.a && id < best.id))
         best = { id, a: rel.affinity };
@@ -569,9 +571,11 @@ export class RomanceAgent {
     const affinity = this.affinityOf(this.mind.id, asker);
     const askerName = this.mind.nameOf(asker, view);
     const now = this.mind.deps.now();
-    // Hard rules, no model call: one date at a time, and one partner.
+    // Hard rules, no model call: one date at a time, one partner, and not while I have a crush on
+    // someone else.
     const taken = this.records(view).some(
-      (r) => isActive(r) && r.stage !== 'crush' && !r.pair.includes(asker),
+      (r) =>
+        isActive(r) && !r.pair.includes(asker) && (r.stage !== 'crush' || r.crushFrom.includes(this.mind.id)),
     );
     if (taken || (view && this.dateOverlaps(view, start, start + DATE_MINUTES))) {
       this.mind.addMemory({

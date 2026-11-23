@@ -2,7 +2,13 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { PLAYER_ID, type Memory, type Point } from '../../../src/shared/types.ts';
-import { NEWS_FAIR_SHARE, isNewsworthy, selectNews } from '../../../src/server/cognition/gossip.ts';
+import {
+  NEWS_FAIR_SHARE,
+  isNewsworthy,
+  newsText,
+  retoldText,
+  selectNews,
+} from '../../../src/server/cognition/gossip.ts';
 import { ready, SIM_FEATURES, waitingFor } from '../../helpers/features.ts';
 import { createTestWorld, type TestWorld } from '../../helpers/world.ts';
 
@@ -38,6 +44,12 @@ describe('news selection', () => {
     expect(isNewsworthy(notice())).toBe(true);
     expect(isNewsworthy(mem('observation', 'Mia is walking by.', 420, 5))).toBe(false);
   });
+  it('a retold notice reads as news about the board, not as the listener reading it', () => {
+    const n = notice();
+    expect(newsText(n)).toBe('There is a notice on the board: Lost: a green umbrella.');
+    expect(retoldText(n.text)).toBe('There is a notice on the board: Lost: a green umbrella.');
+    expect(retoldText('Mia baked rye bread.')).toBe('Mia baked rye bread.');
+  });
 
   it('an earlier fact keeps its place until told to a few villagers; musings never jump the queue', () => {
     const n = notice();
@@ -46,7 +58,8 @@ describe('news selection', () => {
       mem('event', 'I attended the bake-off.', 1020, 6),
       mem('reflection', 'I keep thinking about the bake-off.', 1030, 8),
     ];
-    expect(selectNews([n, ...fresh], 'ben', 1040, 1)[0]).toBe(n);
+    const kinds = (ms: Memory[]) => ms.map((m) => m.meta.noticeId ?? m.kind);
+    expect(kinds(selectNews([n, ...fresh], 'ben', 1040, 4))).toEqual(['n1', 'heard', 'event', 'reflection']);
 
     n.meta.toldTo = ['leo'];
     expect(selectNews([n, ...fresh], 'ben', 1040, 1)[0]).toBe(n);
@@ -61,20 +74,30 @@ describe('news selection', () => {
     expect(after.indexOf(n)).toBeGreaterThan(after.findIndex((m) => m.kind === 'event'));
   });
 
-  it('queues a fact by when it was first known, not by its freshest copy', () => {
+  it('queues a fact by when it was first known; Keep-only facts wait behind the rest, by importance', () => {
+    const trivia = [0, 1, 2, 3].map((i) =>
+      mem('note', `📒 Note ${i}: the milk is late again.`, 300 + i * 10, 4, { keepId: `k${i}` }),
+    );
     // Laude logged the notice in the Keep at 06:36 and read it on the board himself at 10:33.
     const keep = mem('note', '📒 Notice by You: Lost: a green umbrella.', 396, 4, {
       originId: 'n1',
-      keepId: 'k1',
+      keepId: 'kn',
     });
     const read = mem('observation', 'The notice board says: Lost: a green umbrella.', 633, 5, {
       noticeId: 'n1',
       originId: 'n1',
     });
-    const invite = mem('event', 'Mia invited me to the bake-off.', 500, 6);
-    const picked = selectNews([keep, read, invite], 'nora', 739, 3);
-    expect(picked[0]).toBe(read);
-    expect(picked[1]).toBe(invite);
+    const rumor = mem('heard', 'Ben told me: the mayor is retiring.', 700, 7, {
+      heardFrom: 'ben',
+      originId: 'r1',
+    });
+    // Laude logged a rumor later than the trivia: among Keep-only facts importance decides.
+    const logged = mem('heard', '📒 Rumor: Somebody hid a silver trumpet.', 500, 5, {
+      keepId: 'kr',
+      originId: 'r2',
+    });
+    const picked = selectNews([...trivia, keep, read, rumor, logged], 'nora', 739, 3);
+    expect(picked).toEqual([read, rumor, logged]);
   });
   it('copies of one fact count tellings together', () => {
     const n = notice();
