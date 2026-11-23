@@ -283,7 +283,10 @@ describe('villagers on rides', () => {
     engine.onMessage((m) => {
       if (m.type !== 'tick') return;
       for (const f of m.villagers) {
-        if (['mia', 'tom', 'lily'].includes(f.id) && /riding the rollercoaster|watching the rides/i.test(f.activity))
+        if (
+          ['mia', 'tom', 'lily'].includes(f.id) &&
+          /riding the rollercoaster|watching the rides/i.test(f.activity)
+        )
           (statuses.get(f.id) ?? statuses.set(f.id, new Set()).get(f.id)!).add(`${f.status}:${f.activity}`);
       }
     });
@@ -294,8 +297,12 @@ describe('villagers on rides', () => {
       expect([...(statuses.get(id) ?? [])], id).toContain('acting:riding the Rollercoaster');
       expect(engine.villager(id)!.needs.fun, id).toBeGreaterThanOrEqual(10 + 35);
     }
-    const boardings = rides.flatMap((m) => (m.type === 'ride.updated' && m.ride.status === 'running' ? m.ride.riders : []));
+    const boardings = rides.flatMap((m) =>
+      m.type === 'ride.updated' && m.ride.status === 'running' ? m.ride.riders : [],
+    );
     for (const id of ['mia', 'tom', 'lily']) expect(new Set(boardings).has(id)).toBe(true);
-    expect(engine.snapshot().rides!.find((r) => r.locationId === 'rollercoaster')).toMatchObject({ queue: [] });
+    expect(engine.snapshot().rides!.find((r) => r.locationId === 'rollercoaster')).toMatchObject({
+      queue: [],
+    });
   });
 });
