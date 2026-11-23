@@ -16,15 +16,34 @@ import {
   drawCharacterSheet,
   drawPetSheet,
 } from './characters.ts';
-import { ICON, ICONS, drawGlow, drawIcon } from './icons.ts';
+import { ICON, ICONS as ICONS_V1, drawGlow, drawIcon } from './icons.ts';
+import { ICONS_V2 } from './icons-v2.ts';
 import { buildVillage, type MapBuilder } from './map.ts';
 import type { ItemDef, WorldMap } from '../../src/shared/types.ts';
 import { encodePng } from './png.ts';
+import { ANIMALS, ANIMAL_FRAMES, ANIMAL_ROWS, CROW_FRAMES, crow, drawAnimalSheet } from './animals.ts';
+import { buildVillageV2 } from './map-v2.ts';
+import {
+  CAROUSEL_FRAMES,
+  FERRIS_FRAMES,
+  TRAIN_PIECE,
+  TRAIN_ROWS,
+  drawCarouselSheet,
+  drawCoasterCarSheet,
+  drawFerrisSheet,
+  drawIceCreamSheet,
+  drawTrainSheet,
+} from './rides.ts';
 import { TILE, buildAtlas, type TileAtlas } from './tiles.ts';
+import { extendAtlasV2 } from './v2-tiles.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const TILE_COLUMNS = 16;
 const ICON_COLUMNS = 8;
+const dupIcons = Object.keys(ICONS_V2).filter((n) => n in ICONS_V1);
+if (dupIcons.length) throw new Error(`duplicate icons ${dupIcons.join(', ')}`);
+/** v2 icons come after the v1 ones so existing icon indices stay stable. */
+const ICONS = { ...ICONS_V1, ...ICONS_V2 };
 
 export type ArtFiles = Map<string, string | Buffer>;
 
@@ -100,6 +119,7 @@ function renderMap(
 export function buildArt(): ArtFiles {
   files = new Map();
   const atlas = buildAtlas();
+  extendAtlasV2(atlas);
   const { builder: m, scenes, itemSpawns, decorations } = buildVillage(atlas);
 
   // tileset
@@ -270,6 +290,170 @@ export function buildArt(): ArtFiles {
       .crop(home.x * TILE, home.y * TILE, home.w * TILE, home.h * TILE)
       .scaled(4),
   );
+
+  // v2 map (128×60): v1 town unchanged plus the new districts
+  const v2 = buildVillageV2(atlas);
+  const m2 = v2.builder;
+  const toIds2 = (layer: (string | null)[]) => layer.map((n) => (n ? atlas.id(n) : -1));
+  write(
+    'assets/maps/village-v2.json',
+    mapJson({
+      width: m2.width,
+      height: m2.height,
+      tileSize: TILE,
+      tilesets: [{ image: 'tiles/village.png', tileSize: TILE, columns: TILE_COLUMNS, firstIndex: 0 }],
+      layers: {
+        ground: toIds2(m2.layers.ground),
+        decor: toIds2(m2.layers.decor),
+        overhead: toIds2(m2.layers.overhead),
+      },
+      collision: m2.collision,
+      locations: v2.locations,
+      scenes: v2.scenes,
+      itemSpawns: v2.itemSpawns,
+      districts: v2.districts,
+    }),
+  );
+  write(
+    'assets/maps/village-v2.meta.json',
+    json({
+      note: 'Companion of village-v2.json; same shape as village.meta.json.',
+      lights: m2.lights,
+      decorations: v2.decorations,
+      items,
+      pet: { name: 'Pip', species: 'cat', sprite: 'characters/pet-pip.png' },
+    }),
+  );
+  // animals
+  const animalSheets: { key: string; sheet: PixelCanvas }[] = [];
+  const animalIndex = ANIMALS.map(({ group, species, age, spec }) => {
+    const sheet = drawAnimalSheet(spec);
+    animalSheets.push({ key: spec.key, sheet });
+    writePng(`assets/animals/${spec.key}.png`, sheet);
+    return {
+      key: spec.key,
+      group,
+      species,
+      ...(age ? { age } : {}),
+      sprite: `animals/${spec.key}.png`,
+      frameWidth: spec.w,
+      frameHeight: spec.h,
+      anchor: { x: spec.w / 2, y: spec.h - 2 },
+      description: spec.description,
+    };
+  });
+  const crowSpec = crow();
+  const crowSheet = drawAnimalSheet(crowSpec, 7);
+  animalSheets.push({ key: 'crow', sheet: crowSheet });
+  writePng('assets/animals/crow.png', crowSheet);
+  write(
+    'assets/animals/index.json',
+    json({
+      note: 'Side-view sheets: row 0 faces left, row 1 faces right; columns per "frames". Anchor = feet.',
+      rows: ANIMAL_ROWS,
+      frames: ANIMAL_FRAMES,
+      fps: { idle: 2, walk: 6 },
+      animals: [
+        ...animalIndex,
+        {
+          key: 'crow',
+          group: 'crow',
+          species: 'crow',
+          sprite: 'animals/crow.png',
+          frameWidth: crowSpec.w,
+          frameHeight: crowSpec.h,
+          anchor: { x: crowSpec.w / 2, y: crowSpec.h - 2 },
+          frames: CROW_FRAMES,
+          description: crowSpec.description,
+        },
+      ],
+    }),
+  );
+
+  // vehicles and rides
+  const train = drawTrainSheet();
+  const coasterCar = drawCoasterCarSheet();
+  const ferris = drawFerrisSheet();
+  const carousel = drawCarouselSheet();
+  const iceCream = drawIceCreamSheet();
+  writePng('assets/vehicles/train.png', train);
+  writePng('assets/vehicles/coaster-car.png', coasterCar);
+  writePng('assets/vehicles/ice-cream-truck.png', iceCream);
+  writePng('assets/rides/ferris-wheel.png', ferris);
+  writePng('assets/rides/carousel.png', carousel);
+  write(
+    'assets/vehicles/index.json',
+    json({
+      train: {
+        sprite: 'vehicles/train.png',
+        frameWidth: TRAIN_PIECE.w,
+        frameHeight: TRAIN_PIECE.h,
+        frames: 2,
+        rows: [...TRAIN_ROWS.map((r) => `${r}_left`), ...TRAIN_ROWS.map((r) => `${r}_right`)],
+        note: 'Draw engine then 3 carriages; bottom of the frame sits on the bottom of the rail row. Arriving trains move west (rows *_left).',
+      },
+      coasterCar: {
+        sprite: 'vehicles/coaster-car.png',
+        frameWidth: 16,
+        frameHeight: 16,
+        columns: ['east', 'south', 'west', 'north'],
+      },
+      iceCreamTruck: { sprite: 'vehicles/ice-cream-truck.png', frameWidth: 32, frameHeight: 16, frames: 2 },
+      ferrisWheel: {
+        sprite: 'rides/ferris-wheel.png',
+        frameWidth: ferris.width / FERRIS_FRAMES,
+        frameHeight: ferris.height,
+        frames: FERRIS_FRAMES,
+        object: 'ferris_wheel',
+        note: 'Loop frames over the ferris_wheel map object (same size and origin).',
+      },
+      carousel: {
+        sprite: 'rides/carousel.png',
+        frameWidth: carousel.width / CAROUSEL_FRAMES,
+        frameHeight: carousel.height,
+        frames: CAROUSEL_FRAMES,
+        object: 'carousel',
+      },
+    }),
+  );
+  {
+    const gap = 4;
+    const rows = animalSheets.map((a) => a.sheet);
+    const wMax = Math.max(...rows.map((s) => s.width));
+    const pv = new PixelCanvas(wMax * 2 + gap * 3, 0 + 1);
+    void pv;
+    const half = Math.ceil(rows.length / 2);
+    const colH = (list: PixelCanvas[]) => list.reduce((s, r) => s + r.height + gap, gap);
+    const left = rows.slice(0, half);
+    const right = rows.slice(half);
+    const out = new PixelCanvas(wMax * 2 + gap * 3, Math.max(colH(left), colH(right)));
+    out.rect(0, 0, out.width, out.height, '#85aa4e');
+    let y = gap;
+    for (const s of left) {
+      out.blit(s, gap, y);
+      y += s.height + gap;
+    }
+    y = gap;
+    for (const s of right) {
+      out.blit(s, wMax + gap * 2, y);
+      y += s.height + gap;
+    }
+    writePng('docs/art/animals-x3.png', out.scaled(3));
+    const rides = new PixelCanvas(
+      Math.max(train.width + coasterCar.width + iceCream.width + 16, ferris.width),
+      train.height + ferris.height + carousel.height + 16,
+    );
+    rides.rect(0, 0, rides.width, rides.height, '#85aa4e');
+    rides.blit(train, 0, 0);
+    rides.blit(coasterCar, train.width + 8, 0);
+    rides.blit(iceCream, train.width + 8, 24);
+    rides.blit(ferris, 0, train.height + 8);
+    rides.blit(carousel, 0, train.height + ferris.height + 12);
+    writePng('docs/art/vehicles-rides-x2.png', rides.scaled(2));
+  }
+
+  writePng('docs/art/map-v2-day.png', renderMap(atlas, m2, false, []));
+  writePng('docs/art/map-v2-night.png', renderMap(atlas, m2, true, []));
 
   return files;
 }

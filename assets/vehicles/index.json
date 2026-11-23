@@ -1,0 +1,51 @@
+{
+  "train": {
+    "sprite": "vehicles/train.png",
+    "frameWidth": 64,
+    "frameHeight": 32,
+    "frames": 2,
+    "rows": [
+      "engine_left",
+      "carriage_red_left",
+      "carriage_green_left",
+      "carriage_blue_left",
+      "engine_right",
+      "carriage_red_right",
+      "carriage_green_right",
+      "carriage_blue_right"
+    ],
+    "note": "Draw engine then 3 carriages; bottom of the frame sits on the bottom of the rail row. Arriving trains move west (rows *_left)."
+  },
+  "coasterCar": {
+    "sprite": "vehicles/coaster-car.png",
+    "frameWidth": 16,
+    "frameHeight": 16,
+    "columns": [
+      "east",
+      "south",
+      "west",
+      "north"
+    ]
+  },
+  "iceCreamTruck": {
+    "sprite": "vehicles/ice-cream-truck.png",
+    "frameWidth": 32,
+    "frameHeight": 16,
+    "frames": 2
+  },
+  "ferrisWheel": {
+    "sprite": "rides/ferris-wheel.png",
+    "frameWidth": 96,
+    "frameHeight": 112,
+    "frames": 8,
+    "object": "ferris_wheel",
+    "note": "Loop frames over the ferris_wheel map object (same size and origin)."
+  },
+  "carousel": {
+    "sprite": "rides/carousel.png",
+    "frameWidth": 80,
+    "frameHeight": 80,
+    "frames": 6,
+    "object": "carousel"
+  }
+}
