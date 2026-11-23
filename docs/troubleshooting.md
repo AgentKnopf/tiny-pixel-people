@@ -42,8 +42,8 @@ restarting the server.
 runs, but villagers use simple default plans and don't talk. Check, depending on the
 provider:
 
-- Ollama: is it running? The log says `… cannot reach server (ECONNREFUSED). Is Ollama running?
-Start it with: ollama serve`, and `curl http://127.0.0.1:11434/api/tags` must answer. Is the
+- Ollama: is it running? If not, the log ends with `Is Ollama running? Start it with: ollama serve`,
+  and `curl http://127.0.0.1:11434/api/tags` must answer. Is the
   model pulled? The log says `model qwen2.5:7b not pulled; run: ollama pull qwen2.5:7b`; run that
   command. `ollama list` must show `llm.model` (a name without a tag means `:latest`).
 - OpenAI-compatible: is `llm.baseUrl` right and does it end in `/v1`? Is the local server running
