@@ -21,20 +21,23 @@ export interface Provenance {
 
 export type TaskStats = NonNullable<StatsMsg['queue']['byTask']>;
 
-type Tagged = { source?: Source } | null;
+type Tagged = { source?: Source; text?: string } | null;
 
-const tagOf = (x: Tagged) => x?.source;
-
-/** Combine per-item tags; `undefined` when no item carries one. */
-export function fromTags(tags: readonly (Source | undefined)[], noun: string): Provenance | undefined {
-  const known = tags.filter((t): t is Source => t !== undefined);
+/**
+ * Combine per-item tags; `undefined` when no item carries one. With `anyOf` (checks that one
+ * qualifying item satisfies, like AC3 and AC5) a single LLM-tagged item makes the pass an LLM pass.
+ */
+export function fromTags(items: readonly Tagged[], noun: string, anyOf = false): Provenance | undefined {
+  const known = items.filter((i) => i?.source !== undefined);
   if (known.length === 0) return undefined;
-  const llm = known.filter((t) => t === 'llm').length;
-  const via: Via = llm === known.length ? 'llm' : llm === 0 ? 'fallback' : 'mixed';
-  const untagged = tags.length - known.length;
+  const llmItems = known.filter((i) => i!.source === 'llm');
+  const llm = llmItems.length;
+  const via: Via = llm === known.length || (anyOf && llm > 0) ? 'llm' : llm === 0 ? 'fallback' : 'mixed';
+  const untagged = items.length - known.length;
+  const example = anyOf && llmItems[0]?.text ? `; first llm: "${llmItems[0].text.slice(0, 80)}"` : '';
   return {
     via,
-    detail: `${llm}/${known.length} ${noun} tagged llm${untagged ? `, ${untagged} untagged` : ''}`,
+    detail: `${llm}/${known.length} ${noun} tagged llm${untagged ? `, ${untagged} untagged` : ''}${example}`,
   };
 }
 
@@ -66,14 +69,13 @@ export interface ProvenanceInput {
 export function provenance(id: string, input: ProvenanceInput): Provenance {
   switch (id) {
     case 'AC2': {
-      const p = fromTags(input.plans.map(tagOf), 'plans');
+      const p = fromTags(input.plans, 'plans');
       return p ?? { via: 'unknown', detail: 'no plans' };
     }
     case 'AC3':
       if (input.gossipHits.length === 0) return { via: 'n/a', detail: 'no qualifying line' };
       return (
-        fromTags(input.gossipHits.map(tagOf), 'gossip lines') ??
-        fromTaskStats(input.taskStats, ['convo.turn'])
+        fromTags(input.gossipHits, 'gossip lines', true) ?? fromTaskStats(input.taskStats, ['convo.turn'])
       );
     case 'AC4': {
       if (!input.note) return { via: 'n/a', detail: 'no note' };
@@ -84,7 +86,7 @@ export function provenance(id: string, input: ProvenanceInput): Provenance {
     case 'AC5':
       if (input.goodEvents.length === 0) return { via: 'n/a', detail: 'no qualifying event' };
       return (
-        fromTags(input.goodEvents.map(tagOf), 'events') ??
+        fromTags(input.goodEvents, 'events', true) ??
         fromTaskStats(input.taskStats, ['event.propose', 'plan.day'])
       );
     default:
