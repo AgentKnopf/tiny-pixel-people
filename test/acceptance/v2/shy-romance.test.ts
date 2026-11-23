@@ -67,6 +67,7 @@ describe.skipIf(!readyV2(...F))(`AC25: Laude and Franzi's shy crush${waitingForV
     const events = new Map<string, VillageEvent>();
     const datesFirstSeen = new Map<string, { at: GameMinutes; affinities: [number, number] }>();
     const franziAtPostOffice = new Set<number>();
+    const seedLines: Record<string, string[]> = {};
 
     beforeAll(async () => {
       const provider = new MockChatProvider('mock');
@@ -74,6 +75,7 @@ describe.skipIf(!readyV2(...F))(`AC25: Laude and Franzi's shy crush${waitingForV
       const world = await createTestWorld({ villagers: 12, seed: 25, startAt: '06:00', provider });
       w = world;
       seed = pairRomance(world);
+      for (const id of PAIR) seedLines[id] = await shyCrushLine(world, id);
       world.engine.onMessage((m) => {
         if (m.type !== 'event.updated') return;
         events.set(m.event.id, m.event);
@@ -139,9 +141,11 @@ describe.skipIf(!readyV2(...F))(`AC25: Laude and Franzi's shy crush${waitingForV
       expect(earlyDates).toEqual([]);
     });
 
-    it('the inspector shows the shy crush', async () => {
-      expect(await shyCrushLine(w!, LAUDE)).toContainEqual(expect.stringContaining('Shy crush'));
-      expect(await shyCrushLine(w!, FRANZI)).toContainEqual(expect.stringContaining('Shy crush'));
+    // Within the 7 days the pair may date and become a couple under the §7.1 rules, so the shy
+    // crush line is checked on the seed.
+    it('the inspector shows the seeded shy crush', () => {
+      expect(seedLines[LAUDE]).toContainEqual(expect.stringContaining('Shy crush'));
+      expect(seedLines[FRANZI]).toContainEqual(expect.stringContaining('Shy crush'));
     });
   });
 

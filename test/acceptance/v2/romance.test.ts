@@ -220,10 +220,9 @@ describe.skipIf(!readyV2(...F))(`AC15: romance${waitingForV2(...F)}`, () => {
           problems.push(`t=${t}: ${romance.pair.join('+')} ${romance.stage} after ${id} left at ${left}`);
       }
     for (const r of w.state().romances ?? [])
-      for (const id of r.pair)
-        if (departedAt.has(id) && r.stage !== 'ended')
-          problems.push(`end: ${r.pair.join('+')} still ${r.stage}`);
-    expect(problems.slice(0, 10)).toEqual([]);
+      if (r.pair.some((id) => departedAt.has(id)) && r.stage !== 'ended')
+        problems.push(`end: ${r.pair.join('+')} still ${r.stage}`);
+    expect(problems.slice(0, 10).join('\n')).toBe('');
   });
 
   it('a visitor never becomes part of a couple', () => {
