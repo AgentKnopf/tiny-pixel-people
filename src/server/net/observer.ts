@@ -19,7 +19,7 @@ export interface ObserverOptions {
 }
 
 const PATHS =
-  /^\/api\/(?:state|agents\/[^/]+(?:\/memories)?|conversations|notes|events|stats|screenshot)\/?$/;
+  /^\/api\/(?:state|agents\/[^/]+(?:\/memories)?|conversations|notes|events|stats|screenshot|letters|notices|keep|animals)\/?$/;
 
 /** True for the paths the observer API serves (whether or not it is enabled). */
 export function isObserverPath(pathname: string): boolean {
@@ -95,6 +95,10 @@ export function createObserverApi(opts: ObserverOptions): ObserverApi {
     if (path === '/api/conversations') return sendPaged(req, res, views.conversations(q));
     if (path === '/api/notes') return sendPaged(req, res, views.notes(q));
     if (path === '/api/events') return sendPaged(req, res, views.events(q));
+    if (path === '/api/letters') return sendPaged(req, res, views.letters(q));
+    if (path === '/api/notices') return send(req, res, 200, views.notices());
+    if (path === '/api/keep') return sendPaged(req, res, views.keep(q));
+    if (path === '/api/animals') return send(req, res, 200, views.animals(q));
     if (path === '/api/screenshot') return screenshot(req, res, q);
     const m = /^\/api\/agents\/([^/]+)(\/memories)?$/.exec(path);
     if (m) {
