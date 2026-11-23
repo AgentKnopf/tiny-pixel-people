@@ -65,7 +65,10 @@ class ScriptedProvider implements ChatProvider {
 }
 
 const tick = () => new Promise((r) => setImmediate(r));
-const req = (task: LlmTask, content = task): ChatRequest => ({ task, messages: [{ role: 'user', content }] });
+const req = (task: LlmTask, content: string = task): ChatRequest => ({
+  task,
+  messages: [{ role: 'user', content }],
+});
 
 describe('PriorityLlmQueue', () => {
   it('runs at most `concurrency` jobs and picks higher priority first (FIFO within a priority)', async () => {

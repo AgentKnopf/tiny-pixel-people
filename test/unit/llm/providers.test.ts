@@ -385,7 +385,7 @@ describe('http error mapping', () => {
     expect(await ask('500')).toMatchObject({ kind: 'http', status: 500, retryable: true });
     const unauthorized = await ask('401');
     expect(unauthorized).toMatchObject({ kind: 'http', status: 401, retryable: false });
-    expect(unauthorized.message).toContain('invalid key');
+    expect((unauthorized as LlmError).message).toContain('invalid key');
     expect(await ask('slow')).toMatchObject({ kind: 'timeout', retryable: true });
     expect(await ask('junk')).toMatchObject({ kind: 'parse' });
   });

@@ -33,7 +33,7 @@ export async function startFakeServer(handler: FakeHandler): Promise<FakeServer>
     req.on('data', (c: Buffer) => chunks.push(c));
     req.on('end', () => {
       const raw = Buffer.concat(chunks).toString('utf8');
-      let body: unknown = undefined;
+      let body: unknown;
       try {
         body = raw ? JSON.parse(raw) : undefined;
       } catch {
