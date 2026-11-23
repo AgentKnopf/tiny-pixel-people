@@ -693,7 +693,10 @@ export class DeterministicAnimalSim implements AnimalSim {
       { x: mother.s.pos.x, y: mother.s.pos.y + 1 },
       { x: mother.s.pos.x, y: mother.s.pos.y - 1 },
     ].filter((p) => hab.set.has(key(p)));
-    return rng.pick(options) ?? { ...mother.s.pos };
+    // Always one draw, so the lifecycle stream never depends on where the mother stands
+    // (wandering is reseeded on restore).
+    const r = rng.next();
+    return options[Math.floor(r * options.length)] ?? { ...mother.s.pos };
   }
 
   private produce(now: number, change: AnimalChange): void {
