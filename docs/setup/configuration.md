@@ -74,7 +74,7 @@ Invalid configuration in /path/config.json:
 
 | Key                  | Default | Meaning                                                                 |
 | -------------------- | ------- | ----------------------------------------------------------------------- |
-| `ensureDaily`        | `true`  | If nobody has proposed an event by 10:00, ask the best-suited villager. |
+| `ensureDaily`        | `true`  | If nobody has proposed an event by 07:00, ask the best-suited villager. |
 | `maxProposalsPerDay` | `2`     | Maximum event proposals per day.                                        |
 
 ## `server`

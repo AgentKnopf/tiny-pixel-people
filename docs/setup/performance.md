@@ -67,10 +67,20 @@ settings lively; above 20 seconds, use the CPU settings above.
 
 ## What happens under load
 
-- **Priorities.** Your chats go first, then conversation turns, then replies to your door notes and
-  your requests to villagers, then event decisions, plans, summaries, reflections, event proposals
-  and importance ratings. Jobs that have waited a long time
-  slowly gain priority, so background work is delayed but not starved.
+- **Priorities.** Your chats go first, then replies to your door notes, then today's plan for a
+  villager still on a default plan, then conversation turns, the daily event and the invitees'
+  answers, then your requests to villagers, then tomorrow's plans, summaries, importance ratings
+  and reflections. Jobs that have waited a long time slowly gain priority, so background work is
+  delayed but not starved.
+- **Load levels.** The villagers notice when answers take long in game time and cut back on
+  optional work by themselves: **busy** from about 12 game minutes per answer, **overloaded** from
+  about 35. Busy means shorter conversations (at most 4 lines), mostly when someone has news, and
+  no plan revisions, reflections or model-written summaries. Overloaded means only conversations
+  that carry news, with at most 3 canned lines, and invitees answer by a simple rule. There is no
+  setting for this; it recovers as soon as the model catches up. See
+  [When the model is slow](../user-guide.md#when-the-model-is-slow) in the user guide.
+- **Earlier daily event, evening planning.** The daily event is proposed at 07:00, and villagers
+  plan tomorrow in the evening, so both are ready before the morning rush.
 - **Jobs expire.** Background jobs have a lifetime in game time, for example 30 game minutes for a
   conversation turn, 2 hours for revising a plan, 4 hours for proposing an event and 6 hours for a
   day plan. A job that hasn't started by then is dropped, and the villager uses its fallback
