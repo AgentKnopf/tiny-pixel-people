@@ -128,7 +128,10 @@ describe('observer API: endpoints', () => {
     expect(body).toHaveProperty('current_thought');
     expect((await get('/api/agents/nobody')).res.status).toBe(404);
     expect((await get('/api/agents/nobody/memories')).res.status).toBe(404);
-    expect((await get('/api/agents/player')).res.status).toBe(404);
+    const player = await get('/api/agents/player');
+    expect(player.res.status).toBe(200);
+    expect(player.body).toMatchObject({ id: 'player', kind: 'player', inside: null, relationships: [] });
+    expect((await get('/api/agents/player/memories')).res.status).toBe(404);
   });
 
   it('GET /api/agents/{id}/memories is newest first with limit, kind and since filters', async () => {
