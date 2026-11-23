@@ -23,11 +23,18 @@ reference video in `docs/reference/`).
 |---|---|---|---|
 | _(none yet)_ | | | |
 
-Planned (to be added with the frontend, not bundled yet): fonts **Departure Mono**
-(https://departuremono.com, Helena Zhang, SIL OFL 1.1) and **Silkscreen**
-(https://fonts.google.com/specimen/Silkscreen, Jason Kottke, SIL OFL 1.1). Fallback art source if
-anything is missing: Kenney "Tiny Town" (https://kenney.nl/assets/tiny-town, CC0).
+Fallback art source if anything is missing: Kenney "Tiny Town" (https://kenney.nl/assets/tiny-town, CC0).
 
 Checked and **not** used: AI Town's art (`a16z-infra/ai-town/public/assets`). The code is MIT, but
 its tilesets come from OpenGameArt packs under CC-BY 4.0 and CC-BY-SA 3.0 / GPL 3.0, its
 `32x32folk.png` has no stated source, and its fonts are freeware with unclear terms.
+
+## Fonts
+
+Fonts may also use the SIL Open Font License 1.1 (style guide §9). The license texts ship next to the
+files.
+
+| File(s) | Source | Author | License |
+|---|---|---|---|
+| `fonts/DepartureMono-Regular.woff2` | https://github.com/rektdeckard/departure-mono (release v1.500) | Helena Zhang | SIL OFL 1.1 (`fonts/LICENSE-DepartureMono.txt`) |
+| `fonts/silkscreen-latin-400-normal.woff2`, `fonts/silkscreen-latin-700-normal.woff2` | https://github.com/googlefonts/silkscreen (via `@fontsource/silkscreen` 5.3.0) | Jason Kottke | SIL OFL 1.1 (`fonts/LICENSE-Silkscreen.txt`) |

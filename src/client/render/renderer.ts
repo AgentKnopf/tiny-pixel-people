@@ -1,0 +1,956 @@
+import {
+  PLAYER_HOME_ID,
+  PLAYER_ID,
+  type Location,
+  type LocationId,
+  type Point,
+  type VillagerId,
+  type WorldMap,
+} from '../../shared/types.ts';
+import { entityPos, isMoving, type Entity, type GameStore } from '../state.ts';
+import { Assets, type Drawable, type LightSpot, type TileObject, type LoadedTileset } from './assets.ts';
+import { layoutBubbles, bubbleAlpha, wrapText } from './bubbles.ts';
+import { Camera, fitZoom } from './camera.ts';
+import { drawConfetti, drawRain, eventEmoji, isFestive } from './effects.ts';
+import { hitTest, type HitResult } from './hit.ts';
+import { nightFactor, tintColor, useLitTiles } from './lighting.ts';
+import { DEFAULT_SCENE_ID, findScene, sceneRectPx } from './scenes.ts';
+import {
+  FRAME_H,
+  FRAME_W,
+  feetPoint,
+  hashString,
+  pickFrame,
+  spriteTopLeft,
+  type PlaceholderKind,
+} from './sprites.ts';
+import { TileLayers, tileSource } from './tiles.ts';
+
+export const WORLD_FONT = '"Departure Mono", ui-monospace, Menlo, Consolas, monospace';
+const BG = '#85aa4e';
+const OUTLINE = '#272618';
+const BUBBLE_FILL = '#fffaea';
+const TAG_FILL = '#3c2b17';
+const TAG_TEXT = '#fbf0d9';
+const ACCENT = '#f2c94c';
+/** Real ms for a full click (no drag) and the drag threshold in CSS px. */
+const DRAG_THRESHOLD = 5;
+
+export interface RendererEvents {
+  villager: VillagerId;
+  door: LocationId;
+  ground: { tile: Point; blocked: boolean };
+  player: null;
+  scene: string;
+  /** The user dragged or wheel-zoomed away from the current scene. */
+  userPan: null;
+}
+
+type Handler<K extends keyof RendererEvents> = (payload: RendererEvents[K]) => void;
+
+interface Drawn {
+  id: string;
+  pos: Point;
+  entity: Entity;
+  name: string;
+  sheet: Drawable;
+  kind: PlaceholderKind;
+  hidden: boolean;
+}
+
+export interface RendererOptions {
+  assets?: Assets;
+  /** Defaults to window.devicePixelRatio. */
+  dpr?: () => number;
+}
+
+/**
+ * Canvas world renderer: tiles, characters, bubbles, name tags, day/night, effects, camera and
+ * pointer input. Reads everything from the `GameStore`; emits clicks through `on()`.
+ */
+export class WorldRenderer {
+  readonly camera = new Camera();
+  readonly assets: Assets;
+  sceneId: string = DEFAULT_SCENE_ID;
+  /** Villager (or player) the camera keeps centred on, until the user pans or picks a scene. */
+  followId: string | null = null;
+  private ctx: CanvasRenderingContext2D;
+  private layers: TileLayers | null = null;
+  private map: WorldMap | null = null;
+  private tilesetsFor: WorldMap | null = null;
+  private raf = 0;
+  private last = 0;
+  private handlers = new Map<keyof RendererEvents, Set<(payload: unknown) => void>>();
+  private pointer: {
+    id: number;
+    x: number;
+    y: number;
+    startX: number;
+    startY: number;
+    dragging: boolean;
+  } | null = null;
+  private hover: HitResult = { kind: 'none' };
+  private ro: ResizeObserver | null = null;
+  private cleanup: (() => void)[] = [];
+  private dpr: () => number;
+
+  constructor(
+    readonly canvas: HTMLCanvasElement,
+    readonly store: GameStore,
+    opts: RendererOptions = {},
+  ) {
+    this.ctx = canvas.getContext('2d')!;
+    this.assets = opts.assets ?? new Assets(() => this.invalidateLayers());
+    this.dpr = opts.dpr ?? (() => window.devicePixelRatio || 1);
+    void this.assets.loadCommon();
+    this.bindInput();
+  }
+
+  on<K extends keyof RendererEvents>(event: K, fn: Handler<K>): () => void {
+    let set = this.handlers.get(event);
+    if (!set) this.handlers.set(event, (set = new Set()));
+    const h = fn as (payload: unknown) => void;
+    set.add(h);
+    return () => set.delete(h);
+  }
+
+  private emit<K extends keyof RendererEvents>(event: K, payload: RendererEvents[K]): void {
+    for (const fn of this.handlers.get(event) ?? []) fn(payload);
+  }
+
+  start(): void {
+    if (this.raf) return;
+    this.last = performance.now();
+    const loop = (now: number) => {
+      this.raf = requestAnimationFrame(loop);
+      this.frame(now);
+    };
+    this.raf = requestAnimationFrame(loop);
+  }
+
+  stop(): void {
+    cancelAnimationFrame(this.raf);
+    this.raf = 0;
+    this.ro?.disconnect();
+    for (const fn of this.cleanup) fn();
+    this.cleanup = [];
+  }
+
+  // ---------- Camera API (used by the toolbar, dock and Map modal) ----------
+
+  showScene(id: string, instant = false): boolean {
+    const map = this.store.map;
+    if (!map) {
+      this.sceneId = id;
+      return false;
+    }
+    const scene = findScene(map, id);
+    if (!scene) return false;
+    this.followId = null;
+    this.sceneId = scene.id;
+    const rect = sceneRectPx(scene, map.tileSize);
+    const wholeTown = rect.w >= map.width * map.tileSize && rect.h >= map.height * map.tileSize;
+    this.camera.frame(rect, instant, wholeTown);
+    this.emit('scene', scene.id);
+    return true;
+  }
+
+  zoomIn(): void {
+    this.camera.zoomBy(1);
+  }
+
+  zoomOut(): void {
+    this.camera.zoomBy(-1);
+  }
+
+  /** Frame the whole town (the toolbar's fit button). */
+  fit(): void {
+    this.showScene(DEFAULT_SCENE_ID);
+  }
+
+  /** Pan to a villager (or the player) and keep following it; false when it is unknown. */
+  followVillager(id: VillagerId): boolean {
+    const map = this.store.map;
+    if (!map || !this.store.positionOf(id, performance.now())) return false;
+    this.followId = id;
+    this.ensureCloseZoom(map);
+    this.trackFollow(performance.now(), map);
+    return true;
+  }
+
+  /** Pan to a tile. */
+  focusTile(tile: Point): void {
+    const map = this.store.map;
+    if (!map) return;
+    this.followId = null;
+    this.ensureCloseZoom(map);
+    this.camera.centerOn({ x: (tile.x + 0.5) * map.tileSize, y: (tile.y + 0.5) * map.tileSize });
+  }
+
+  /** Close-ups use at least the zoom of a ~20×12 tile scene. */
+  private ensureCloseZoom(map: WorldMap): void {
+    const target = fitZoom(20 * map.tileSize, 12 * map.tileSize, this.camera.viewW, this.camera.viewH);
+    if (this.camera.zoom < target) this.camera.zoomTo(target);
+  }
+
+  private trackFollow(now: number, map: WorldMap): void {
+    if (!this.followId) return;
+    const p = this.store.positionOf(this.followId, now);
+    if (!p) {
+      this.followId = null;
+      return;
+    }
+    const feet = feetPoint(p, map.tileSize);
+    this.camera.centerOn({ x: feet.x, y: feet.y - 8 });
+  }
+
+  private userMovedCamera(): void {
+    this.followId = null;
+    this.emit('userPan', null);
+  }
+
+  /** What is under a client (CSS px) point. */
+  hitAt(clientX: number, clientY: number): HitResult {
+    const map = this.store.map;
+    if (!map) return { kind: 'none' };
+    const r = this.canvas.getBoundingClientRect();
+    const scale = this.canvas.width / Math.max(1, r.width);
+    const world = this.camera.screenToWorld({ x: (clientX - r.left) * scale, y: (clientY - r.top) * scale });
+    const now = performance.now();
+    const villagers = this.collect(now, map)
+      .filter((d) => !d.hidden && d.kind !== 'pet' && d.id !== PLAYER_ID)
+      .map((d) => ({ id: d.id, pos: d.pos }));
+    const pe = this.store.playerEntity;
+    return hitTest(map, world, villagers, pe ? { id: PLAYER_ID, pos: entityPos(pe, now) } : null);
+  }
+
+  // ---------- Frame ----------
+
+  private invalidateLayers(): void {
+    this.layers = null;
+  }
+
+  private syncMap(): WorldMap | null {
+    const map = this.store.map;
+    if (!map) return null;
+    if (map !== this.map) {
+      const first = this.map === null;
+      this.map = map;
+      this.layers = null;
+      this.camera.setWorld(map.width * map.tileSize, map.height * map.tileSize);
+      if (!findScene(map, this.sceneId)) this.sceneId = DEFAULT_SCENE_ID;
+      this.showScene(this.sceneId, first);
+    }
+    if (this.tilesetsFor !== map) {
+      this.tilesetsFor = map;
+      if (map.tilesets.length > 0) void this.assets.loadTilesets(map.tilesets);
+    }
+    if (!this.layers) this.layers = new TileLayers(map, this.assets.tilesets);
+    return map;
+  }
+
+  private resize(): void {
+    const dpr = this.dpr();
+    const w = Math.max(1, Math.round(this.canvas.clientWidth * dpr));
+    const h = Math.max(1, Math.round(this.canvas.clientHeight * dpr));
+    if (this.canvas.width !== w || this.canvas.height !== h) {
+      this.canvas.width = w;
+      this.canvas.height = h;
+    }
+    this.camera.setViewport(w, h);
+  }
+
+  frame(now: number): void {
+    const dt = Math.min(100, now - this.last);
+    this.last = now;
+    this.resize();
+    const map = this.syncMap();
+    if (map) this.trackFollow(now, map);
+    this.camera.update(dt);
+    this.draw(now, map);
+  }
+
+  private collect(now: number, map: WorldMap): Drawn[] {
+    const out: Drawn[] = [];
+    const homes = new Map(map.locations.map((l) => [l.id, l]));
+    for (const e of this.store.villagers.values()) {
+      const prof = this.store.profiles.get(e.id);
+      const pos = entityPos(e, now);
+      const home = prof ? homes.get(prof.homeId) : undefined;
+      out.push({
+        id: e.id,
+        pos,
+        entity: e,
+        name: prof?.name ?? e.id,
+        sheet: this.assets.sheet(prof?.sprite ?? '', e.id, prof?.transient ? 'stranger' : 'villager'),
+        kind: prof?.transient ? 'stranger' : 'villager',
+        hidden: e.status === 'sleeping' && !!home && inArea(pos, home, 1),
+      });
+    }
+    const pe = this.store.playerEntity;
+    const player = this.store.player;
+    if (pe && player) {
+      out.push({
+        id: PLAYER_ID,
+        pos: entityPos(pe, now),
+        entity: pe,
+        name: `★ ${player.name}`,
+        sheet: this.assets.sheet('characters/player.png', PLAYER_ID, 'player'),
+        kind: 'player',
+        hidden: false,
+      });
+    }
+    const pet = this.store.petEntity;
+    if (pet && player) {
+      out.push({
+        id: 'pet',
+        pos: entityPos(pet, now),
+        entity: pet,
+        name: player.pet.name,
+        sheet: this.assets.sheet(this.assets.meta?.pet?.sprite ?? 'characters/pet-pip.png', 'pet', 'pet'),
+        kind: 'pet',
+        hidden: false,
+      });
+    }
+    return out;
+  }
+
+  private draw(now: number, map: WorldMap | null): void {
+    const { ctx, canvas, camera } = this;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = map ? BG : '#1b1b24';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    if (!map || !this.layers) return;
+
+    const z = camera.zoom;
+    const ox = camera.offsetX;
+    const oy = camera.offsetY;
+    const gameTime = this.store.gameTimeAt(now);
+    const night = nightFactor(gameTime);
+    const lit = useLitTiles(night);
+    const ts = map.tileSize;
+    const drawn = this.collect(now, map).filter((d) => !d.hidden);
+
+    // World pass in art px.
+    ctx.setTransform(z, 0, 0, z, ox, oy);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(this.layers.get('below', lit), 0, 0);
+    const decos = this.placedDecorations(map);
+    for (const d of decos) this.drawDecoration(d, 'decor', lit, ts);
+    this.drawItems(map, now);
+    this.drawDoorNotes(map, now, 'paper');
+
+    drawn.sort((a, b) => a.pos.y - b.pos.y);
+    for (const d of drawn) this.drawCharacter(d, now, ts);
+
+    ctx.drawImage(this.layers.get('above', lit), 0, 0);
+    for (const d of decos) this.drawDecoration(d, 'overhead', lit, ts);
+
+    // Lighting and weather in screen px.
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const raining = this.store.weather.state === 'rain';
+    const [r, g, b] = tintColor(night, raining);
+    if (r < 255 || g < 255 || b < 255) {
+      ctx.globalCompositeOperation = 'multiply';
+      ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.globalCompositeOperation = 'source-over';
+    }
+    if (night > 0.05) this.drawGlows(map, decos, night);
+    if (raining) drawRain(ctx, canvas.width, canvas.height, z, now);
+    this.drawFestive(map, now);
+    if (night > 0.05) this.drawMoon(night);
+
+    // Overlays (crisp text) in screen px.
+    this.drawDoorNotes(map, now, 'icon');
+    this.drawEventMarkers(map, now);
+    this.drawSleepers(map, now);
+    for (const d of drawn) this.drawLabels(d, now, ts);
+    this.drawBubbles(drawn, now, ts);
+  }
+
+  // ---------- Characters ----------
+
+  private drawCharacter(d: Drawn, now: number, ts: number): void {
+    const { ctx } = this;
+    const moving = isMoving(d.entity, now);
+    const pick = pickFrame(
+      d.entity.facing,
+      moving,
+      now,
+      hashString(d.id) % 1000,
+      d.entity.status === 'sleeping',
+    );
+    const tl = spriteTopLeft(d.pos, ts);
+    // Soft oval shadow under the feet.
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+    ctx.fillRect(tl.x + 4, tl.y + FRAME_H - 3, FRAME_W - 8, 2);
+    ctx.fillRect(tl.x + 5, tl.y + FRAME_H - 4, FRAME_W - 10, 4);
+    ctx.drawImage(
+      d.sheet,
+      pick.col * FRAME_W,
+      pick.row * FRAME_H,
+      FRAME_W,
+      FRAME_H,
+      tl.x,
+      tl.y + pick.bob,
+      FRAME_W,
+      FRAME_H,
+    );
+  }
+
+  private fontPx(artPx: number, minCss: number): number {
+    return Math.max(Math.round(minCss * this.dpr()), Math.round(artPx * this.camera.zoom));
+  }
+
+  private drawLabels(d: Drawn, now: number, ts: number): void {
+    const { ctx, camera } = this;
+    const feet = camera.worldToScreen(feetPoint(d.pos, ts));
+    const top = camera.worldToScreen(spriteTopLeft(d.pos, ts));
+    if (
+      feet.x < -200 ||
+      feet.y < -200 ||
+      feet.x > this.canvas.width + 200 ||
+      feet.y > this.canvas.height + 200
+    )
+      return;
+    const z = camera.zoom;
+    const selected = this.store.selectedId === d.id;
+    if (d.kind !== 'pet') {
+      const px = this.fontPx(5.5, 11);
+      ctx.font = `${px}px ${WORLD_FONT}`;
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'center';
+      const w = Math.ceil(ctx.measureText(d.name).width) + Math.round(px * 0.6);
+      const h = Math.round(px * 1.35);
+      const x = Math.round(feet.x - w / 2);
+      const y = Math.round(feet.y + z);
+      pill(ctx, x, y, w, h, Math.round(px / 3), selected ? ACCENT : TAG_FILL);
+      ctx.fillStyle = selected ? OUTLINE : TAG_TEXT;
+      ctx.fillText(d.name, x + w / 2, y + h / 2 + 1);
+    }
+    // Activity emote at the top-right of the head.
+    const e = d.entity;
+    const emoteSize = Math.round(8 * z * 0.8);
+    const ex = top.x + Math.round(12 * z);
+    const ey = top.y + Math.round(2 * z);
+    if (e.status === 'talking' && this.drawIcon('chat', ex, ey, emoteSize)) {
+      // drawn
+    } else if (e.status === 'sleeping') {
+      if (!this.drawIcon('zzz', ex, ey, emoteSize)) this.emojiAt('💤', ex, ey, emoteSize);
+    } else if (e.emoji && d.kind !== 'pet') {
+      this.emojiAt(e.emoji, ex, ey, emoteSize);
+    }
+    if (selected) {
+      const bob = Math.floor(now / 300) % 2 === 0 ? 0 : z;
+      const cx = Math.round(top.x + 8 * z);
+      const cy = Math.round(top.y + bob - z);
+      ctx.fillStyle = OUTLINE;
+      tri(ctx, cx, cy + z, 4 * z, 3 * z);
+      ctx.fillStyle = ACCENT;
+      tri(ctx, cx, cy, 3 * z, 2 * z);
+    }
+  }
+
+  private emojiAt(emoji: string, x: number, y: number, size: number): void {
+    const { ctx } = this;
+    ctx.font = `${size}px ${WORLD_FONT}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#000';
+    ctx.fillText(emoji, x, y);
+  }
+
+  /** Draw a UI icon centred at (x, y), `size` device px; false when the icon sheet lacks it. */
+  private drawIcon(name: string, x: number, y: number, size: number): boolean {
+    const ic = this.assets.icon(name);
+    if (!ic) return false;
+    const s = Math.max(ic.size, Math.round(size / ic.size) * ic.size);
+    this.ctx.imageSmoothingEnabled = false;
+    this.ctx.drawImage(
+      ic.image,
+      ic.sx,
+      ic.sy,
+      ic.size,
+      ic.size,
+      Math.round(x - s / 2),
+      Math.round(y - s / 2),
+      s,
+      s,
+    );
+    return true;
+  }
+
+  private drawBubbles(drawn: Drawn[], now: number, ts: number): void {
+    const { ctx, camera } = this;
+    const z = camera.zoom;
+    const byId = new Map(drawn.map((d) => [d.id, d]));
+    const px = this.fontPx(5.5, 11);
+    ctx.font = `${px}px ${WORLD_FONT}`;
+    const measure = (s: string) => ctx.measureText(s).width;
+    const padX = Math.round(px * 0.6);
+    const padY = Math.round(px * 0.35);
+    const lineH = Math.round(px * 1.2);
+    const maxW = Math.max(120 * this.dpr(), 96 * z);
+    const boxes: (Parameters<typeof layoutBubbles>[0][number] & { lines: string[]; alpha: number })[] = [];
+    for (const b of this.store.activeBubbles(now)) {
+      const d = byId.get(b.speakerId);
+      if (!d) continue;
+      const head = camera.worldToScreen({ x: feetPoint(d.pos, ts).x, y: spriteTopLeft(d.pos, ts).y + 4 });
+      if (
+        head.x < -maxW ||
+        head.x > this.canvas.width + maxW ||
+        head.y < 0 ||
+        head.y > this.canvas.height + 40 * z
+      )
+        continue;
+      const lines = wrapText(b.text, maxW, measure, 2);
+      const w = Math.ceil(Math.max(...lines.map(measure))) + padX * 2;
+      const h = lines.length * lineH + padY * 2;
+      boxes.push({
+        id: b.speakerId,
+        ax: head.x,
+        ay: head.y,
+        w,
+        h,
+        lines,
+        alpha: bubbleAlpha(now - b.startedAt, b.durMs),
+      });
+    }
+    const tail = Math.max(3, Math.round(3 * z));
+    const placed = layoutBubbles(boxes, { w: this.canvas.width, h: this.canvas.height }, tail + z);
+    const border = Math.max(1, Math.round(z * 0.5));
+    for (const p of placed) {
+      const src = boxes.find((b) => b.id === p.id)!;
+      ctx.globalAlpha = src.alpha;
+      const r = Math.max(2, Math.round(2 * z));
+      ctx.fillStyle = OUTLINE;
+      roundRect(ctx, p.x - border, p.y - border, p.w + border * 2, p.h + border * 2, r + border);
+      ctx.fill();
+      // Tail only when the bubble still sits right above its speaker.
+      const tx = Math.min(p.x + p.w - r - tail, Math.max(p.x + r + tail, p.ax));
+      const attached = p.y + p.h + tail * 2 >= p.ay;
+      if (attached) {
+        ctx.beginPath();
+        ctx.moveTo(tx - tail - border, p.y + p.h);
+        ctx.lineTo(tx + tail + border, p.y + p.h);
+        ctx.lineTo(tx, p.y + p.h + tail + border * 2);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.fillStyle = BUBBLE_FILL;
+      roundRect(ctx, p.x, p.y, p.w, p.h, r);
+      ctx.fill();
+      if (attached) {
+        ctx.beginPath();
+        ctx.moveTo(tx - tail, p.y + p.h - 1);
+        ctx.lineTo(tx + tail, p.y + p.h - 1);
+        ctx.lineTo(tx, p.y + p.h + tail);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.fillStyle = OUTLINE;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      src.lines.forEach((line, i) =>
+        ctx.fillText(line, p.x + p.w / 2, p.y + padY + lineH * i + lineH / 2 + 1),
+      );
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // ---------- World props ----------
+
+  private placedDecorations(map: WorldMap): { tile: Point; object: string; emoji: string; id: string }[] {
+    const player = this.store.player;
+    if (!player || player.placedDecorations.length === 0) return [];
+    const home = map.locations.find((l) => l.id === (player.homeId || PLAYER_HOME_ID));
+    const slots = home?.decorSlots ?? [];
+    const catalog = this.assets.meta?.decorations ?? [];
+    const out: { tile: Point; object: string; emoji: string; id: string }[] = [];
+    player.placedDecorations.forEach((id, i) => {
+      const item = catalog.find((c) => c.id === id);
+      const slot = slots[item?.slot ?? i];
+      if (!slot) return;
+      out.push({ tile: slot, object: item?.sprite ?? `deco_${id}`, emoji: item?.emoji ?? '✨', id });
+    });
+    return out;
+  }
+
+  private drawDecoration(
+    d: { tile: Point; object: string; emoji: string },
+    layer: 'decor' | 'overhead',
+    lit: boolean,
+    ts: number,
+  ): void {
+    const found = this.assets.object(d.object);
+    if (found) {
+      this.drawObject(found.obj, found.tileset, layer, d.tile, lit, ts);
+      return;
+    }
+    if (layer !== 'decor') return;
+    const { ctx } = this;
+    ctx.font = `${ts - 4}px ${WORLD_FONT}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(d.emoji, d.tile.x * ts + ts / 2, d.tile.y * ts + ts / 2);
+  }
+
+  private drawObject(
+    obj: TileObject,
+    tileset: LoadedTileset,
+    layer: 'decor' | 'overhead',
+    at: Point,
+    lit: boolean,
+    ts: number,
+  ): void {
+    const rows = obj.layers[layer];
+    if (!rows || !tileset.meta) return;
+    rows.forEach((row, y) =>
+      row.forEach((name, x) => {
+        if (!name) return;
+        const idx = tileset.meta!.tiles[name];
+        if (idx === undefined) return;
+        const src = tileSource([tileset], idx + tileset.ref.firstIndex, lit);
+        if (!src) return;
+        this.ctx.drawImage(
+          src.ts.image,
+          src.sx,
+          src.sy,
+          src.size,
+          src.size,
+          (at.x + x) * ts,
+          (at.y + y) * ts,
+          ts,
+          ts,
+        );
+      }),
+    );
+  }
+
+  private drawItems(map: WorldMap, now: number): void {
+    const ts = map.tileSize;
+    const defs = this.assets.meta?.items ?? [];
+    for (const it of this.store.items) {
+      const def = defs.find((d) => d.id === it.itemId);
+      const bob = Math.floor((now + (hashString(it.id) % 1000)) / 600) % 2;
+      const ic = this.assets.iconRef(def?.sprite) ?? this.assets.icon(it.itemId);
+      const x = Math.round(it.pos.x * ts) + 2;
+      const y = Math.round(it.pos.y * ts) + 1 - bob;
+      if (ic) {
+        this.ctx.drawImage(ic.image, ic.sx, ic.sy, ic.size, ic.size, x, y, ts - 4, ts - 4);
+      } else {
+        this.ctx.font = `${ts - 6}px ${WORLD_FONT}`;
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText(def?.emoji ?? '✿', x + (ts - 4) / 2, y + (ts - 4) / 2);
+      }
+    }
+  }
+
+  /** Door markers: `paper` = the note pinned on the door (world pass), `icon` = the floating marker. */
+  private drawDoorNotes(map: WorldMap, now: number, pass: 'paper' | 'icon'): void {
+    const ts = map.tileSize;
+    for (const loc of map.locations) {
+      if (!loc.door) continue;
+      const notes = this.store.notesForHouse(loc.id);
+      if (notes.length === 0) continue;
+      const toPlayer = loc.id === PLAYER_HOME_ID;
+      const waiting = notes.some(
+        (n) => n.status === 'unread' && (toPlayer ? n.authorId !== PLAYER_ID : true),
+      );
+      const replied = notes.some((n) => n.status === 'replied');
+      if (!waiting && !replied) continue;
+      if (pass === 'paper') {
+        if (!waiting) continue;
+        const obj = this.assets.object('door_note');
+        if (obj) this.drawObject(obj.obj, obj.tileset, 'decor', loc.door, false, ts);
+        else {
+          this.ctx.fillStyle = OUTLINE;
+          this.ctx.fillRect(loc.door.x * ts + 5, loc.door.y * ts + 1, 6, 6);
+          this.ctx.fillStyle = BUBBLE_FILL;
+          this.ctx.fillRect(loc.door.x * ts + 6, loc.door.y * ts + 2, 4, 4);
+        }
+        continue;
+      }
+      const z = this.camera.zoom;
+      const bounce = waiting ? Math.round(Math.abs(Math.sin(now / 250)) * 2 * z) : 0;
+      const p = this.camera.worldToScreen({ x: loc.door.x * ts + ts / 2, y: (loc.door.y - 1) * ts });
+      const size = Math.round(10 * z);
+      const name = waiting ? 'note' : 'reply';
+      if (!this.drawIcon(name, p.x, p.y - bounce, size))
+        this.emojiAt(waiting ? '📝' : '✉', p.x, p.y - bounce, size);
+    }
+  }
+
+  /** A small "zzz" over the doors of homes with sleeping (hidden) villagers. */
+  private drawSleepers(map: WorldMap, now: number): void {
+    const ts = map.tileSize;
+    const homes = new Map<string, Location>(map.locations.map((l) => [l.id, l]));
+    const shown = new Set<string>();
+    for (const e of this.store.villagers.values()) {
+      if (e.status !== 'sleeping') continue;
+      const prof = this.store.profiles.get(e.id);
+      const home = prof ? homes.get(prof.homeId) : undefined;
+      if (!home?.door || shown.has(home.id) || !inArea(entityPos(e, now), home, 1)) continue;
+      shown.add(home.id);
+      const z = this.camera.zoom;
+      const drift = Math.round(((now / 80) % 8) * (z / 2));
+      const p = this.camera.worldToScreen({ x: home.door.x * ts + ts, y: (home.door.y - 2) * ts });
+      const size = Math.round(8 * z);
+      if (!this.drawIcon('zzz', p.x, p.y - drift, size)) this.emojiAt('💤', p.x, p.y - drift, size);
+    }
+  }
+
+  private drawEventMarkers(map: WorldMap, now: number): void {
+    const { ctx } = this;
+    const ts = map.tileSize;
+    const z = this.camera.zoom;
+    for (const ev of this.store.events.values()) {
+      if (ev.status !== 'happening') continue;
+      const loc = map.locations.find((l) => l.id === ev.locationId);
+      if (!loc) continue;
+      const bob = Math.round(Math.sin(now / 400) * z);
+      const p = this.camera.worldToScreen({ x: (loc.area.x + loc.area.w / 2) * ts, y: loc.area.y * ts + 4 });
+      const px = this.fontPx(4.5, 9);
+      ctx.font = `${px}px ${WORLD_FONT}`;
+      const label = `${eventEmoji(ev)} ${ev.title}`;
+      const w = Math.ceil(ctx.measureText(label).width) + px;
+      const h = Math.round(px * 1.6);
+      const x = Math.round(p.x - w / 2);
+      const y = Math.round(p.y + bob);
+      pill(ctx, x, y, w, h, Math.round(h / 2), 'rgba(24, 32, 23, 0.88)');
+      ctx.strokeStyle = ACCENT;
+      ctx.lineWidth = Math.max(1, Math.round(z / 2));
+      roundRect(ctx, x, y, w, h, Math.round(h / 2));
+      ctx.stroke();
+      ctx.fillStyle = '#fef7e5';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, x + w / 2, y + h / 2 + 1);
+    }
+  }
+
+  private drawFestive(map: WorldMap, now: number): void {
+    const ts = map.tileSize;
+    for (const ev of this.store.events.values()) {
+      if (ev.status !== 'happening' || !isFestive(ev, this.store.worldEvents.values())) continue;
+      const loc = map.locations.find((l) => l.id === ev.locationId);
+      if (!loc) continue;
+      const tl = this.camera.worldToScreen({ x: loc.area.x * ts, y: loc.area.y * ts });
+      const z = this.camera.zoom;
+      drawConfetti(
+        this.ctx,
+        { x: tl.x, y: tl.y, w: loc.area.w * ts * z, h: loc.area.h * ts * z },
+        z,
+        now,
+        ev.id,
+      );
+    }
+  }
+
+  private lights(map: WorldMap, decos: { tile: Point; id: string; object: string }[]): LightSpot[] {
+    const fromMeta = this.layers?.hasArt ? this.assets.meta?.lights : undefined;
+    const out: LightSpot[] = fromMeta ? [...fromMeta] : derivedLights(map);
+    for (const d of decos)
+      if (/lantern|string_lights/.test(d.object)) out.push({ x: d.tile.x, y: d.tile.y, kind: 'lamp' });
+    return out;
+  }
+
+  /** Warm light pools, matching the art preview: normal blending, stepped (unsmoothed) glow sprite. */
+  private drawGlows(
+    map: WorldMap,
+    decos: { tile: Point; id: string; object: string }[],
+    night: number,
+  ): void {
+    const { ctx, camera } = this;
+    const ts = map.tileSize;
+    const z = camera.zoom;
+    ctx.globalAlpha = night;
+    for (const l of this.lights(map, decos)) {
+      const lamp = l.kind !== 'window';
+      const r = (lamp ? 3 : 1.25) * ts * z;
+      const c = camera.worldToScreen({ x: l.x * ts + ts / 2, y: l.y * ts + (lamp ? 6 : 8) });
+      if (c.x < -r || c.y < -r || c.x > this.canvas.width + r || c.y > this.canvas.height + r) continue;
+      if (this.assets.glow) {
+        ctx.drawImage(
+          this.assets.glow,
+          Math.round(c.x - r),
+          Math.round(c.y - r),
+          Math.round(r * 2),
+          Math.round(r * 2),
+        );
+      } else {
+        const g = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, r);
+        g.addColorStop(0, 'rgba(253, 230, 160, 0.55)');
+        g.addColorStop(1, 'rgba(253, 230, 160, 0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(c.x - r, c.y - r, r * 2, r * 2);
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  private drawMoon(night: number): void {
+    const { ctx } = this;
+    const dpr = this.dpr();
+    const x = Math.round(this.canvas.width / 2);
+    const y = Math.round(40 * dpr);
+    ctx.globalAlpha = night;
+    if (!this.drawIcon('moon', x, y, Math.round(32 * dpr))) {
+      ctx.fillStyle = '#e8e4d0';
+      ctx.beginPath();
+      ctx.arc(x, y, 9 * dpr, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // ---------- Input ----------
+
+  private bindInput(): void {
+    const c = this.canvas;
+    const scale = () => c.width / Math.max(1, c.getBoundingClientRect().width);
+    const down = (ev: PointerEvent) => {
+      if (ev.button !== 0) return;
+      this.pointer = {
+        id: ev.pointerId,
+        x: ev.clientX,
+        y: ev.clientY,
+        startX: ev.clientX,
+        startY: ev.clientY,
+        dragging: false,
+      };
+      c.setPointerCapture?.(ev.pointerId);
+    };
+    const move = (ev: PointerEvent) => {
+      const p = this.pointer;
+      if (p && p.id === ev.pointerId) {
+        if (!p.dragging && Math.hypot(ev.clientX - p.startX, ev.clientY - p.startY) > DRAG_THRESHOLD) {
+          p.dragging = true;
+          this.userMovedCamera();
+        }
+        if (p.dragging) {
+          const s = scale();
+          this.camera.panBy((ev.clientX - p.x) * s, (ev.clientY - p.y) * s);
+          c.style.cursor = 'grabbing';
+        }
+        p.x = ev.clientX;
+        p.y = ev.clientY;
+        return;
+      }
+      this.hover = this.hitAt(ev.clientX, ev.clientY);
+      c.style.cursor = this.hover.kind === 'villager' || this.hover.kind === 'door' ? 'pointer' : 'default';
+    };
+    const up = (ev: PointerEvent) => {
+      const p = this.pointer;
+      if (!p || p.id !== ev.pointerId) return;
+      this.pointer = null;
+      c.style.cursor = 'default';
+      if (p.dragging) return;
+      const hit = this.hitAt(ev.clientX, ev.clientY);
+      switch (hit.kind) {
+        case 'villager':
+          this.emit('villager', hit.id);
+          break;
+        case 'door':
+          this.emit('door', hit.houseId);
+          break;
+        case 'ground':
+          this.emit('ground', { tile: hit.tile, blocked: hit.blocked });
+          break;
+        case 'player':
+          this.emit('player', null);
+          break;
+      }
+    };
+    const cancel = () => {
+      this.pointer = null;
+    };
+    const wheel = (ev: WheelEvent) => {
+      ev.preventDefault();
+      const r = c.getBoundingClientRect();
+      const s = scale();
+      this.userMovedCamera();
+      this.camera.zoomBy(ev.deltaY < 0 ? 1 : -1, {
+        x: (ev.clientX - r.left) * s,
+        y: (ev.clientY - r.top) * s,
+      });
+    };
+    c.addEventListener('pointerdown', down);
+    c.addEventListener('pointermove', move);
+    c.addEventListener('pointerup', up);
+    c.addEventListener('pointercancel', cancel);
+    c.addEventListener('wheel', wheel, { passive: false });
+    c.style.touchAction = 'none';
+    this.cleanup.push(() => {
+      c.removeEventListener('pointerdown', down);
+      c.removeEventListener('pointermove', move);
+      c.removeEventListener('pointerup', up);
+      c.removeEventListener('pointercancel', cancel);
+      c.removeEventListener('wheel', wheel);
+    });
+    if (typeof ResizeObserver !== 'undefined') {
+      this.ro = new ResizeObserver(() => this.resize());
+      this.ro.observe(c);
+    }
+  }
+}
+
+function inArea(p: Point, loc: Location, pad: number): boolean {
+  const a = loc.area;
+  return p.x >= a.x - pad && p.x < a.x + a.w + pad && p.y >= a.y - pad && p.y < a.y + a.h + pad;
+}
+
+/** Window lights next to each door, for maps without village.meta.json. */
+function derivedLights(map: WorldMap): LightSpot[] {
+  const out: LightSpot[] = [];
+  for (const l of map.locations) {
+    if (!l.door) continue;
+    out.push(
+      { x: l.area.x + 1, y: l.door.y - 1, kind: 'window' },
+      { x: l.area.x + Math.min(l.area.w, 8) - 2, y: l.door.y - 1, kind: 'window' },
+    );
+  }
+  return out;
+}
+
+function roundRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+): void {
+  ctx.beginPath();
+  if (typeof ctx.roundRect === 'function') ctx.roundRect(x, y, w, h, r);
+  else ctx.rect(x, y, w, h);
+}
+
+function pill(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+  fill: string,
+): void {
+  ctx.fillStyle = fill;
+  roundRect(ctx, x, y, w, h, r);
+  ctx.fill();
+}
+
+/** Downward-pointing triangle with its tip at (cx, cy + h). */
+function tri(ctx: CanvasRenderingContext2D, cx: number, cy: number, halfW: number, h: number): void {
+  ctx.beginPath();
+  ctx.moveTo(cx - halfW, cy - h);
+  ctx.lineTo(cx + halfW, cy - h);
+  ctx.lineTo(cx, cy + h / 2);
+  ctx.closePath();
+  ctx.fill();
+}
