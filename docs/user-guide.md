@@ -88,7 +88,7 @@ model.
 - **Click empty ground** to walk there. Your avatar has a `★` in front of its name tag. Pip follows
   you.
 - **Drag** to pan the camera; **scroll** to zoom. The toolbar `−` and `+` zoom too, and the fit button
-  shows the whole town again.
+  shows the whole map (the overview) again.
 - **Map** (dock) opens the scene switcher: Plaza (the whole old town), Farm, Shop street, Park, Town
   square and Your home, plus Overview (the whole map) and one scene per new district (see
   [The bigger village](#the-bigger-village)). The camera moves to the scene you pick and follows it until you pan. The Map tile
@@ -101,7 +101,7 @@ model.
 | ---------------- | --------------------------------------------------------------- |
 | `Space`          | Pause / resume (when you aren't typing)                         |
 | `+` / `-`        | Zoom in / out                                                   |
-| `0`              | Fit the whole town                                              |
+| `0`              | Fit the whole map                                               |
 | `h`              | Show your home                                                  |
 | `Escape`         | Close the open window, then the chat dialog, then the inspector |
 | `Enter`          | In the inspector's text field: Say                              |
