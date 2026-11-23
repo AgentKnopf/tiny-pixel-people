@@ -94,6 +94,9 @@ export interface EngineOptions extends SimEngineOptions {
   worldData?: { romances?: RomanceSeed[]; zoo?: ZooData; ambient?: AmbientData };
 }
 
+/** Visitors head for the station at least this long before their train leaves. */
+export const VISITOR_STATION_LEAD_MINUTES = 45;
+const TRAIN_WAIT_ACTIVITY = 'waiting for the train';
 /** Villager walking speed in tiles per game minute. */
 export const WALK_TILES_PER_GAME_MINUTE = 1.5;
 /** Villagers this close (tiles) may start a conversation (spots on the square are ~3 tiles apart). */
@@ -130,6 +133,13 @@ const STATS_INTERVAL_MS = 2000;
 export const WAKE_UP_MINUTE = 6 * 60;
 /** Virtual-clock mode gives up waiting after this many drain rounds. */
 const WAKE_UP_MAX_ROUNDS = 5;
+/** Minds asked for their day plan per hold step at wake-up. */
+const WAKE_UP_THINK_BATCH = 2;
+/**
+ * New A* searches per sim step. Villagers whose walk would need more wait a step: their mind
+ * re-issues the goto, so a crowd leaving at the same minute is spread over a few steps.
+ */
+const PATH_SEARCHES_PER_STEP = 6;
 /** Real-time grace before an idle LLM queue counts as "every plan request has finished". */
 const WAKE_UP_IDLE_GRACE_MS = 1500;
 /** WP3's nightly usage line; also printed to the server terminal. */
@@ -272,6 +282,8 @@ export class Engine implements SimEngine, SimHost {
   private history: Conversation[] = [];
   private readonly active = new Map<string, ActiveConversation>();
   private eventPresence = new Map<string, Map<string, number>>();
+  /** Villagers who boarded the ride an event is held at while that event was happening. */
+  private eventRiders = new Map<string, Set<VillagerId>>();
 
   private seq = 0;
   private lastMinute: number;
@@ -284,10 +296,21 @@ export class Engine implements SimEngine, SimHost {
   private stepping = false;
   private wokeDay = -1;
   private idleProbe: { done: boolean } | null = null;
-  private wakeHold: { day: number; startedMs: number; ready: number; rounds: number } | null = null;
+  private wakeHold: {
+    day: number;
+    startedMs: number;
+    ready: number;
+    rounds: number;
+    /** Villagers who have not been asked for their day yet (WAKE_UP_THINK_BATCH per hold step). */
+    unasked: VillagerId[];
+  } | null = null;
+  /** New A* searches left in the current step (PATH_SEARCHES_PER_STEP). */
+  private pathBudget = Infinity;
   private playerNearCrow = false;
   private deferred: ServerMessage[] = [];
   private romanceList: Romance[] = [];
+  /** Visitors who have had a conversation with a resident. */
+  private readonly visitorsMet = new Set<VillagerId>();
   private worldDraws = { minute: -1, n: 0 };
 
   constructor(opts: EngineOptions) {
@@ -471,7 +494,8 @@ export class Engine implements SimEngine, SimHost {
         this.step(0);
         this.emitTick(false);
         const hold = this.wakeHold;
-        if (hold && ++hold.rounds > WAKE_UP_MAX_ROUNDS) this.endWakeUp(hold.day, true);
+        if (hold && hold.unasked.length === 0 && ++hold.rounds > WAKE_UP_MAX_ROUNDS)
+          this.endWakeUp(hold.day, true);
         // Without drainLlm a hung provider must not block advance(); the hold then ends by rounds or timeout.
         if (opts.drainLlm) {
           await this.queue.drain();
@@ -718,6 +742,7 @@ export class Engine implements SimEngine, SimHost {
       if (a.conversation.participants.includes(id)) this.endConversation(a, 'aborted');
     }
     this.runtimes.delete(id);
+    this.visitorsMet.delete(id);
     this.lastFrames.delete(id);
     this.broadcast({ type: 'villagers.changed', added: [], removed: [id] });
   }
@@ -742,6 +767,8 @@ export class Engine implements SimEngine, SimHost {
     };
     const entry: ActiveConversation = { conversation, sent: 0, started: false, withPlayer: false };
     this.active.set(conversation.id, entry);
+    if (a.profile.visitor && !b.profile.visitor) this.visitorsMet.add(aId);
+    if (b.profile.visitor && !a.profile.visitor) this.visitorsMet.add(bId);
     for (const [rt, other] of [
       [a, b],
       [b, a],
@@ -1073,15 +1100,28 @@ export class Engine implements SimEngine, SimHost {
     }
     const nowMs = performance.now();
     if (!this.wakeHold || this.wakeHold.day !== day) {
-      this.wakeHold = { day, startedMs: nowMs, ready: -1, rounds: 0 };
+      this.wakeHold = { day, startedMs: nowMs, ready: -1, rounds: 0, unasked: [...this.runtimes.keys()] };
       this.townLog.anchor(true);
       this.log('info', 'Villagers are waking up…');
-      // Minds start their day plans from update(); on a fresh world nobody has thought yet.
-      for (const rt of [...this.runtimes.values()]) this.think(rt);
+    }
+    if (this.wakeHold.unasked.length > 0) {
+      // Minds start their day plans from update(); on a fresh world nobody has thought yet. A few
+      // per (zero-length) hold step keep the first morning step inside the step budget.
+      for (const id of this.wakeHold.unasked.splice(0, WAKE_UP_THINK_BATCH)) {
+        const rt = this.runtimes.get(id);
+        if (rt) this.think(rt);
+      }
       ({ ready, total } = this.wakeUpCounts(day));
       if (ready >= total) {
         this.endWakeUp(day, false);
         return false;
+      }
+      if (this.wakeHold.unasked.length > 0) {
+        if (ready !== this.wakeHold.ready) {
+          this.wakeHold.ready = ready;
+          this.broadcastSimStatus('wakingUp', ready, total);
+        }
+        return true;
       }
     }
     const waited = nowMs - this.wakeHold.startedMs;
@@ -1156,6 +1196,7 @@ export class Engine implements SimEngine, SimHost {
     this.stepping = true;
     try {
       if (this.deferred.length > 0) for (const m of this.deferred.splice(0)) this.broadcast(m);
+      this.pathBudget = PATH_SEARCHES_PER_STEP;
       if (dt > 0) {
         const prevDay = dayOf(this.clock.time);
         this.clock.time += dt;
@@ -1189,6 +1230,7 @@ export class Engine implements SimEngine, SimHost {
       this.updateConversations();
     } finally {
       this.stepping = false;
+      this.pathBudget = Infinity;
     }
   }
 
@@ -1310,6 +1352,12 @@ export class Engine implements SimEngine, SimHost {
         const name = loc.name.replace(/^the /i, '');
         if (event.kind === 'boarded') {
           this.setActivity(rt, `riding the ${name}`, RIDE_EMOJI[loc.id] ?? '🎡', 'acting');
+          for (const e of this.eventList) {
+            if (e.status !== 'happening' || e.locationId !== loc.id) continue;
+            const riders = this.eventRiders.get(e.id) ?? new Set<VillagerId>();
+            riders.add(rt.profile.id);
+            this.eventRiders.set(e.id, riders);
+          }
         } else {
           if (event.kind === 'finished') {
             const gain = this.rides.spec(loc.id)?.funGain ?? 0;
@@ -1423,6 +1471,7 @@ export class Engine implements SimEngine, SimHost {
 
   private think(rt: Runtime): void {
     if (rt.state.status === 'talking' || rt.state.conversationId) return;
+    if (this.catchTrain(rt)) return;
     let intent: Intent;
     try {
       intent = rt.mind.update(this.buildView(rt));
@@ -1431,6 +1480,35 @@ export class Engine implements SimEngine, SimHost {
       intent = { type: 'wait' };
     }
     this.applyIntent(rt, intent);
+  }
+
+  /**
+   * A visitor whose train leaves soon walks to the station whatever its plan says (spec v2 §5.2:
+   * stays are 1–3 days). The lead covers the walk from where it is, so a late plan block or a
+   * far-away event cannot make it miss the train.
+   */
+  private leavingSoon(rt: Runtime): boolean {
+    if (!rt.profile.visitor) return false;
+    const info = this.playerWorld.visitors.info(rt.profile.id);
+    const station = this.map.locations.find((l) => l.kind === 'station');
+    if (!info || !station) return false;
+    const walk =
+      (Math.abs(station.entry.x - rt.state.pos.x) + Math.abs(station.entry.y - rt.state.pos.y)) /
+      WALK_TILES_PER_GAME_MINUTE;
+    return this.clock.time >= info.departsAt - Math.max(VISITOR_STATION_LEAD_MINUTES, walk * 1.5 + 15);
+  }
+
+  private catchTrain(rt: Runtime): boolean {
+    if (!this.leavingSoon(rt)) return false;
+    const station = this.map.locations.find((l) => l.kind === 'station')!;
+    if (rt.target?.locationId === station.id) {
+      if (rt.arrived && rt.state.activity.text !== TRAIN_WAIT_ACTIVITY)
+        this.setActivity(rt, TRAIN_WAIT_ACTIVITY, '🧳', 'acting');
+      return true;
+    }
+    rt.doneRide = null;
+    this.goTo(rt, station.id, TRAIN_WAIT_ACTIVITY, '🧳', false);
+    return true;
   }
 
   private applyIntent(rt: Runtime, intent: Intent): void {
@@ -1452,10 +1530,10 @@ export class Engine implements SimEngine, SimHost {
     }
     switch (intent.type) {
       case 'goto':
-        this.goTo(rt, intent.locationId, intent.activity, intent.emoji ?? '🚶', false);
+        this.goTo(rt, intent.locationId, intent.activity, intent.emoji ?? '🚶', false, true);
         break;
       case 'sleep':
-        this.goTo(rt, rt.profile.homeId, 'sleeping', '💤', true);
+        this.goTo(rt, rt.profile.homeId, 'sleeping', '💤', true, true);
         break;
       case 'act': {
         s.path = [];
@@ -1488,7 +1566,14 @@ export class Engine implements SimEngine, SimHost {
     }
   }
 
-  private goTo(rt: Runtime, locationId: string, activity: string, emoji: string, sleep: boolean): void {
+  private goTo(
+    rt: Runtime,
+    locationId: string,
+    activity: string,
+    emoji: string,
+    sleep: boolean,
+    deferrable = false,
+  ): void {
     const s = rt.state;
     const loc =
       locationById(this.map.locations, locationId) ?? locationById(this.map.locations, rt.profile.homeId);
@@ -1501,9 +1586,12 @@ export class Engine implements SimEngine, SimHost {
       if (rt.arrived && !atRide) this.setActivity(rt, activity, emoji, this.arrivedStatus(rt, loc));
       return;
     }
+    const spot = this.pickSpot(loc, rt.profile.id) ?? loc.entry;
+    const cached = this.paths.has(s.pos, spot);
+    if (deferrable && !cached && this.pathBudget <= 0) return;
+    if (!cached) this.pathBudget--;
     this.rides.leave(rt.profile.id);
     rt.rodeAt = null;
-    const spot = this.pickSpot(loc, rt.profile.id) ?? loc.entry;
     let path = this.paths.find(s.pos, spot);
     if (!path && (spot.x !== loc.entry.x || spot.y !== loc.entry.y)) path = this.paths.find(s.pos, loc.entry);
     if (!path) {
@@ -1604,6 +1692,7 @@ export class Engine implements SimEngine, SimHost {
 
   private isBusy(rt: Runtime): boolean {
     return (
+      this.leavingSoon(rt) ||
       rt.state.status === 'sleeping' ||
       rt.state.status === 'talking' ||
       !!rt.state.conversationId ||
@@ -1721,15 +1810,24 @@ export class Engine implements SimEngine, SimHost {
         now - rt.lastConversationEnd >= VILLAGER_CONVERSATION_COOLDOWN,
     );
     this.rng.shuffle(free);
+    // Visitors who have not met a resident yet go first and look a little further (spec v2 §5.2:
+    // every visitor talks with residents), so a hotel-bound guest is not left to other guests.
+    const lonely = (rt: Runtime) => !!rt.profile.visitor && !this.visitorsMet.has(rt.profile.id);
+    free.sort((x, y) => Number(lonely(y)) - Number(lonely(x)));
     const used = new Set<Runtime>();
     for (const a of free) {
       if (used.has(a)) continue;
-      for (const b of free) {
+      const partners = lonely(a)
+        ? [...free].sort((x, y) => Number(!!x.profile.visitor) - Number(!!y.profile.visitor))
+        : free;
+      for (const b of partners) {
         if (a === b || used.has(b)) continue;
         const loc = a.state.locationId ? locationById(this.map.locations, a.state.locationId) : null;
         const sameSmall =
           !!loc && a.state.locationId === b.state.locationId && (loc.kind === 'shop' || loc.kind === 'house');
-        if (!sameSmall && distance(a.state.pos, b.state.pos) > CHAT_RADIUS) continue;
+        const meet = (lonely(a) && !b.profile.visitor) || (lonely(b) && !a.profile.visitor);
+        const radius = meet ? NEARBY_RADIUS : CHAT_RADIUS;
+        if (!sameSmall && distance(a.state.pos, b.state.pos) > radius) continue;
         const lastTalked = a.state.relationships[b.profile.id]?.lastTalkedAt;
         if (lastTalked !== undefined && now - lastTalked < this.config.cognition.pairCooldownMinutes)
           continue;
@@ -1741,8 +1839,9 @@ export class Engine implements SimEngine, SimHost {
         } catch (err) {
           log.error('wantsToTalkTo failed', err);
         }
-        // Mark the pair as "considered" so a refusal does not get re-rolled every minute.
-        this.touchPair(a, b, now);
+        // Mark the pair as "considered" so a refusal does not get re-rolled every minute. A guest
+        // meeting its first resident may ask again next minute: the refusal costs no LLM call.
+        if (!meet) this.touchPair(a, b, now);
         if (!willing) continue;
         if (this.startConversation(a.profile.id, b.profile.id)) {
           used.add(a);
@@ -1883,9 +1982,17 @@ export class Engine implements SimEngine, SimHost {
         this.eventPresence.set(e.id, presence);
       }
       if (loc) {
+        const riders = this.eventRiders.get(e.id);
         for (const rt of this.runtimes.values()) {
           if (rt.state.status === 'sleeping') continue;
-          if (isAt(loc, rt.state.pos)) presence.set(rt.profile.id, (presence.get(rt.profile.id) ?? 0) + dt);
+          const id = rt.profile.id;
+          // At a ride, queueing, riding, and the after-ride chat of someone who boarded during
+          // this event all count as taking part (spec v2 §7 dates at rides).
+          const taking =
+            isAt(loc, rt.state.pos) ||
+            (loc.kind === 'ride' &&
+              (this.rides.rideOf(id) === loc.id || (rt.doneRide?.rideId === loc.id && !!riders?.has(id))));
+          if (taking) presence.set(id, (presence.get(id) ?? 0) + dt);
         }
         if (isAt(loc, this.player.pos)) presence.set(PLAYER_ID, (presence.get(PLAYER_ID) ?? 0) + dt);
       }
@@ -1902,6 +2009,7 @@ export class Engine implements SimEngine, SimHost {
     e.attendees = attendees;
     e.status = 'done';
     this.eventPresence.delete(e.id);
+    this.eventRiders.delete(e.id);
     const names = attendees.map((id) => this.nameOf(id));
     const who = [...names, ...(playerAttended ? [this.player.name] : [])];
     for (const id of attendees) {

@@ -18,7 +18,6 @@ import {
   type Facing,
   type FarmSpecies,
   type FarmState,
-  type ForestSpecies,
   type GameMinutes,
   type Location,
   type LocationId,

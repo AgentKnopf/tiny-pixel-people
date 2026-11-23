@@ -8,14 +8,15 @@ import { DEFAULT_CONFIG } from '../../src/server/config.ts';
 import { MockChatProvider } from '../../src/server/llm/providers/mock.ts';
 import type { ChatProvider } from '../../src/server/llm/types.ts';
 import { JsonSaveStore } from '../../src/server/persistence/json-store.ts';
-import { createSimEngine } from '../../src/server/sim/engine.ts';
+import type { SaveData } from '../../src/server/persistence/types.ts';
+import { AFTER_RIDE_ACTIVITY, createSimEngine, type Engine } from '../../src/server/sim/engine.ts';
 import { createStubMind, StubMind } from '../../src/server/sim/stub-mind.ts';
 import type { Intent, WorldView } from '../../src/server/cognition/types.ts';
 import { RIDE_MAX_WAIT_MINUTES, Rides } from '../../src/server/sim/rides.ts';
 import { Train } from '../../src/server/sim/train.ts';
 import type { TickMessage, ToastMsg, TrainUpdatedMsg } from '../../src/shared/protocol.ts';
 import { at } from '../../src/shared/time.ts';
-import type { Location, Romance } from '../../src/shared/types.ts';
+import type { Location, Romance, VillageEvent } from '../../src/shared/types.ts';
 import { repoPath } from '../helpers/features.ts';
 import { createSimTestWorld, testConfig } from '../helpers/sim.ts';
 
@@ -351,5 +352,85 @@ describe('villagers on rides', () => {
     expect(engine.snapshot().rides!.find((r) => r.locationId === 'rollercoaster')).toMatchObject({
       queue: [],
     });
+  });
+});
+
+class DateMind extends StubMind {
+  override update(view: WorldView): Intent {
+    const m = view.now % 1440;
+    if (['mia', 'tom'].includes(view.profile.id) && m >= 600 && m < 690)
+      return { type: 'goto', locationId: 'rollercoaster', activity: 'on a date', emoji: '💕' };
+    if (view.profile.id === 'lily' && m >= 540 && m < 690)
+      return { type: 'goto', locationId: 'rollercoaster', activity: 'riding the rollercoaster', emoji: '🎢' };
+    return super.update(view);
+  }
+}
+
+function dateEvent(id: string, locationId: string): VillageEvent {
+  return {
+    id,
+    title: 'Mia and Tom: date',
+    description: 'A date at the rollercoaster',
+    hostId: 'mia',
+    locationId,
+    start: at(0, '10:00'),
+    end: at(0, '11:30'),
+    invitees: ['tom'],
+    accepted: ['tom'],
+    declined: [],
+    attendees: [],
+    status: 'scheduled',
+    kind: 'date',
+  };
+}
+
+describe('events held at a ride', () => {
+  const world = (restore?: SaveData) =>
+    createSimTestWorld({
+      startAt: '08:50',
+      createMind: (p, d) => new DateMind(p, d),
+      config: { needs: { enabled: false } },
+      ...(restore ? { restore } : {}),
+    }).engine;
+  const event = (engine: Engine, id: string) => engine.snapshot().events.find((e) => e.id === id)!;
+
+  it('counts riding and the after-ride chat of people who boarded during the event', async () => {
+    const engine = world();
+    engine.upsertEvent(dateEvent('date_ride', 'rollercoaster'));
+    engine.upsertEvent({ ...dateEvent('elsewhere', 'square'), kind: 'event', title: 'Square meetup' });
+    const after = new Set<string>();
+    engine.onMessage((m) => {
+      if (m.type !== 'tick') return;
+      for (const f of m.villagers) if (f.activity === AFTER_RIDE_ACTIVITY) after.add(f.id);
+    });
+    await engine.advance(170);
+    const date = event(engine, 'date_ride');
+    expect(date.status).toBe('done');
+    // Both rode one cycle and spent the rest of the date at the food stand, still counted.
+    expect(after).toContain('mia');
+    expect(after).toContain('tom');
+    expect([...date.attendees].sort()).toEqual(['mia', 'tom']);
+    // Lily rode before the date started: her after-ride chat does not make her a guest.
+    expect(date.attendees).not.toContain('lily');
+    // Riding does not count for an event somewhere else.
+    expect(event(engine, 'elsewhere').attendees).not.toContain('mia');
+    expect(event(engine, 'elsewhere').attendees).not.toContain('tom');
+    engine.stop();
+  });
+
+  it('still counts both partners when the world is saved and restored mid-date', async () => {
+    const first = world();
+    first.upsertEvent(dateEvent('date_ride', 'rollercoaster'));
+    await first.advance(85); // 10:15, the date is under way
+    expect(event(first, 'date_ride').status).toBe('happening');
+    const save = first.toSaveData();
+    first.stop();
+    const engine = world(save);
+    await engine.advance(80);
+    const date = event(engine, 'date_ride');
+    expect(date.status).toBe('done');
+    // Ride and after-ride state are not saved; the partners rejoin the ride and still qualify.
+    expect(date.attendees).toEqual(expect.arrayContaining(['mia', 'tom']));
+    engine.stop();
   });
 });
