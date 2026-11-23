@@ -546,6 +546,8 @@ export interface AnimalState {
   facing: Facing;
   status: AnimalStatus;
   lastProducedAt?: GameMinutes;
+  /** Farm females: time of their last birth (the per-mother 2-day gap, spec v2 §3.2). */
+  lastBirthAt?: GameMinutes;
 }
 
 export interface AnimalFrame {
