@@ -4,8 +4,9 @@ import { formatClock, formatInt } from './format.ts';
 import { icon, spriteIcon } from './icons.ts';
 import type { UiStore } from './store.ts';
 
-/** Top-right card: REAL MODEL CALLS, gold + item counts, online · agents. */
+/** Top-right card: model calls (real or mock, per provider), gold + item counts, online · agents. */
 export function createStatsCard(store: UiStore): HTMLElement {
+  const callsLabel = h('div', { class: 'label', 'data-testid': 'stats-calls-label' }, 'Model calls');
   const calls = h('div', { class: 'stats-calls', 'data-testid': 'stats-calls' }, '0 · 0 ms · 0 tok');
   const purse = h('div', { class: 'stats-purse', 'data-testid': 'stats-purse' });
   const queue = h('div', { class: 'stats-queue' });
@@ -14,7 +15,7 @@ export function createStatsCard(store: UiStore): HTMLElement {
   const el = h(
     'div',
     { class: 'panel stats', id: 'stats' },
-    h('div', { class: 'label' }, 'Real model calls'),
+    callsLabel,
     calls,
     purse,
     h('div', { class: 'label' }, 'Recorded from responses'),
@@ -24,6 +25,12 @@ export function createStatsCard(store: UiStore): HTMLElement {
   );
 
   const render = () => {
+    // The mock provider answers locally; its calls must not be presented as real model calls.
+    const provider = store.llm?.provider;
+    setText(
+      callsLabel,
+      !provider ? 'Model calls' : provider === 'mock' ? 'Mock model calls' : 'Real model calls',
+    );
     const q = store.queue;
     const done = q?.done ?? 0;
     setText(

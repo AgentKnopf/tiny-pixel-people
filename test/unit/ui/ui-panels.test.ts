@@ -93,6 +93,7 @@ describe('HUD, stats card and LLM card', () => {
         tokensPerSecond: 3.4,
       },
     });
+    expect(byTestId('stats-calls-label').textContent).toBe('Real model calls');
     expect(byTestId('stats-calls').textContent).toBe('87 · 14833 ms · 27744 tok');
     expect(byTestId('stats-purse').textContent).toContain('🪙 20 gold');
     expect(byTestId('stats-purse').textContent).toContain('🌸 2');
@@ -100,6 +101,13 @@ describe('HUD, stats card and LLM card', () => {
     expect(byTestId('llm-title').textContent).toBe('✈ OFFLINE');
     expect(byTestId('llm-where').textContent).toBe('Running on this machine · QWEN2.5:7B via Ollama');
     expect(byTestId('llm-last').textContent).toBe('last reply: 5.0s · ~3.4 tok/s');
+  });
+
+  it('labels mock provider calls as mock, not real', () => {
+    ui.handleMessage({ ...makeHello(), llm: { provider: 'mock', model: 'mock', embeddings: 'mock' } });
+    expect(byTestId('stats-calls-label').textContent).toBe('Mock model calls');
+    ui.handleMessage(makeHello());
+    expect(byTestId('stats-calls-label').textContent).toBe('Real model calls');
   });
 
   it('flags an unreachable model', () => {
