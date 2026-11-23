@@ -90,6 +90,8 @@ export interface VillagerMind {
   replyToPlayer(view: WorldView, input: PlayerInteraction): Promise<PlayerReply>;
   /** Propose a village event soon (toolbar "Town event"); the result arrives via world.upsertEvent. */
   requestEventProposal(): void;
+  /** True once the plan for `day` is final (LLM plan in or fallback chosen); the engine's wake-up hold waits on it. */
+  isPlanSettled?(day: number): boolean;
 }
 
 export interface PlayerInteraction {
