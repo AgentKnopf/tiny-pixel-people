@@ -284,7 +284,14 @@ export class WorldRenderer {
       y: a.pos.y + (a.aerial ? 1000 : 0),
     }));
     const pe = this.store.playerEntity;
-    return hitTest(map, world, villagers, pe ? { id: PLAYER_ID, pos: entityPos(pe, now) } : null, animals);
+    const riding = ridingIds(this.store.rides.values()).has(PLAYER_ID);
+    return hitTest(
+      map,
+      world,
+      villagers,
+      pe && !riding ? { id: PLAYER_ID, pos: entityPos(pe, now) } : null,
+      animals,
+    );
   }
 
   /** Whether the player can walk into a location (it has an interior). */
@@ -370,7 +377,7 @@ export class WorldRenderer {
         name: `★ ${player.name}`,
         sheet: this.assets.sheet('characters/player.png', PLAYER_ID, 'player'),
         kind: 'player',
-        hidden: false,
+        hidden: riding.has(PLAYER_ID),
       });
     }
     const pet = this.store.petEntity;
