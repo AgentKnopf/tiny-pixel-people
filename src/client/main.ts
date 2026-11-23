@@ -41,7 +41,14 @@ net = connect(
 window.tpp = { store, net, renderer };
 
 renderer.on('villager', (id) => ui.selectVillager(id));
-renderer.on('door', (houseId) => ui.openDoorNote(houseId));
+// selectAnimal / openNoticeBoard / openKeep join UiController with WP4b's v2 panels.
+const uiV2 = ui as typeof ui & {
+  selectAnimal?(id: string | null): void;
+  openNoticeBoard?(): void;
+  openKeep?(): void;
+};
+renderer.on('animal', (id) => uiV2.selectAnimal?.(id));
+renderer.on('door', ({ houseId }) => ui.openDoorNote(houseId));
 renderer.on('ground', ({ tile, blocked }) => {
   if (!blocked) net?.send({ type: 'player.move', to: tile });
 });

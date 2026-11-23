@@ -116,6 +116,16 @@
       "suggestedRole": "beekeeper"
     },
     {
+      "sprite": "characters/laude.png",
+      "description": "Laude the postmaster: blue post cap, blue jacket, round glasses, satchel strap",
+      "suggestedRole": "postmaster (Laude)"
+    },
+    {
+      "sprite": "characters/franzi.png",
+      "description": "Franzi: chestnut bob with a pink flower bow, sage-green dress",
+      "suggestedRole": "villager (Franzi)"
+    },
+    {
       "sprite": "characters/player.png",
       "description": "player avatar: yellow shirt with star, dark hair",
       "suggestedRole": "player"
@@ -124,6 +134,46 @@
       "sprite": "characters/stranger.png",
       "description": "hooded traveller in a purple cloak with a wizard hat",
       "suggestedRole": "event: stranger"
+    },
+    {
+      "sprite": "characters/visitor-01.png",
+      "description": "train visitor: tan trench coat, brown cap, grey trousers",
+      "suggestedRole": "visitor (train guest)"
+    },
+    {
+      "sprite": "characters/visitor-02.png",
+      "description": "train visitor: red sun hat, white summer dress",
+      "suggestedRole": "visitor (train guest)"
+    },
+    {
+      "sprite": "characters/visitor-03.png",
+      "description": "train visitor: backpacker in an orange anorak and green beanie",
+      "suggestedRole": "visitor (train guest)"
+    },
+    {
+      "sprite": "characters/visitor-04.png",
+      "description": "train visitor: tourist in a teal holiday shirt with sunglasses",
+      "suggestedRole": "visitor (train guest)"
+    },
+    {
+      "sprite": "characters/visitor-05.png",
+      "description": "train visitor: elderly gentleman, grey beard, navy blazer",
+      "suggestedRole": "visitor (train guest)"
+    },
+    {
+      "sprite": "characters/visitor-06.png",
+      "description": "train visitor: young woman with a purple ponytail and yellow jacket",
+      "suggestedRole": "visitor (train guest)"
+    },
+    {
+      "sprite": "characters/visitor-07.png",
+      "description": "train visitor: curly-haired kid in a blue shirt and red cap",
+      "suggestedRole": "visitor (train guest)"
+    },
+    {
+      "sprite": "characters/visitor-08.png",
+      "description": "train visitor: businesswoman with a black bob and grey suit",
+      "suggestedRole": "visitor (train guest)"
     },
     {
       "sprite": "characters/pet-pip.png",

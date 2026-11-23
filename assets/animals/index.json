@@ -1,0 +1,453 @@
+{
+  "note": "Side-view sheets: row 0 faces left, row 1 faces right; columns per \"frames\" (the crow lists its own). Anchor = feet. When moving up or down, keep the last horizontal facing.",
+  "rows": [
+    "left",
+    "right"
+  ],
+  "frames": {
+    "idle": [
+      0,
+      1
+    ],
+    "walk": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "sleep": [
+      6
+    ]
+  },
+  "fps": {
+    "idle": 2,
+    "walk": 6,
+    "fly": 8,
+    "sleep": 1
+  },
+  "animals": [
+    {
+      "key": "cow-calf",
+      "group": "farm",
+      "species": "cow",
+      "age": "young",
+      "sprite": "animals/cow-calf.png",
+      "frameWidth": 32,
+      "frameHeight": 24,
+      "anchor": {
+        "x": 16,
+        "y": 22
+      },
+      "description": "black-and-white calf cow"
+    },
+    {
+      "key": "cow",
+      "group": "farm",
+      "species": "cow",
+      "age": "adult",
+      "sprite": "animals/cow.png",
+      "frameWidth": 32,
+      "frameHeight": 24,
+      "anchor": {
+        "x": 16,
+        "y": 22
+      },
+      "description": "black-and-white adult cow"
+    },
+    {
+      "key": "cow-old",
+      "group": "farm",
+      "species": "cow",
+      "age": "old",
+      "sprite": "animals/cow-old.png",
+      "frameWidth": 32,
+      "frameHeight": 24,
+      "anchor": {
+        "x": 16,
+        "y": 22
+      },
+      "description": "black-and-white old cow"
+    },
+    {
+      "key": "sheep-lamb",
+      "group": "farm",
+      "species": "sheep",
+      "age": "young",
+      "sprite": "animals/sheep-lamb.png",
+      "frameWidth": 24,
+      "frameHeight": 24,
+      "anchor": {
+        "x": 12,
+        "y": 22
+      },
+      "description": "fluffy lamb sheep"
+    },
+    {
+      "key": "sheep",
+      "group": "farm",
+      "species": "sheep",
+      "age": "adult",
+      "sprite": "animals/sheep.png",
+      "frameWidth": 24,
+      "frameHeight": 24,
+      "anchor": {
+        "x": 12,
+        "y": 22
+      },
+      "description": "fluffy adult sheep"
+    },
+    {
+      "key": "sheep-old",
+      "group": "farm",
+      "species": "sheep",
+      "age": "old",
+      "sprite": "animals/sheep-old.png",
+      "frameWidth": 24,
+      "frameHeight": 24,
+      "anchor": {
+        "x": 12,
+        "y": 22
+      },
+      "description": "fluffy old sheep"
+    },
+    {
+      "key": "chicken-chick",
+      "group": "farm",
+      "species": "chicken",
+      "age": "young",
+      "sprite": "animals/chicken-chick.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "anchor": {
+        "x": 8,
+        "y": 14
+      },
+      "description": "chick chicken"
+    },
+    {
+      "key": "chicken",
+      "group": "farm",
+      "species": "chicken",
+      "age": "adult",
+      "sprite": "animals/chicken.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "anchor": {
+        "x": 8,
+        "y": 14
+      },
+      "description": "adult chicken"
+    },
+    {
+      "key": "chicken-old",
+      "group": "farm",
+      "species": "chicken",
+      "age": "old",
+      "sprite": "animals/chicken-old.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "anchor": {
+        "x": 8,
+        "y": 14
+      },
+      "description": "old chicken"
+    },
+    {
+      "key": "penguin",
+      "group": "zoo",
+      "species": "penguin",
+      "sprite": "animals/penguin.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "anchor": {
+        "x": 8,
+        "y": 14
+      },
+      "description": "waddling penguin"
+    },
+    {
+      "key": "polar_bear",
+      "group": "zoo",
+      "species": "polar_bear",
+      "sprite": "animals/polar_bear.png",
+      "frameWidth": 32,
+      "frameHeight": 24,
+      "anchor": {
+        "x": 16,
+        "y": 22
+      },
+      "description": "white polar bear"
+    },
+    {
+      "key": "panda",
+      "group": "zoo",
+      "species": "panda",
+      "sprite": "animals/panda.png",
+      "frameWidth": 24,
+      "frameHeight": 24,
+      "anchor": {
+        "x": 12,
+        "y": 22
+      },
+      "description": "black-and-white panda munching bamboo"
+    },
+    {
+      "key": "monkey",
+      "group": "zoo",
+      "species": "monkey",
+      "sprite": "animals/monkey.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "anchor": {
+        "x": 8,
+        "y": 14
+      },
+      "description": "playful brown monkey"
+    },
+    {
+      "key": "lion",
+      "group": "zoo",
+      "species": "lion",
+      "sprite": "animals/lion.png",
+      "frameWidth": 32,
+      "frameHeight": 24,
+      "anchor": {
+        "x": 16,
+        "y": 22
+      },
+      "description": "lion with a big mane"
+    },
+    {
+      "key": "zebra",
+      "group": "zoo",
+      "species": "zebra",
+      "sprite": "animals/zebra.png",
+      "frameWidth": 32,
+      "frameHeight": 24,
+      "anchor": {
+        "x": 16,
+        "y": 22
+      },
+      "description": "striped zebra"
+    },
+    {
+      "key": "giraffe",
+      "group": "zoo",
+      "species": "giraffe",
+      "sprite": "animals/giraffe.png",
+      "frameWidth": 32,
+      "frameHeight": 48,
+      "anchor": {
+        "x": 16,
+        "y": 46
+      },
+      "description": "tall giraffe with patches"
+    },
+    {
+      "key": "elephant",
+      "group": "zoo",
+      "species": "elephant",
+      "sprite": "animals/elephant.png",
+      "frameWidth": 40,
+      "frameHeight": 32,
+      "anchor": {
+        "x": 20,
+        "y": 30
+      },
+      "description": "grey elephant with trunk and big ears"
+    },
+    {
+      "key": "hippo",
+      "group": "zoo",
+      "species": "hippo",
+      "sprite": "animals/hippo.png",
+      "frameWidth": 32,
+      "frameHeight": 24,
+      "anchor": {
+        "x": 16,
+        "y": 22
+      },
+      "description": "round purple-grey hippo"
+    },
+    {
+      "key": "kangaroo",
+      "group": "zoo",
+      "species": "kangaroo",
+      "sprite": "animals/kangaroo.png",
+      "frameWidth": 24,
+      "frameHeight": 24,
+      "anchor": {
+        "x": 12,
+        "y": 22
+      },
+      "description": "hopping kangaroo"
+    },
+    {
+      "key": "flamingo",
+      "group": "zoo",
+      "species": "flamingo",
+      "sprite": "animals/flamingo.png",
+      "frameWidth": 16,
+      "frameHeight": 24,
+      "anchor": {
+        "x": 8,
+        "y": 22
+      },
+      "description": "pink flamingo (stands on one leg when idle)"
+    },
+    {
+      "key": "crocodile",
+      "group": "zoo",
+      "species": "crocodile",
+      "sprite": "animals/crocodile.png",
+      "frameWidth": 32,
+      "frameHeight": 16,
+      "anchor": {
+        "x": 16,
+        "y": 14
+      },
+      "description": "low green crocodile"
+    },
+    {
+      "key": "deer",
+      "group": "forest",
+      "species": "deer",
+      "sprite": "animals/deer.png",
+      "frameWidth": 24,
+      "frameHeight": 24,
+      "anchor": {
+        "x": 12,
+        "y": 22
+      },
+      "description": "shy deer with antlers"
+    },
+    {
+      "key": "rabbit",
+      "group": "forest",
+      "species": "rabbit",
+      "sprite": "animals/rabbit.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "anchor": {
+        "x": 8,
+        "y": 14
+      },
+      "description": "grey-brown rabbit (hops)"
+    },
+    {
+      "key": "squirrel",
+      "group": "forest",
+      "species": "squirrel",
+      "sprite": "animals/squirrel.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "anchor": {
+        "x": 8,
+        "y": 14
+      },
+      "description": "red squirrel with a curled tail"
+    },
+    {
+      "key": "hedgehog",
+      "group": "forest",
+      "species": "hedgehog",
+      "sprite": "animals/hedgehog.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "anchor": {
+        "x": 8,
+        "y": 14
+      },
+      "description": "little hedgehog"
+    },
+    {
+      "key": "fox",
+      "group": "forest",
+      "species": "fox",
+      "sprite": "animals/fox.png",
+      "frameWidth": 24,
+      "frameHeight": 16,
+      "anchor": {
+        "x": 12,
+        "y": 14
+      },
+      "description": "red fox with a bushy tail"
+    },
+    {
+      "key": "bird",
+      "group": "forest",
+      "species": "bird",
+      "sprite": "animals/bird.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "anchor": {
+        "x": 8,
+        "y": 14
+      },
+      "description": "brown songbird; frames 2-5 fly"
+    },
+    {
+      "key": "bluebird",
+      "group": "forest",
+      "species": "bluebird",
+      "sprite": "animals/bluebird.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "anchor": {
+        "x": 8,
+        "y": 14
+      },
+      "description": "bluebird; frames 2-5 fly"
+    },
+    {
+      "key": "duck",
+      "group": "forest",
+      "species": "duck",
+      "sprite": "animals/duck.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "anchor": {
+        "x": 8,
+        "y": 14
+      },
+      "description": "mallard duck swimming"
+    },
+    {
+      "key": "crow",
+      "group": "crow",
+      "species": "crow",
+      "sprite": "animals/crow.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "anchor": {
+        "x": 8,
+        "y": 14
+      },
+      "frames": {
+        "idle": [
+          0,
+          1
+        ],
+        "hop": [
+          2,
+          3,
+          4
+        ],
+        "caw": [
+          5,
+          6
+        ],
+        "fly": [
+          7,
+          8,
+          9,
+          10
+        ],
+        "sleep": [
+          11
+        ]
+      },
+      "description": "the post office crow; idle, hop, caw, fly and sleep frames"
+    }
+  ]
+}

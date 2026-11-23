@@ -1,5 +1,5 @@
 /** Helpers around the cognition ↔ engine ports defined in ./types.ts. */
-import type { DayPlan, DoorNote, PlanBlock, VillageEvent, VillagerId } from '../../shared/types.ts';
+import type { DayPlan, DoorNote, Letter, PlanBlock, VillageEvent, VillagerId } from '../../shared/types.ts';
 import type { LearnedFact, MindWorld } from './types.ts';
 
 export type MemoryWorld = MindWorld & {
@@ -10,12 +10,22 @@ export type MemoryWorld = MindWorld & {
   tasks: { taskId: string; block: PlanBlock }[];
   eventList: VillageEvent[];
   noteList: DoorNote[];
+  letterList: Letter[];
 };
 
 /** In-memory MindWorld for tests and headless tools. Pass shared arrays to model one world. */
-export function createMemoryWorld(shared: { events?: VillageEvent[]; notes?: DoorNote[] } = {}): MemoryWorld {
+export function createMemoryWorld(
+  shared: {
+    events?: VillageEvent[];
+    notes?: DoorNote[];
+    letters?: Letter[];
+    self?: VillagerId;
+    now?: () => number;
+  } = {},
+): MemoryWorld {
   const eventList = shared.events ?? [];
   const noteList = shared.notes ?? [];
+  const letterList = shared.letters ?? [];
   const w: MemoryWorld = {
     plan: null,
     thought: '',
@@ -24,6 +34,7 @@ export function createMemoryWorld(shared: { events?: VillageEvent[]; notes?: Doo
     tasks: [],
     eventList,
     noteList,
+    letterList,
     setPlan(plan) {
       w.plan = plan;
     },
@@ -53,6 +64,20 @@ export function createMemoryWorld(shared: { events?: VillageEvent[]; notes?: Doo
     },
     taskCompleted(taskId, block) {
       w.tasks.push({ taskId, block });
+    },
+    sendLetter(to, text, opts) {
+      const letter: Letter = {
+        id: `letter-${letterList.length + 1}`,
+        from: shared.self ?? 'unknown',
+        to,
+        text,
+        postedAt: shared.now?.() ?? 0,
+        status: 'posted',
+        ...(opts?.replyTo ? { replyTo: opts.replyTo } : {}),
+        ...(opts?.source ? { source: opts.source } : {}),
+      };
+      letterList.push(letter);
+      return letter;
     },
   };
   return w;

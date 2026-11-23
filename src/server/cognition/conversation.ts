@@ -15,6 +15,7 @@ import { extractKeywords, keywordOverlap } from './keywords.ts';
 import { ask, loadTracker, type LoadLevel } from './llm.ts';
 import { Mind, PRIORITY, cleanLine } from './mind.ts';
 import { bestSentence, findMention, newsText } from './gossip.ts';
+import { keepLines, keepMeta } from './post.ts';
 import { convoSummarizePrompt, convoTurnPrompt } from './prompts/social.ts';
 import { settingsFromConfig } from './settings.ts';
 import { villageFor } from './village.ts';
@@ -171,6 +172,7 @@ export class LlmConversationRunner implements ConversationRunner {
         : undefined;
     const place = conv.locationId ? speaker.locName(view, conv.locationId) : 'the village path';
     const memories = await speaker.recall(`${listener.profile.name} ${place}`, now, { k: 5 });
+    const keep = speaker.checkKeep(view, `${listener.profile.name} ${last?.text ?? ''}`);
     const transcript = conv.messages.slice();
     const p = convoTurnPrompt({
       profile: speaker.profile,
@@ -185,6 +187,7 @@ export class LlmConversationRunner implements ConversationRunner {
       turn,
       maxTurns,
       ...(justHeard ? { justHeard: justHeard.text } : {}),
+      keep: keepLines(keep, (id) => speaker.nameOf(id, view)),
     });
     const said = new Set(
       transcript.filter((m) => m.speakerId === speaker.id).map((m) => m.text.toLowerCase()),
@@ -203,6 +206,7 @@ export class LlmConversationRunner implements ConversationRunner {
         transcript,
         turn,
         conversationId: conv.id,
+        ...(keep.length ? { keep: keepMeta(keep) } : {}),
       },
       parse: (raw) => {
         const r = asRecord(raw);

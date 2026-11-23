@@ -12,6 +12,10 @@ import type { ServerMessage } from '../../shared/protocol.ts';
 import type {
   DayPlan,
   GameMinutes,
+  HouseVisit,
+  Letter,
+  LocationId,
+  Provenance,
   Point,
   VillageEvent,
   VillagerId,
@@ -68,6 +72,25 @@ export interface PlayerHost {
   spawnVillager(profile: VillagerProfile, at: Point): void;
   /** Remove a transient villager (it may walk off first); broadcasts `villagers.changed`. */
   removeVillager(id: VillagerId): void;
-  /** Optional LLM queue for `stranger.create` (only used when `world.llmStrangers`). */
+  /** Optional LLM queue for `stranger.create` and `visitor.create`. */
   readonly llm?: LlmQueue;
+
+  // ---------- v2 (optional until the engine wires them) ----------
+
+  /** Current LLM load level (cognition); optional tasks degrade under 'overloaded'. Default 'normal'. */
+  loadLevel?(): 'normal' | 'busy' | 'overloaded';
+  /** Put the player in a ride's queue (RideService); the ride runs it like a villager rider. */
+  joinRide?(rideId: LocationId): CommandResult;
+  /** `world.trigger train`: bring the next train now (TrainService.triggerNow). */
+  triggerTrain?(): CommandResult;
+  /**
+   * The player walked in while this owner is home and awake: the engine stops the owner for up to
+   * 10 game minutes (status `talking`, emote 👋) and answers with `VillagerMind.greetVisitor`.
+   * Memories and affinity are written by WP8; without this hook the template greeting is used.
+   */
+  requestGreeting?(villagerId: VillagerId, visit: HouseVisit): Promise<{ reply: string; source: Provenance }>;
+  /** A villager read a letter at home (WP8 wrote the memory); forward to `VillagerMind.onLetterRead`. */
+  letterRead?(villagerId: VillagerId, letter: Letter): void;
+  /** The crow caws (`AnimalSim.caw('letter')`); it has its own cooldown. */
+  caw?(reason: 'letter' | 'player'): void;
 }

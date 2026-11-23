@@ -1,4 +1,11 @@
-import type { DecorationItem, ItemDef, TilesetRef } from '../../shared/types.ts';
+import type { AnimalSpecies, AnimalStage, DecorationItem, ItemDef, TilesetRef } from '../../shared/types.ts';
+import {
+  placeholderAnimalSheet,
+  resolveEntry,
+  sheetInfo,
+  type AnimalIndex,
+  type AnimalSheetInfo,
+} from './animals.ts';
 import { placeholderSheet, SHEET_H, SHEET_W, spriteUrl, type PlaceholderKind } from './sprites.ts';
 
 /** `tiles/village.json` sidecar (docs/art/README.md). */
@@ -99,7 +106,11 @@ export class Assets {
   icons: { image: Drawable; meta: IconSheetMeta } | null = null;
   glow: Drawable | null = null;
   meta: MapMeta | null = null;
+  animalIndex: AnimalIndex | null = null;
   private sheets = new Map<string, Drawable>();
+  private images = new Map<string, Drawable | null>();
+  private placeholders = new Map<string, { image: Drawable; info: AnimalSheetInfo }>();
+  private infos = new Map<string, AnimalSheetInfo>();
   private pending = new Set<string>();
 
   constructor(private onChange: () => void = () => {}) {}
@@ -119,11 +130,13 @@ export class Assets {
   }
 
   async loadCommon(): Promise<void> {
-    const [iconMeta, glow, meta] = await Promise.all([
+    const [iconMeta, glow, meta, animals] = await Promise.all([
       loadJson<IconSheetMeta>(assetUrl('ui/icons.json')),
       loadImage(assetUrl('ui/glow.png')),
       loadJson<MapMeta>(assetUrl('maps/village.meta.json')),
+      loadJson<AnimalIndex>(assetUrl('animals/index.json')),
     ]);
+    if (animals && Array.isArray(animals.animals)) this.animalIndex = animals;
     if (iconMeta) {
       const img = await loadImage(assetUrl(iconMeta.image));
       if (img) this.icons = { image: img, meta: iconMeta };
@@ -162,6 +175,43 @@ export class Assets {
       void loadImage(url).then((img) => {
         if (img && img.width >= SHEET_W && img.height >= SHEET_H) this.sheets.set(url, img);
       });
+    }
+    return ph;
+  }
+
+  /**
+   * Sheet for an animal (species, stage, and a seed that picks between variants such as bird and
+   * bluebird). A procedural placeholder is returned until the PNG from animals/index.json loads.
+   */
+  animalSheet(
+    species: AnimalSpecies,
+    stage: AnimalStage | undefined,
+    seed: number,
+  ): { image: Drawable; info: AnimalSheetInfo } {
+    const found = resolveEntry(this.animalIndex, species, stage, seed);
+    if (found && this.animalIndex) {
+      const url = assetUrl(found.entry.sprite);
+      const img = this.images.get(url);
+      if (img) {
+        const ik = `${found.entry.key}@${found.scale}`;
+        let info = this.infos.get(ik);
+        if (!info) this.infos.set(ik, (info = sheetInfo(this.animalIndex, found.entry, found.scale)));
+        return { image: img, info };
+      }
+      if (img === undefined) {
+        this.images.set(url, null);
+        void loadImage(url).then((loaded) => {
+          if (loaded) this.images.set(url, loaded);
+        });
+      }
+    }
+    const young = stage === 'baby';
+    const key = `${species}:${young ? 'y' : 'a'}`;
+    let ph = this.placeholders.get(key);
+    if (!ph) {
+      const s = placeholderAnimalSheet(species, young);
+      ph = { image: canvasFromPixels(s.px, s.w, s.h), info: s.info };
+      this.placeholders.set(key, ph);
     }
     return ph;
   }

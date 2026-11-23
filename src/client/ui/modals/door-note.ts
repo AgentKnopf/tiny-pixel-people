@@ -1,8 +1,16 @@
 import { NOTE_MAX_LENGTH } from '../../../shared/protocol.ts';
-import { PLAYER_HOME_ID, PLAYER_ID, type DoorNote, type LocationId } from '../../../shared/types.ts';
+import {
+  PLAYER_HOME_ID,
+  PLAYER_ID,
+  type DoorNote,
+  type Letter,
+  type Location,
+  type LocationId,
+} from '../../../shared/types.ts';
 import type { UiContext } from '../context.ts';
 import { h, replaceChildren, setText } from '../dom.ts';
 import { formatClock, formatDay } from '../format.ts';
+import { canEnter, POST_OFFICE_ID } from '../places.ts';
 import type { ModalView } from './modal.ts';
 
 const STATUS_LABEL: Record<DoorNote['status'], string> = {
@@ -13,8 +21,74 @@ const STATUS_LABEL: Record<DoorNote['status'], string> = {
 
 /** Door-note compose + history for a villager's house, or the player's mailbox for `player_home`. */
 export function doorNoteModal(ctx: UiContext, houseId: LocationId): ModalView {
-  return houseId === PLAYER_HOME_ID ? mailboxView(ctx) : composeView(ctx, houseId);
+  if (houseId === PLAYER_HOME_ID) return mailboxView(ctx);
+  const loc = ctx.store.location(houseId);
+  if (loc && loc.kind !== 'house') return publicView(ctx, loc);
+  return composeView(ctx, houseId);
 }
+function goInsideButton(ctx: UiContext, locationId: LocationId): HTMLButtonElement {
+  return h(
+    'button',
+    {
+      class: 'btn btn-accent',
+      'data-testid': 'door-enter',
+      onclick: () => {
+        ctx.host.send({ type: 'player.enter', locationId });
+        ctx.closeModal();
+      },
+    },
+    '🚪 Go inside',
+  );
+}
+
+/** Door of a public building (hotel, post office): go inside, and the post office's services. */
+function publicView(ctx: UiContext, loc: Location): ModalView {
+  const isPost = loc.id === POST_OFFICE_ID;
+  return {
+    title: loc.name,
+    icon: isPost ? ['note', '📮'] : ['home', '🏨'],
+    subtitle: loc.hours ? `Open ${loc.hours.open}–${loc.hours.close}` : undefined,
+    footer: isPost ? 'Inside: the counter, and the Keep in the cupboard.' : 'Anyone may walk in.',
+    className: 'modal-note',
+    render(body) {
+      replaceChildren(
+        body,
+        loc.description ? h('p', { class: 'hint' }, loc.description) : null,
+        h(
+          'div',
+          { class: 'row door-actions' },
+          canEnter(loc) ? goInsideButton(ctx, loc.id) : null,
+          isPost
+            ? [
+                h(
+                  'button',
+                  {
+                    class: 'btn',
+                    'data-testid': 'door-letter',
+                    onclick: () => ctx.openModal('letters', 'write'),
+                  },
+                  '✉️ Write a letter',
+                ),
+                h(
+                  'button',
+                  { class: 'btn', 'data-testid': 'door-board', onclick: () => ctx.openModal('notice-board') },
+                  '📌 Notice board',
+                ),
+              ]
+            : null,
+        ),
+      );
+    },
+  };
+}
+
+const LETTER_STATUS: Record<Letter['status'], string> = {
+  posted: '📮 posted',
+  delivered: '📬 in their mailbox',
+  read: '👀 read',
+  replied: '✉️ replied',
+  returned: '↩️ returned',
+};
 
 function when(t: number): string {
   return `${formatDay(t)} ${formatClock(t)}`;
@@ -68,9 +142,13 @@ function composeView(ctx: UiContext, houseId: LocationId): ModalView {
       { class: 'row' },
       counter,
       status,
-      h('button', { class: 'btn btn-accent', 'data-testid': 'note-pin', onclick: pin }, '📌 Pin note'),
+      canEnter(loc) ? goInsideButton(ctx, houseId) : null,
+      h('button', { class: 'btn btn-accent', 'data-testid': 'note-pin', onclick: pin }, '📌 Leave a note'),
     ),
   );
+  const letterList = h('ul', { class: 'note-history', 'data-testid': 'door-letters' });
+  const lettersHere = () =>
+    store.playerLetters().filter((l) => l.from === PLAYER_ID && ownerIds.includes(l.to));
 
   return {
     title: `Note for ${ownerLabel}'s door`,
@@ -78,13 +156,26 @@ function composeView(ctx: UiContext, houseId: LocationId): ModalView {
     subtitle: loc?.name,
     footer: 'They read it the next time they come home, and pin a reply on the door.',
     className: 'modal-note',
-    key: () =>
-      store
-        .notesFor(houseId)
-        .map((n) => `${n.id}:${n.status}`)
-        .join(','),
+    key: () => [...store.notesFor(houseId), ...lettersHere()].map((n) => `${n.id}:${n.status}`).join(','),
     render(body) {
       const notes = store.notesFor(houseId).filter((n) => n.authorId === PLAYER_ID);
+      const letters = lettersHere();
+      replaceChildren(
+        letterList,
+        letters.map((l) =>
+          h(
+            'li',
+            { class: `note letter letter-${l.status}` },
+            h(
+              'div',
+              { class: 'label' },
+              `${when(l.postedAt)} · ✉️ letter to ${store.name(l.to)} · ${LETTER_STATUS[l.status]}`,
+            ),
+            h('div', { class: 'note-body' }, `“${l.text}”`),
+          ),
+        ),
+      );
+      letterList.hidden = letters.length === 0;
       if (pendingSince !== null && store.notesFor(houseId).length > pendingSince) {
         pendingSince = null;
         setText(status, '✓ Pinned');
@@ -112,7 +203,7 @@ function composeView(ctx: UiContext, houseId: LocationId): ModalView {
             ),
       );
       if (!body.contains(form)) {
-        replaceChildren(body, form, h('div', { class: 'label' }, 'Previous notes'), history);
+        replaceChildren(body, form, h('div', { class: 'label' }, 'Previous notes'), history, letterList);
         textarea.focus();
       }
     },
@@ -121,6 +212,7 @@ function composeView(ctx: UiContext, houseId: LocationId): ModalView {
 
 function mailboxView(ctx: UiContext): ModalView {
   const { store } = ctx;
+  const inbox = () => store.playerLetters().filter((l) => l.to === PLAYER_ID && l.status !== 'posted');
   return {
     title: 'Your mailbox',
     icon: ['note', '📬'],
@@ -128,13 +220,35 @@ function mailboxView(ctx: UiContext): ModalView {
     className: 'modal-note',
     key: () =>
       `${store.player?.placedDecorations.includes('mailbox')}|` +
-      store
-        .notesFor(PLAYER_HOME_ID)
-        .map((n) => `${n.id}:${n.status}`)
-        .join(','),
+      [...store.notesFor(PLAYER_HOME_ID), ...inbox()].map((n) => `${n.id}:${n.status}`).join(','),
     render(body) {
       const notes = store.notesFor(PLAYER_HOME_ID).filter((n) => n.authorId !== PLAYER_ID);
+      const letters = inbox();
       const hasMailbox = store.player?.placedDecorations.includes('mailbox') ?? false;
+      const items = [
+        ...notes.map((n) => ({
+          at: n.postedAt,
+          el: h(
+            'li',
+            { class: `note note-${n.status}` },
+            h('div', { class: 'label' }, `${when(n.postedAt)} · from ${store.name(n.authorId)}`),
+            h('div', { class: 'note-body' }, `“${n.text}”`),
+          ),
+        })),
+        ...letters.map((l) => ({
+          at: l.deliveredAt ?? l.postedAt,
+          el: h(
+            'li',
+            { class: `note letter letter-${l.status}${l.status === 'delivered' ? ' unread' : ''}` },
+            h(
+              'div',
+              { class: 'label' },
+              `${when(l.deliveredAt ?? l.postedAt)} · ✉️ letter from ${store.name(l.from)}${l.status === 'delivered' ? ' · new' : ''}`,
+            ),
+            h('div', { class: 'note-body' }, `“${l.text}”`),
+          ),
+        })),
+      ].sort((a, b) => b.at - a.at);
       replaceChildren(
         body,
         hasMailbox
@@ -143,17 +257,19 @@ function mailboxView(ctx: UiContext): ModalView {
         h(
           'ul',
           { class: 'note-history', 'data-testid': 'mailbox' },
-          notes.length === 0
-            ? h('li', { class: 'empty' }, 'No letters yet.')
-            : notes.map((n) =>
-                h(
-                  'li',
-                  { class: `note note-${n.status}` },
-                  h('div', { class: 'label' }, `${when(n.postedAt)} · from ${store.name(n.authorId)}`),
-                  h('div', { class: 'note-body' }, `“${n.text}”`),
-                ),
-              ),
+          items.length === 0 ? h('li', { class: 'empty' }, 'No letters yet.') : items.map((i) => i.el),
         ),
+        letters.length
+          ? h(
+              'button',
+              {
+                class: 'btn',
+                'data-testid': 'mailbox-letters',
+                onclick: () => ctx.openModal('letters', 'inbox'),
+              },
+              '✉️ Open Letters',
+            )
+          : null,
       );
     },
   };

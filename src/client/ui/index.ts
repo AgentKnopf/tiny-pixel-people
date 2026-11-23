@@ -12,9 +12,13 @@ import { createLlmCard } from './llm-card.ts';
 import { backpackModal } from './modals/backpack.ts';
 import { decorateModal } from './modals/decorate.ts';
 import { doorNoteModal } from './modals/door-note.ts';
+import { keepModal } from './modals/keep.ts';
+import { lettersModal, type LettersTab } from './modals/letters.ts';
+import { noticeBoardModal } from './modals/notice-board.ts';
 import { mapModal } from './modals/map.ts';
 import { ModalHost, type ModalView } from './modals/modal.ts';
 import { petModal } from './modals/pet.ts';
+import { createPlaceBar } from './place-bar.ts';
 import { createRumorPanel } from './rumor-panel.ts';
 import { createSimStatusBanner } from './sim-status.ts';
 import { createStatsCard } from './stats.ts';
@@ -36,6 +40,11 @@ const ALL_TOPICS: Topic[] = [
   'villagers',
   'rumors',
   'events',
+  'letters',
+  'notices',
+  'keep',
+  'stock',
+  'rides',
 ];
 
 /** Interprets the free-text status strings from net.ts as well as plain ConnectionState values. */
@@ -72,18 +81,25 @@ export function mountUi(root: HTMLElement, host: UiHost, store: UiStore = new Ui
       if (id) host.send({ type: 'inspect', villagerId: id });
       for (const cb of selectionListeners) cb(id);
     },
-    openModal(kind: ModalKind, houseId?: LocationId) {
+    openModal(kind: ModalKind, arg?: string) {
       const views: Record<ModalKind, () => ModalView> = {
         map: () => mapModal(ctx),
         decorate: () => decorateModal(ctx),
         backpack: () => backpackModal(ctx),
         pet: () => petModal(ctx),
-        'door-note': () => doorNoteModal(ctx, houseId ?? 'player_home'),
+        'door-note': () => doorNoteModal(ctx, (arg as LocationId | undefined) ?? 'player_home'),
+        letters: () => lettersModal(ctx, (arg as LettersTab | undefined) ?? 'inbox'),
+        'notice-board': () => noticeBoardModal(ctx),
+        keep: () => keepModal(ctx),
       };
       modals.open(views[kind]());
     },
     closeModal() {
+      if (store.keepFilter) store.setKeepFilter(null);
       modals.close();
+    },
+    refreshModal() {
+      modals.refresh();
     },
     saveReplay() {
       host.send({ type: 'save' });
@@ -99,6 +115,7 @@ export function mountUi(root: HTMLElement, host: UiHost, store: UiStore = new Ui
     h('div', { class: 'ui-bottom-left' }, createLlmCard(store), createToolbar(ctx)),
     h('div', { class: 'ui-bottom-right' }, createDock(ctx)),
     createSimStatusBanner(store),
+    createPlaceBar(ctx),
     createInspector(ctx),
     createAnimalCard(store, () => store.selectAnimal(null)),
     createChatDialog(store),
@@ -106,12 +123,18 @@ export function mountUi(root: HTMLElement, host: UiHost, store: UiStore = new Ui
     modals.el,
   );
 
-  // The inspector and animal card sit below the stats card, whose height varies (train line, items).
+  // Panels whose size varies push their neighbours: the inspector and animal card sit below the
+  // stats card (train line, items), and the toolbar wraps before it reaches the dock.
   const topRight = root.querySelector<HTMLElement>('.ui-top-right')!;
-  const syncTopRight = () =>
+  const bottomRight = root.querySelector<HTMLElement>('.ui-bottom-right')!;
+  const syncLayout = () => {
     root.style.setProperty('--top-right-bottom', `${Math.round(topRight.getBoundingClientRect().bottom)}px`);
-  const resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(syncTopRight) : null;
+    root.style.setProperty('--top-right-width', `${Math.round(topRight.getBoundingClientRect().width)}px`);
+    root.style.setProperty('--dock-width', `${Math.round(bottomRight.getBoundingClientRect().width)}px`);
+  };
+  const resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(syncLayout) : null;
   resizeObserver?.observe(topRight);
+  resizeObserver?.observe(bottomRight);
   const unsubs = [
     store.subscribe(ALL_TOPICS, () => modals.refresh()),
     // Re-subscribe the inspector after a reconnect (the server forgets subscriptions).
@@ -160,6 +183,8 @@ export function mountUi(root: HTMLElement, host: UiHost, store: UiStore = new Ui
       store.selectAnimal(id);
     },
     openDoorNote: (houseId) => ctx.openModal('door-note', houseId),
+    openNoticeBoard: () => ctx.openModal('notice-board'),
+    openKeep: () => ctx.openModal('keep'),
     setActiveScene: (id) => store.setScene(id),
     setCatalog: (c) => store.setCatalog(c),
     onSelectionChange(cb) {

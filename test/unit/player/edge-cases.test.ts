@@ -111,6 +111,13 @@ describe('save / restore of all player state', () => {
       weather: saved.weather,
       items: saved.items,
       worldEvents: saved.worldEvents,
+      stock: saved.stock,
+      hotel: saved.hotel,
+      visitors: saved.visitors,
+      houseVisits: saved.houseVisits,
+      letters: saved.letters,
+      notices: saved.notices,
+      keepSize: saved.keep.length,
     });
   });
 

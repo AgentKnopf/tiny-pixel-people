@@ -58,7 +58,27 @@ Houses come in `brown`, `blue`, `teal`, `purple` (the player cottage), `red`, `g
   `data/villagers.json` can pick a `sprite` that fits.
 - `player.png` is the player avatar (yellow shirt). Draw its name tag with a `★` prefix.
 - `stranger.png` is the cloaked traveller for the Stranger event.
+- `laude.png` (the postmaster, blue cap) and `franzi.png` (chestnut bob with a pink bow) are the
+  two v2 residents.
+- `visitor-01` to `visitor-08` are train visitors who stay at the hotel; their
+  `suggestedRole` is `visitor (train guest)`.
 - `pet-pip.png` is Pip, the player's orange cat, with the same sheet layout.
+
+### `assets/animals/*.png` + `index.json`
+
+- Side-view sheets: row 0 faces left, row 1 faces right. There are no up or down rows; when an
+  animal moves vertically, keep its last horizontal facing. Frame sizes differ per species, so
+  read `frameWidth` and `frameHeight` for each entry; the anchor is the feet.
+- Columns: idle 0–1, walk 2–5, sleep 6. Farm animals have separate `young` and `old` keys
+  (`cow-calf`, `sheep-lamb`, `chicken-chick`, `cow-old`, ...). Birds use columns 2–5 for flying.
+- The crow lists its own frames: idle 0–1, hop 2–4, caw 5–6, fly 7–10 and sleep 11.
+
+### `assets/vehicles/index.json` (train, rides, ice cream truck)
+
+- The train sheet has one row per piece (engine and 3 carriages, facing left, then the same facing
+  right), with 64×32 frames and 2 frames each. Arriving trains move west.
+- The Ferris wheel and carousel frames are drawn over the matching map object, with the same size
+  and origin. The rollercoaster track is map tiles; `coasterCar` has one frame per direction.
 
 ### `assets/ui/icons.png` + `icons.json`
 
@@ -86,18 +106,26 @@ The `deco_*` objects in `village.json` cover every decoration item: `deco_rug` (
 `deco_mailbox`, `deco_flag` and `deco_birdbath`. The decorating UI can use the object's first tile
 as its card icon. `door_note` is the paper pinned to a door when a note is waiting.
 
-### `assets/maps/village.json` + `village.meta.json` (map draft)
+### `assets/maps/village.json` + `village.meta.json` (the map)
 
-- `village.json` is a `WorldMap` (`src/shared/types.ts`), 48×30 tiles, with the layers, collision
-  and 17 locations: `square`, `bakery`, `shop`, `farm`, `park`, `player_home` and
-  `house_01..house_11`, each with `entry`, `door` and `spots`. WP2 owns `data/map/village.json`
-  and can copy this file there, then add `ownerIds`.
-- The map is larger than the 40×30 default in the technical spec. Eleven houses with doors, the
-  bakery, the shop, the farm, the plaza and the park don't fit at the reference's spacing in 40×30.
+- `village.json` is a `WorldMap` (`src/shared/types.ts`), 128×60 tiles (spec v2 §2). The v1 town
+  keeps its place at x 0–47, y 0–29 with the same location ids, rects, entries, doors and building
+  tiles. New districts: `post_row`, `zoo` (12 enclosures, rides), `forest` (lake, grove),
+  `farmstead` (pastures, coop, barn, farmhouse, butcher), `market` and `station` (with the hotel).
+- It also holds `districts`, `railway` (`rows: [56, 58]`, `platform`; the bed is blocked except at
+  the level crossings at x 44–45 and 110–111) and `interiors`.
+- `interiors` are small separate maps that use the same tileset: `cottage_a`, `cottage_b` and
+  `cottage_c` (12×8, for houses), `hotel_lobby` and `post_office` (14×8). The post office template
+  lists the clickable `keep_cupboard` in `objects`. Rows 0–1 are the back wall and the bottom row
+  holds the door (`exit`). Preview: `docs/art/interiors-x3.png`.
+- `npm run art` writes the same map to `data/map/village.json` and keeps the sim's location
+  fields (names, `ownerIds`) for ids that already exist there, so the two files differ only in
+  `locations`.
 - `village.meta.json` holds:
-  - `scenes`: camera presets for the Map modal (Plaza is the whole town; also Farm, Shop street,
-    Park, Town square, and Your home).
   - `lights`: lamp and window positions for the night glow.
+  - suggested decoration and item catalogues.
+- Previews: `docs/art/map-v2-day.png` and `map-v2-night.png`. `map-day.png` and `map-night.png`
+  still show the v1 town on its own.
 
 ## UI styling (screen overlay, not pixel art)
 
