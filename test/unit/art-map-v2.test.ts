@@ -43,6 +43,15 @@ describe('v2 map art (assets/maps/village.json)', () => {
     );
   });
 
+  it('covers every tile with districts, and only post_row overlaps', () => {
+    for (let y = 0; y < map.height; y++)
+      for (let x = 0; x < map.width; x++) {
+        const ids = map.districts!.filter((d) => within({ x, y, w: 1, h: 1 }, d.rect)).map((d) => d.id);
+        const others = ids.filter((id) => id !== 'post_row');
+        expect(others.length, `${x},${y}: ${ids.join(',')}`).toBe(1);
+      }
+  });
+
   it('places every location inside its district', () => {
     expect(map.districts?.map((d) => d.id)).toEqual([
       'town',
@@ -125,7 +134,7 @@ describe('v1 town preservation', () => {
   /** Authorized v2 integrations: house_laude's corner and the market road joining the v1 road. */
   const allowed = [
     { x: 44, y: 0, w: 4, h: 6 },
-    { x: 44, y: 27, w: 2, h: 3 },
+    { x: 43, y: 27, w: 4, h: 3 },
   ];
 
   it('keeps every other v1 town cell identical on every layer and in collision', () => {

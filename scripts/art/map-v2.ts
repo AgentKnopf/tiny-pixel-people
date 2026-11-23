@@ -39,27 +39,27 @@ export interface VillageV2Draft {
 export const V2_WIDTH = 128;
 export const V2_HEIGHT = 60;
 
-/** Spec v2 §2 district rects; post_row overlaps town and zoo and is looked up first. */
+/** Spec v2 §2 district rects: they cover the map, and only post_row (looked up first) overlaps town and zoo. */
 export const DISTRICTS: District[] = [
   { id: 'town', name: 'Old town', rect: { x: 0, y: 0, w: 48, h: 30 } },
   { id: 'post_row', name: 'Post Row', rect: { x: 44, y: 0, w: 20, h: 9 } },
   { id: 'zoo', name: 'City Zoo & Rides', rect: { x: 48, y: 0, w: 48, h: 34 } },
-  { id: 'forest', name: 'Whisper Woods', rect: { x: 96, y: 0, w: 32, h: 56 } },
+  { id: 'forest', name: 'Whisper Woods', rect: { x: 96, y: 0, w: 32, h: 60 } },
   { id: 'farmstead', name: 'Meadow Farm', rect: { x: 0, y: 30, w: 36, h: 30 } },
-  { id: 'market', name: 'Market Road', rect: { x: 36, y: 30, w: 24, h: 30 } },
-  { id: 'station', name: 'Station & Hotel', rect: { x: 60, y: 36, w: 36, h: 24 } },
+  { id: 'market', name: 'Market Road', rect: { x: 36, y: 30, w: 12, h: 30 } },
+  { id: 'station', name: 'Station & Hotel', rect: { x: 48, y: 34, w: 48, h: 26 } },
 ];
 
 const ZOO_HOURS: LocationHours = { open: '08:00', close: '21:00' };
 
 /**
  * The only v1 town cells (x 0-47, y 0-29) that differ from the v1 map: the post row corner where
- * house_laude stands (decor gives way, spec v2 §2) and the market road joining the v1 road end
- * at x 44-45 (the road's last v1 row re-autotiles, the tree at y 28-29 gives way).
+ * house_laude stands (decor gives way, spec v2 §2) and the market road opening the south edge
+ * at x 43-46 (the road at x 44-45 plus one autotile edge on each side).
  */
 export const TOWN_V2_CHANGES = [
   { x: 44, y: 0, w: 4, h: 6 },
-  { x: 44, y: 27, w: 2, h: 3 },
+  { x: 43, y: 27, w: 4, h: 3 },
 ] as const;
 const HOUSE_INTERIORS = ['cottage_a', 'cottage_b', 'cottage_c'] as const;
 
@@ -445,8 +445,8 @@ export function buildVillageV2(atlas: TileAtlas): VillageV2Draft {
   // ------------------------------------------------------------ market road
   m.paint(46, 48, 14, 2, 'path');
   m.place('stall_red', 39, 39);
-  m.place('stall_blue', 47, 36);
-  m.place('stall_red', 47, 42);
+  m.place('stall_blue', 46, 36);
+  m.place('stall_red', 46, 42);
   m.place('crate', 40, 42);
   m.place('barrel', 41, 42);
   m.place('bench', 40, 45);
@@ -455,9 +455,9 @@ export function buildVillageV2(atlas: TileAtlas): VillageV2Draft {
     id: 'market',
     name: 'Market Road',
     kind: 'public',
-    area: { x: 36, y: 33, w: 24, h: 23 },
+    area: { x: 36, y: 33, w: 12, h: 23 },
     entry: p(45, 39),
-    spots: [p(43, 38), p(46, 39), p(43, 44), p(46, 45), p(41, 40), p(48, 38)],
+    spots: [p(43, 38), p(46, 39), p(43, 44), p(46, 45), p(41, 40), p(47, 39)],
     district: 'market',
     description: 'Road from the town to the station with market stalls and spare plots for new shops.',
   });
@@ -665,7 +665,7 @@ export function buildVillageV2(atlas: TileAtlas): VillageV2Draft {
     { id: 'farmstead', name: 'Farmstead', subtitle: 'Meadow Farm', rect: { x: 0, y: 30, w: 36, h: 30 } },
     { id: 'station', name: 'Station', subtitle: 'Station & Hotel', rect: { x: 56, y: 33, w: 40, h: 27 } },
     { id: 'forest', name: 'Forest', subtitle: 'Whisper Woods', rect: { x: 96, y: 0, w: 32, h: 56 } },
-    { id: 'market', name: 'Market', subtitle: 'Market Road', rect: { x: 36, y: 30, w: 24, h: 30 } },
+    { id: 'market', name: 'Market', subtitle: 'Market Road', rect: { x: 36, y: 30, w: 12, h: 30 } },
   ];
   const itemSpawns: ItemSpawnArea[] = [
     ...TOWN_ITEM_SPAWNS,
