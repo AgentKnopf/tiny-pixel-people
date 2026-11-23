@@ -114,3 +114,31 @@ describe('v2 map art (assets/maps/village.json)', () => {
     }
   });
 });
+
+describe('v1 town preservation', () => {
+  const v1 = JSON.parse(readFileSync(join(root, 'test/fixtures/art-v1-town.json'), 'utf8')) as {
+    width: number;
+    height: number;
+    layers: Record<'ground' | 'decor' | 'overhead', number[]>;
+    collision: number[];
+  };
+  /** Authorized v2 integrations: house_laude's corner and the market road joining the v1 road. */
+  const allowed = [
+    { x: 44, y: 0, w: 4, h: 6 },
+    { x: 44, y: 27, w: 2, h: 3 },
+  ];
+
+  it('keeps every other v1 town cell identical on every layer and in collision', () => {
+    const changed: string[] = [];
+    for (let y = 0; y < v1.height; y++)
+      for (let x = 0; x < v1.width; x++) {
+        if (allowed.some((r) => within({ x, y, w: 1, h: 1 }, r))) continue;
+        const a = y * v1.width + x;
+        const b = y * map.width + x;
+        for (const key of ['ground', 'decor', 'overhead'] as const)
+          if (map.layers[key][b] !== v1.layers[key][a]) changed.push(`${key} ${x},${y}`);
+        if (map.collision[b] !== v1.collision[a]) changed.push(`collision ${x},${y}`);
+      }
+    expect(changed.slice(0, 20), `${changed.length} changed cells`).toEqual([]);
+  });
+});

@@ -16,6 +16,7 @@ import {
   MapBuilder,
   TOWN_ITEM_SPAWNS,
   TOWN_SCENES,
+  buildVillage,
   layoutTown,
   townScatter,
   townTrees,
@@ -50,6 +51,16 @@ export const DISTRICTS: District[] = [
 ];
 
 const ZOO_HOURS: LocationHours = { open: '08:00', close: '21:00' };
+
+/**
+ * The only v1 town cells (x 0-47, y 0-29) that differ from the v1 map: the post row corner where
+ * house_laude stands (decor gives way, spec v2 §2) and the market road joining the v1 road end
+ * at x 44-45 (the road's last v1 row re-autotiles, the tree at y 28-29 gives way).
+ */
+export const TOWN_V2_CHANGES = [
+  { x: 44, y: 0, w: 4, h: 6 },
+  { x: 44, y: 27, w: 2, h: 3 },
+] as const;
 const HOUSE_INTERIORS = ['cottage_a', 'cottage_b', 'cottage_c'] as const;
 
 const p = (x: number, y: number) => ({ x, y });
@@ -70,7 +81,6 @@ export function buildVillageV2(atlas: TileAtlas): VillageV2Draft {
   m.paint(64, 7, 32, 2, 'path'); // zoo north promenade
   m.paint(96, 7, 8, 2, 'path'); // trail into the woods
   m.paint(0, 31, V2_WIDTH, 2, 'path'); // main east-west road
-  m.paint(19, 28, 1, 3, 'path'); // town -> main road (between cottages 07 and 08)
   m.paint(44, 28, 2, 28, 'path'); // market road, town -> station
   for (let x = 0; x < V2_WIDTH; x++) for (let y = 56; y <= 58; y++) m.paint(x, y, 1, 1, 'gravel');
 
@@ -78,7 +88,7 @@ export function buildVillageV2(atlas: TileAtlas): VillageV2Draft {
   const laudeDoor = m.building('house_laude', 44, 2);
   const postDoor = m.building('post_office', 50, 2);
   const franziDoor = m.building('house_franzi', 58, 2);
-  for (const d of [laudeDoor, postDoor, franziDoor]) m.paint(d.x, d.y + 1, 1, 1, 'path');
+  for (const d of [postDoor, franziDoor]) m.paint(d.x, d.y + 1, 1, 1, 'path');
   m.place('notice_board', 56, 5);
   m.place('post_box', 49, 4);
   lamp(63, 5);
@@ -340,7 +350,7 @@ export function buildVillageV2(atlas: TileAtlas): VillageV2Draft {
   m.paint(0, 46, 46, 1, 'path');
   m.paint(13, 53, 33, 1, 'path');
   m.paint(33, 37, 11, 1, 'path'); // butcher -> market road
-  m.place('sign_farm', 13, 29);
+  m.place('sign_farm', 10, 32);
   m.fence(0, 34, 16, 12, [p(15, 40)]);
   m.fence(17, 34, 14, 11, [p(17, 39)]);
   m.paint(2, 48, 10, 7, 'mud');
@@ -623,6 +633,23 @@ export function buildVillageV2(atlas: TileAtlas): VillageV2Draft {
     const y = 30 + Math.floor(r() * 26);
     m.tryPlace(scatter[Math.floor(r() * scatter.length)]!, x, y);
   }
+
+  // ------------------------------------------------------------ v1 town, tile for tile
+  // Spec v2 §2: the v1 town stays unchanged. Random grass variants and scatter shift with the
+  // bigger map, so every town cell is copied from the v1 build except the authorized
+  // integrations listed in TOWN_V2_CHANGES.
+  const v1 = buildVillage(atlas).builder;
+  for (let y = 0; y < v1.height; y++)
+    for (let x = 0; x < v1.width; x++) {
+      if (TOWN_V2_CHANGES.some((r) => x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h)) continue;
+      const from = y * v1.width + x;
+      const to = y * V2_WIDTH + x;
+      m.terrain[to] = v1.terrain[from]!;
+      m.layers.ground[to] = v1.layers.ground[from]!;
+      m.layers.decor[to] = v1.layers.decor[from]!;
+      m.layers.overhead[to] = v1.layers.overhead[from]!;
+      m.collision[to] = v1.collision[from]!;
+    }
 
   const scenes: Scene[] = [
     ...TOWN_SCENES,
