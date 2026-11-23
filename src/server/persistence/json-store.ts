@@ -106,6 +106,8 @@ export class JsonSaveStore implements SaveStore {
       await atomicWrite(join(memDir, name), JSON.stringify(file));
     }
     await atomicWrite(join(this.slotDir, WORLD_FILE), JSON.stringify(world));
+    // A saved slot always has a replay log, even before anything was recorded.
+    await appendFile(this.replayPath, '', 'utf8');
     // Memory files of villagers no longer in the save (e.g. strangers who left).
     for (const name of await readdir(memDir)) {
       if (name.endsWith('.json') && !keep.has(name)) await rm(join(memDir, name), { force: true });

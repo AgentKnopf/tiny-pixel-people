@@ -135,6 +135,7 @@ describe('JsonSaveStore', () => {
     await store.save(sampleSave());
     const files = readdirSync(join(dir, 's1', 'memories')).sort();
     expect(files).toEqual(['ada.json', 'bob.json']);
+    expect(readFileSync(store.replayPath, 'utf8')).toBe('');
     const ada = JSON.parse(readFileSync(join(dir, 's1', 'memories', 'ada.json'), 'utf8'));
     expect(typeof ada.memories[0].embeddingB64).toBe('string');
     expect(ada.memories[0].embedding).toBeUndefined();
