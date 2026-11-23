@@ -13,6 +13,8 @@ export class Rumors implements RumorTracker {
   constructor(
     private readonly ctx: Ctx,
     restored?: Rumor[],
+    /** Called for every rumor started and hop recorded (the post office log, spec v2 §8.3). */
+    private readonly onChange?: (rumor: Rumor, hop?: RumorHop) => void,
   ) {
     if (restored) this.rumors = structuredClone(restored);
   }
@@ -37,6 +39,7 @@ export class Rumors implements RumorTracker {
     };
     this.rumors.push(rumor);
     this.broadcast(rumor);
+    this.onChange?.(rumor);
     return rumor;
   }
 
@@ -54,6 +57,8 @@ export class Rumors implements RumorTracker {
   /** Optional: auto-track important `heard` facts no rumor covers yet. Returns the new rumor, if any. */
   considerMemory(memory: Memory): Rumor | null {
     if (memory.kind !== 'heard' || memory.importance < RUMOR_MIN_IMPORTANCE) return null;
+    // Laude's instant post office log is not gossip he was told.
+    if (memory.meta.keepId) return null;
     const origin = memory.meta.originId ?? memory.id;
     if (this.byOrigin(origin)) return null;
     const from = memory.meta.heardFrom ?? memory.villagerId;
@@ -70,6 +75,7 @@ export class Rumors implements RumorTracker {
       if (id !== PLAYER_ID && !rumor.knownBy.includes(id)) rumor.knownBy.push(id);
     }
     this.broadcast(rumor);
+    this.onChange?.(rumor, rumor.hops[rumor.hops.length - 1]);
     return rumor;
   }
 

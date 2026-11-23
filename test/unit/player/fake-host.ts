@@ -16,7 +16,10 @@ import {
   PLAYER_HOME_ID,
   PLAYER_ID,
   type DayPlan,
+  type HouseVisit,
+  type Letter,
   type Location,
+  type Provenance,
   type Point,
   type VillageEvent,
   type VillagerProfile,
@@ -211,6 +214,15 @@ export class FakeHost implements PlayerHost {
   load: 'normal' | 'busy' | 'overloaded' = 'normal';
   joinRide?: (rideId: string) => CommandResult;
   triggerTrain?: () => CommandResult;
+  requestGreeting?: (villagerId: string, visit: HouseVisit) => Promise<{ reply: string; source: Provenance }>;
+  readonly lettersRead: { villagerId: string; letter: Letter }[] = [];
+  letterRead = (villagerId: string, letter: Letter) => {
+    this.lettersRead.push({ villagerId, letter });
+  };
+  caws = 0;
+  caw = () => {
+    this.caws++;
+  };
   loadLevel = () => this.load;
 
   constructor() {

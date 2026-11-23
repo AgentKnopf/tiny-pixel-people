@@ -12,7 +12,10 @@ import type { ServerMessage } from '../../shared/protocol.ts';
 import type {
   DayPlan,
   GameMinutes,
+  HouseVisit,
+  Letter,
   LocationId,
+  Provenance,
   Point,
   VillageEvent,
   VillagerId,
@@ -80,4 +83,14 @@ export interface PlayerHost {
   joinRide?(rideId: LocationId): CommandResult;
   /** `world.trigger train`: bring the next train now (TrainService.triggerNow). */
   triggerTrain?(): CommandResult;
+  /**
+   * The player walked in while this owner is home and awake: the engine stops the owner for up to
+   * 10 game minutes (status `talking`, emote 👋) and answers with `VillagerMind.greetVisitor`.
+   * Memories and affinity are written by WP8; without this hook the template greeting is used.
+   */
+  requestGreeting?(villagerId: VillagerId, visit: HouseVisit): Promise<{ reply: string; source: Provenance }>;
+  /** A villager read a letter at home (WP8 wrote the memory); forward to `VillagerMind.onLetterRead`. */
+  letterRead?(villagerId: VillagerId, letter: Letter): void;
+  /** The crow caws (`AnimalSim.caw('letter')`); it has its own cooldown. */
+  caw?(reason: 'letter' | 'player'): void;
 }
