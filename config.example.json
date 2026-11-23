@@ -27,7 +27,8 @@
     "speed": 1,
     "nightSpeedMultiplier": 6,
     "tickMs": 100,
-    "seed": 42
+    "seed": 42,
+    "wakeUpTimeoutSec": 300
   },
   "cognition": {
     "retrievalK": 8,

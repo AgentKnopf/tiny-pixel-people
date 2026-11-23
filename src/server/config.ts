@@ -17,6 +17,13 @@ export const DEFAULT_BASE_URLS: Record<ProviderKind, string> = {
   mock: '',
 };
 
+/**
+ * `llm.concurrency` used when the provider is `ollama` and no config layer sets it. A local Ollama
+ * (especially CPU-only) runs one request at a time, so extra in-flight calls only wait inside Ollama,
+ * where the game's priorities (player replies first) can no longer reorder them.
+ */
+export const OLLAMA_DEFAULT_CONCURRENCY = 1;
+
 const hhmm = z.string().regex(/^\d{1,2}:\d{2}$/, 'expected "HH:MM"');
 
 const llmSchema = z.object({
@@ -53,6 +60,8 @@ export const configSchema = z.object({
     nightSpeedMultiplier: z.number().min(1),
     tickMs: z.number().int().min(10),
     seed: z.number().int(),
+    /** Real seconds the clock holds at day start until plans settle; 0 disables the hold. */
+    wakeUpTimeoutSec: z.number().min(0),
   }),
   cognition: z.object({
     retrievalK: z.number().int().min(1),
@@ -120,6 +129,7 @@ export const DEFAULT_CONFIG: AppConfig = {
     temperature: 0.7,
     maxTokens: 512,
     timeoutMs: 120_000,
+    // Hosted providers; `ollama` gets OLLAMA_DEFAULT_CONCURRENCY unless set explicitly.
     concurrency: 2,
     jsonMode: true,
     logFile: '',
@@ -140,6 +150,7 @@ export const DEFAULT_CONFIG: AppConfig = {
     nightSpeedMultiplier: 6,
     tickMs: 100,
     seed: 42,
+    wakeUpTimeoutSec: 300,
   },
   cognition: {
     retrievalK: 8,
@@ -231,9 +242,16 @@ export function loadConfig(opts: LoadConfigOptions = {}): AppConfig & { sourcePa
   } else if (explicit) {
     throw new ConfigError(`Config file not found: ${path}`);
   }
+  const envLayer = envOverrides(env);
   let merged = deepMerge(DEFAULT_CONFIG, fileConfig);
-  merged = deepMerge(merged, envOverrides(env));
+  merged = deepMerge(merged, envLayer);
   merged = deepMerge(merged, opts.overrides);
+  const concurrencySet = [fileConfig, envLayer, opts.overrides].some(
+    (layer) => isPlainObject(layer) && isPlainObject(layer.llm) && layer.llm.concurrency !== undefined,
+  );
+  if (!concurrencySet && merged.llm.provider === 'ollama') {
+    merged = deepMerge(merged, { llm: { concurrency: OLLAMA_DEFAULT_CONCURRENCY } });
+  }
   const parsed = configSchema.safeParse(merged);
   if (!parsed.success) {
     const issues = parsed.error.issues.map((i) => `  - ${i.path.join('.')}: ${i.message}`).join('\n');
