@@ -1,0 +1,29 @@
+:root {
+  color-scheme: dark;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+}
+body {
+  margin: 0;
+  background: #1b1b24;
+  color: #eee;
+}
+#topbar {
+  display: flex;
+  gap: 1.5rem;
+  padding: 0.5rem 1rem;
+  background: #2a2a38;
+}
+#topbar .title {
+  font-weight: bold;
+}
+main {
+  display: flex;
+  justify-content: center;
+  padding: 1rem;
+}
+canvas {
+  image-rendering: pixelated;
+  max-width: 100%;
+  height: auto;
+  background: #3b7d3b;
+}

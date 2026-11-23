@@ -1,0 +1,45 @@
+{
+  "name": "tiny-pixel-people",
+  "version": "0.1.0",
+  "description": "A tiny top-down pixel village whose villagers are driven by LLMs (Generative Agents style).",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "start": "npm run build:client && tsx src/server/main.ts",
+    "build": "npm run build:client",
+    "build:client": "vite build",
+    "dev": "concurrently -k -n server,client \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:server": "tsx watch src/server/main.ts",
+    "dev:client": "vite",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:live": "tsx scripts/live-acceptance.ts",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check": "npm run lint && npm run typecheck && npm test && npm run build"
+  },
+  "dependencies": {
+    "tsx": "^4.23.15",
+    "vite": "^8.3.8",
+    "ws": "^8.23.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^24.0.0",
+    "@types/ws": "^8.18.2",
+    "concurrently": "^10.0.7",
+    "eslint": "^10.15.0",
+    "globals": "^17.14.0",
+    "prettier": "^3.10.1",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.73.0",
+    "vitest": "^5.1.1"
+  }
+}
