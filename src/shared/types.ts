@@ -233,6 +233,11 @@ export interface MemoryMeta {
   /** Reflection citations. */
   sourceIds?: MemoryId[];
   archived?: boolean;
+  // v2 (spec v2 §8)
+  letterId?: LetterId;
+  /** Post office log entry (Laude's instant knowledge). */
+  keepId?: string;
+  noticeId?: string;
 }
 
 export interface Memory {
