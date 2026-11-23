@@ -16,6 +16,9 @@ import type {
   VillagerProfile,
   VillagerState,
 } from '../../shared/types.ts';
+import type { ServerMessage } from '../../shared/protocol.ts';
+import type { AppConfig } from '../config.ts';
+import type { LlmQueue } from '../llm/types.ts';
 
 export interface NearbyVillager {
   id: VillagerId;
@@ -96,3 +99,19 @@ export interface MemoryStream {
   recent(n: number): Memory[];
   retrieve(query: string, now: GameMinutes, opts?: RetrieveOptions): Promise<Memory[]>;
 }
+
+/** Services the engine hands to each mind. */
+export interface MindDeps {
+  config: AppConfig;
+  queue: LlmQueue;
+  now: () => GameMinutes;
+  /** Broadcast to clients (conversation.message, log, …). */
+  emit: (msg: ServerMessage) => void;
+  /** Seeded RNG in [0, 1) shared with the engine, for deterministic tests. */
+  random: () => number;
+  /** Restored state when loading a save. */
+  snapshot?: MindSnapshot;
+}
+
+/** WP3 exports `createMind: CreateMind` from ./mind.ts. */
+export type CreateMind = (profile: VillagerProfile, deps: MindDeps) => VillagerMind;
