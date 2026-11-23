@@ -110,6 +110,10 @@ describe.skipIf(!readyV2(...F))(`AC18: performance budgets${waitingForV2(...F)}`
       expect(steps.length).toBeGreaterThanOrEqual(1440);
       const p95 = percentile(steps, 95);
       const max = Math.max(...steps);
+      const worst = steps.indexOf(max);
+      console.info(
+        `AC18 sim step: p95 ${p95.toFixed(2)} ms, max ${max.toFixed(2)} ms (step ${worst} of ${steps.length}), first ${steps[0]!.toFixed(2)} ms`,
+      );
       expect(p95, `p95 ${p95.toFixed(2)} ms`).toBeLessThanOrEqual(BUDGET.stepP95Ms);
       expect(max, `max ${max.toFixed(2)} ms`).toBeLessThanOrEqual(BUDGET.stepMaxMs);
     });
@@ -146,6 +150,7 @@ describe.skipIf(!readyV2(...F))(`AC18: performance budgets${waitingForV2(...F)}`
     }
     expect(unreachable).toBe(0);
     const max = Math.max(...times);
+    console.info(`AC18 A*: worst ${max.toFixed(2)} ms over ${ASTAR_PAIRS} queries`);
     expect(max, `worst ${max.toFixed(2)} ms`).toBeLessThanOrEqual(BUDGET.astarMs);
   });
 });

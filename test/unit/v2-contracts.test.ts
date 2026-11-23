@@ -94,7 +94,9 @@ describe('v2 contracts', () => {
     });
     expect(ask('date.decide', { affinity: 5 }).accept).toBe(true);
     expect(ask('date.decide', { affinity: 1 }).accept).toBe(false);
-    expect(ask('visitor.create', { existingNames: ['Visitor 1'] }).name).toBe('Visitor 2');
+    const visitor = ask('visitor.create', { existingNames: ['Marlo'] });
+    expect(visitor.name).not.toBe('Marlo');
+    expect(visitor.occupation).not.toBe('Traveller');
     expect(typeof ask('letter.write', { toName: 'Laude' }).text).toBe('string');
   });
 });

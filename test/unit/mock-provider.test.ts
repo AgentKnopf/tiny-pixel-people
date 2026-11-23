@@ -4,6 +4,7 @@ import { MockChatProvider, MockEmbeddingProvider, mockAnswer } from '../../src/s
 import type { ChatRequest, LlmTask } from '../../src/server/llm/types.ts';
 import type { Location, VillagerProfile } from '../../src/shared/types.ts';
 import { parseClock } from '../../src/shared/time.ts';
+import visitorPool from '../../data/visitors.json' with { type: 'json' };
 
 const loc = (id: string, kind: Location['kind']): Location => ({
   id,
@@ -396,12 +397,39 @@ describe('mock provider: v2 tasks (spec v2 §11)', () => {
     expect(texts[0]).toMatch(/thank/i);
   });
 
-  it('visitor.create picks the first free "Visitor N" name and an offered sprite', () => {
-    const v = ask('visitor.create', {
-      existingNames: ['Visitor 1', 'Visitor 3'],
-      sprites: ['characters/v4.png'],
-    });
-    expect(v).toMatchObject({ name: 'Visitor 2', sprite: 'characters/v4.png', origin: expect.any(String) });
+  it('visitor.create answers with a data/visitors.json profile whose name is free', () => {
+    const sprites = [...new Set(visitorPool.map((p) => p.sprite))];
+    const existingNames = [visitorPool[0]!.name, visitorPool[1]!.name.toUpperCase(), 'Mia'];
+    const answers = Array.from({ length: 24 }, (_, i) =>
+      ask('visitor.create', { existingNames, sprites, now: 600 + i * 360 }),
+    );
+    for (const v of answers) {
+      const profile = visitorPool.find((p) => p.name === v.name);
+      expect(profile, String(v.name)).toBeDefined();
+      expect(v).toMatchObject({
+        occupation: profile!.occupation,
+        bio: profile!.bio,
+        sprite: profile!.sprite,
+        origin: profile!.origin,
+        reason: profile!.reason,
+      });
+      expect(existingNames.map((n) => n.toLowerCase())).not.toContain(String(v.name).toLowerCase());
+    }
+    expect(new Set(answers.map((v) => v.occupation)).size).toBeGreaterThan(3);
+    expect(ask('visitor.create', { existingNames, sprites, now: 600 })).toEqual(answers[0]);
+  });
+
+  it('visitor.create keeps to the offered sprites and numbers the name once every pool name is taken', () => {
+    const sprite = visitorPool[2]!.sprite;
+    const withSprite = visitorPool.filter((p) => p.sprite === sprite);
+    for (let now = 0; now < 10; now++)
+      expect(ask('visitor.create', { sprites: [sprite], now }).sprite).toBe(sprite);
+    const existingNames = [...visitorPool.map((p) => p.name), ...withSprite.map((p) => `${p.name} 2`)];
+    const v = ask('visitor.create', { existingNames, sprites: [sprite] });
+    const base = withSprite.find((p) => v.name === `${p.name} 3`);
+    expect(base, String(v.name)).toBeDefined();
+    expect(v).toMatchObject({ occupation: base!.occupation, sprite });
+    expect(v).not.toHaveProperty('id');
   });
 
   it('date.ask picks the first venue at 17:00; date.decide accepts from affinity 4', () => {

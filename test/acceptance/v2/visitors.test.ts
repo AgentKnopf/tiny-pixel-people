@@ -27,6 +27,8 @@ describe.skipIf(!readyV2(...F))(
     const removedAt = new Map<VillagerId, GameMinutes>();
     const trains: { at: GameMinutes; train: TrainState }[] = [];
     const hourly: { time: GameMinutes; inTown: number }[] = [];
+    /** Daytime (09:00–18:00) hourly samples of where each checked-in visitor is. */
+    const daytime = new Map<VillagerId, (string | null)[]>();
     const problems: string[] = [];
 
     const seeVisitor = (v: VisitorInfo, now: GameMinutes) => {
@@ -58,6 +60,13 @@ describe.skipIf(!readyV2(...F))(
           if (hour !== lastHour) {
             lastHour = hour;
             hourly.push({ time, inTown: visitorsInTown(s).length });
+            const m = minuteOfDay(time);
+            if (m >= parseClock('09:00') && m < parseClock('18:00'))
+              for (const v of s.visitors ?? []) {
+                if (v.status !== 'checkedIn') continue;
+                const at = s.villagers.find((x) => x.id === v.villagerId)?.locationId ?? null;
+                daytime.set(v.villagerId, [...(daytime.get(v.villagerId) ?? []), at]);
+              }
           }
         },
       });
@@ -164,6 +173,16 @@ describe.skipIf(!readyV2(...F))(
         })
         .map((v) => `${v.villagerId}: ${fmt(v.arrivedAt)} -> ${fmt(v.departsAt)}`);
       expect(bad).toEqual([]);
+    });
+
+    it('visitors join town life: each one with a full day in town goes somewhere besides the hotel', () => {
+      const lodging = new Set(['hotel', 'station']);
+      const full = [...daytime].filter(([, at]) => at.length >= 8);
+      expect(full.length).toBeGreaterThanOrEqual(w.config.visitors.min);
+      const hotelBound = full
+        .filter(([, at]) => !at.some((l) => l !== null && !lodging.has(l)))
+        .map(([id, at]) => `${id}: ${at.join(', ')}`);
+      expect(hotelBound).toEqual([]);
     });
 
     it('never exceeds the hotel rooms or 20 villagers', () => {

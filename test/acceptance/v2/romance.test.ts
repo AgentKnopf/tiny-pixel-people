@@ -321,7 +321,7 @@ describe.skipIf(!readyV2(...F))(`AC15: a date at a ride${waitingForV2(...F)}`, (
 
     it('both partners attend and the date counts as done', () => {
       expect(run.event!.status).toBe('done');
-      expect([...run.event!.attendees].sort()).toEqual(expect.arrayContaining([HOST, GUEST]));
+      expect(run.event!.attendees).toEqual(expect.arrayContaining([HOST, GUEST]));
       const rec = (run.w.state().romances ?? [])
         .find((r) => r.pair.includes(HOST) && r.pair.includes(GUEST))
         ?.dates.find((d) => d.eventId === run.event!.id);

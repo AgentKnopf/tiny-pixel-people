@@ -23,11 +23,13 @@
  * - visit.greet:     playerName, houseId, affinity, now          -> { reply } naming the player, time of day
  * - letter.reply:    letterText, fromName                         -> { reply } naming the sender, quoting the letter
  * - letter.write:    toName, reason ('thanks' | 'missYou' | 'shy') -> { text } short template per reason
- * - visitor.create:  existingNames, sprites                       -> a pool-style visitor with a unique name
+ * - visitor.create:  existingNames, sprites, now                  -> a data/visitors.json profile whose name is
+ *                    free (picked by `now`), or one with a numbered name once every pool name is taken
  * - date.ask:        partnerName, venues [{ id, name }], shy      -> the first venue at 17:00
  * - date.decide:     askerName, affinity, locationId, start       -> accept when affinity >= 4
  */
 import { formatClock, minuteOfDay, parseClock } from '../../../shared/time.ts';
+import visitorCatalog from '../../../../data/visitors.json' with { type: 'json' };
 import { LlmError } from '../errors.ts';
 import type {
   ChatProvider,
@@ -695,23 +697,45 @@ export function hashEmbed(text: string, dims: number): number[] {
   return v.map((x) => x / norm);
 }
 
+interface VisitorProfileData {
+  name: string;
+  age: number;
+  occupation: string;
+  bio: string;
+  traits: string[];
+  sprite: string;
+  origin: string;
+  reason: string;
+  likes?: string[];
+}
+
+/** The shipped visitor profiles (statically bundled, so answering stays free of I/O). */
+const VISITOR_POOL: readonly VisitorProfileData[] = visitorCatalog;
+
 function mockVisitor(meta: Obj): Record<string, unknown> {
-  const taken = new Set(arr(meta.existingNames).map((n) => str(n)));
-  let n = 1;
-  while (taken.has(`Visitor ${n}`)) n += 1;
-  const sprites = arr(meta.sprites)
-    .map((s) => str(s))
-    .filter(Boolean);
+  const taken = new Set(arr(meta.existingNames).map((n) => str(n).trim().toLowerCase()));
+  const sprites = new Set(
+    arr(meta.sprites)
+      .map((s) => str(s))
+      .filter(Boolean),
+  );
+  const usable = VISITOR_POOL.filter((p) => sprites.size === 0 || sprites.has(p.sprite));
+  const pool = usable.length > 0 ? usable : VISITOR_POOL;
+  const free = pool.filter((p) => !taken.has(p.name.toLowerCase()));
+  const from = free.length > 0 ? free : pool;
+  const base = from[hash(`${num(meta.now, 0)}:${taken.size}`) % from.length]!;
+  let name = base.name;
+  for (let n = 2; taken.has(name.toLowerCase()); n++) name = `${base.name} ${n}`;
   return {
-    name: `Visitor ${n}`,
-    age: 35,
-    occupation: 'Traveller',
-    bio: 'A friendly traveller who came by train to see the zoo and the forest.',
-    traits: ['curious', 'friendly'],
-    sprite: sprites[0] ?? 'characters/stranger.png',
-    origin: 'the city',
-    reason: 'a short holiday',
-    likes: ['ice_cream'],
+    name,
+    age: base.age,
+    occupation: base.occupation,
+    bio: base.bio,
+    traits: base.traits,
+    sprite: base.sprite,
+    origin: base.origin,
+    reason: base.reason,
+    likes: base.likes ?? [],
   };
 }
 
