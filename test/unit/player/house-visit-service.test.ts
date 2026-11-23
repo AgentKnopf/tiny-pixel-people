@@ -106,6 +106,9 @@ describe('HouseVisitService', () => {
       text: "I saw Kai go into Ada's house while they were out",
     });
     expect(seen.meta?.originId).toBeTruthy();
+    // The fact id only lives in memories; the saved visit id must be newer so a restore skips past it.
+    const suffix = (id: string) => Number(id.split('_').at(-1));
+    expect(suffix(visit.id)).toBeGreaterThan(suffix(seen.meta!.originId as string));
     expect(host.memoriesOf('ben')).toHaveLength(0);
 
     advance(host, pw, 30);
