@@ -37,9 +37,60 @@ function makeCanvas(w: number, h: number): HTMLCanvasElement {
   return c;
 }
 
+/** Chunk edge in tiles: 32×32 tiles = 512×512 art px per canvas. */
+export const CHUNK_TILES = 32;
+
+export interface ChunkRef {
+  cx: number;
+  cy: number;
+  /** Chunk rect in tiles (the last row/column may be smaller). */
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+interface TileBounds {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+function chunkKey(which: 'below' | 'above', lit: boolean, ref: ChunkRef): string {
+  return `${which}:${lit ? 'n' : 'd'}:${ref.cx},${ref.cy}`;
+}
+
+/** Chunks (in tiles) of a `width`×`height` map that intersect the art-px rect `view`. */
+export function chunksInView(
+  width: number,
+  height: number,
+  tileSize: number,
+  view: { x: number; y: number; w: number; h: number },
+  chunk = CHUNK_TILES,
+): ChunkRef[] {
+  const span = chunk * tileSize;
+  const cols = Math.ceil(width / chunk);
+  const rows = Math.ceil(height / chunk);
+  const c0 = Math.max(0, Math.floor(view.x / span));
+  const r0 = Math.max(0, Math.floor(view.y / span));
+  const c1 = Math.min(cols - 1, Math.floor((view.x + view.w - 1e-6) / span));
+  const r1 = Math.min(rows - 1, Math.floor((view.y + view.h - 1e-6) / span));
+  const out: ChunkRef[] = [];
+  for (let cy = r0; cy <= r1; cy++) {
+    for (let cx = c0; cx <= c1; cx++) {
+      const x = cx * chunk;
+      const y = cy * chunk;
+      out.push({ cx, cy, x, y, w: Math.min(chunk, width - x), h: Math.min(chunk, height - y) });
+    }
+  }
+  return out;
+}
+
 /**
- * Pre-renders the static map layers at 1 art px per pixel, in day and lit (night) variants.
- * `below` = ground + decor (under characters), `above` = overhead (roofs, canopies, lamp heads).
+ * Pre-renders the static map layers at 1 art px per pixel, in day and lit (night) variants, as
+ * 32×32-tile chunks built on first sight. `below` = ground + decor (under characters), `above` =
+ * overhead (roofs, canopies, lamp heads).
  */
 export class TileLayers {
   private cache = new Map<string, HTMLCanvasElement>();
@@ -52,36 +103,65 @@ export class TileLayers {
     return this.tilesets.length > 0 && this.map.tilesets.length > 0;
   }
 
-  get(which: 'below' | 'above', lit: boolean): HTMLCanvasElement {
-    const key = `${which}:${lit ? 'n' : 'd'}`;
+  /** Number of chunk canvases built so far (all layers and variants). */
+  get builtChunks(): number {
+    return this.cache.size;
+  }
+
+  visible(view: { x: number; y: number; w: number; h: number }): ChunkRef[] {
+    return chunksInView(this.map.width, this.map.height, this.map.tileSize, view);
+  }
+
+  /**
+   * Like `chunk`, but once `budget.builds` is used up it returns the other (day/night) variant when
+   * that one is already built, so a dusk switch spreads chunk builds over several frames.
+   */
+  chunkBudgeted(
+    which: 'below' | 'above',
+    lit: boolean,
+    ref: ChunkRef,
+    budget: { builds: number },
+  ): HTMLCanvasElement {
+    const hit = this.cache.get(chunkKey(which, lit, ref));
+    if (hit) return hit;
+    const other = this.cache.get(chunkKey(which, !lit, ref));
+    if (other && budget.builds <= 0) return other;
+    budget.builds--;
+    return this.chunk(which, lit, ref);
+  }
+
+  chunk(which: 'below' | 'above', lit: boolean, ref: ChunkRef): HTMLCanvasElement {
+    const key = chunkKey(which, lit, ref);
     let c = this.cache.get(key);
     if (!c) {
-      c = this.build(which, lit);
+      c = this.build(which, lit, ref);
       this.cache.set(key, c);
     }
     return c;
   }
 
-  private build(which: 'below' | 'above', lit: boolean): HTMLCanvasElement {
+  private build(which: 'below' | 'above', lit: boolean, ref: ChunkRef): HTMLCanvasElement {
     const { map } = this;
-    const c = makeCanvas(map.width * map.tileSize, map.height * map.tileSize);
+    const tsz = map.tileSize;
+    const c = makeCanvas(ref.w * tsz, ref.h * tsz);
     const ctx = c.getContext('2d')!;
     ctx.imageSmoothingEnabled = false;
+    ctx.translate(-ref.x * tsz, -ref.y * tsz);
+    const bounds = { x0: ref.x, y0: ref.y, x1: ref.x + ref.w, y1: ref.y + ref.h };
     if (!this.hasArt) {
-      if (which === 'below') drawPlaceholderBelow(ctx, map, lit);
+      if (which === 'below') drawPlaceholderBelow(ctx, map, lit, bounds);
       else drawPlaceholderAbove(ctx, map);
       return c;
     }
     const layers: LayerName[] = which === 'below' ? ['ground', 'decor'] : ['overhead'];
-    const tsz = map.tileSize;
     for (const name of layers) {
       const layer = map.layers[name];
-      for (let i = 0; i < layer.length; i++) {
-        const src = tileSource(this.tilesets, layer[i] ?? -1, lit);
-        if (!src) continue;
-        const x = (i % map.width) * tsz;
-        const y = Math.floor(i / map.width) * tsz;
-        ctx.drawImage(src.ts.image, src.sx, src.sy, src.size, src.size, x, y, tsz, tsz);
+      for (let y = bounds.y0; y < bounds.y1; y++) {
+        for (let x = bounds.x0; x < bounds.x1; x++) {
+          const src = tileSource(this.tilesets, layer[y * map.width + x] ?? -1, lit);
+          if (!src) continue;
+          ctx.drawImage(src.ts.image, src.sx, src.sy, src.size, src.size, x * tsz, y * tsz, tsz, tsz);
+        }
       }
     }
     return c;
@@ -108,10 +188,15 @@ function buildingRect(loc: Location): { x: number; y: number; w: number; h: numb
   return { x: loc.area.x, y: loc.area.y, w: Math.min(loc.area.w, 8), h: Math.max(2, bottom - loc.area.y) };
 }
 
-function drawPlaceholderBelow(ctx: CanvasRenderingContext2D, map: WorldMap, lit: boolean): void {
+function drawPlaceholderBelow(
+  ctx: CanvasRenderingContext2D,
+  map: WorldMap,
+  lit: boolean,
+  b: TileBounds = { x0: 0, y0: 0, x1: map.width, y1: map.height },
+): void {
   const t = map.tileSize;
-  for (let y = 0; y < map.height; y++) {
-    for (let x = 0; x < map.width; x++) {
+  for (let y = b.y0; y < b.y1; y++) {
+    for (let x = b.x0; x < b.x1; x++) {
       const h = hashString(`${x},${y}`);
       ctx.fillStyle = GRASS;
       ctx.fillRect(x * t, y * t, t, t);
@@ -191,6 +276,7 @@ function drawPlaceholderBelow(ctx: CanvasRenderingContext2D, map: WorldMap, lit:
     if (map.collision[i] !== 1) continue;
     const x = i % map.width;
     const y = Math.floor(i / map.width);
+    if (x < b.x0 - 1 || x > b.x1 || y < b.y0 - 1 || y > b.y1) continue;
     if (
       map.locations.some(
         (l) => x >= l.area.x && x < l.area.x + l.area.w && y >= l.area.y && y < l.area.y + l.area.h,

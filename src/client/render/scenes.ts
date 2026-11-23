@@ -2,6 +2,8 @@ import type { Rect, Scene, WorldMap } from '../../shared/types.ts';
 
 export const DEFAULT_SCENE_ID = 'plaza';
 export const HOME_SCENE_ID = 'home';
+/** v2: the whole 128×60 map. */
+export const OVERVIEW_SCENE_ID = 'overview';
 
 /** Scene rect in art px. */
 export function sceneRectPx(scene: Scene, tileSize: number): Rect {
@@ -32,6 +34,9 @@ export function findScene(map: WorldMap, id: string): Scene | null {
   const s = map.scenes.find((sc) => sc.id === id);
   if (s) return s;
   if (id === DEFAULT_SCENE_ID) return wholeMapScene(map);
+  if (id === OVERVIEW_SCENE_ID) {
+    return { ...wholeMapScene(map), id: OVERVIEW_SCENE_ID, name: 'Overview', subtitle: 'The whole map' };
+  }
   if (id === HOME_SCENE_ID) {
     const home = map.locations.find((l) => l.id === 'player_home');
     if (home) {
