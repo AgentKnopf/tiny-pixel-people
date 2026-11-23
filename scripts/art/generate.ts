@@ -231,7 +231,8 @@ export function buildArt(): ArtFiles {
     railway: v2.railway,
   };
   write('assets/maps/village.json', mapJson(worldMap));
-  // data/map/village.json is the same map; the sim owns its location names and owners, so those win.
+  // data/map/village.json is the same map; the sim owns its location names and owners, so those win,
+  // while the tile geometry always comes from the art.
   const dataPath = join(ROOT, 'data/map/village.json');
   const dataLocations = existsSync(dataPath)
     ? new Map((JSON.parse(readFileSync(dataPath, 'utf8')) as WorldMap).locations.map((l) => [l.id, l]))
@@ -240,7 +241,17 @@ export function buildArt(): ArtFiles {
     'data/map/village.json',
     mapJson({
       ...worldMap,
-      locations: worldMap.locations.map((l) => ({ ...l, ...dataLocations.get(l.id) })),
+      locations: worldMap.locations.map((l) => {
+        const geometry = {
+          area: l.area,
+          entry: l.entry,
+          door: l.door,
+          spots: l.spots,
+          pen: l.pen,
+          perch: l.perch,
+        };
+        return { ...l, ...dataLocations.get(l.id), ...geometry };
+      }),
     }),
   );
   write(

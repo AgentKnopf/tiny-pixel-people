@@ -288,6 +288,7 @@ describe('scenes', () => {
     const bare = { ...map, scenes: [] };
     expect(listScenes(bare).map((s) => s.id)).toEqual(['plaza']);
     expect(findScene(bare, 'plaza')?.rect).toEqual({ x: 0, y: 0, w: 40, h: 30 });
+    expect(findScene(bare, 'plaza')?.subtitle).toBe('The old town');
     const home = findScene(bare, 'home')!;
     expect(home.rect.x).toBeGreaterThanOrEqual(0);
     expect(home.rect.y + home.rect.h).toBeLessThanOrEqual(30);

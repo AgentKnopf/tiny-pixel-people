@@ -3,8 +3,9 @@
  * forest at night, places nobody plans to visit, and the shy pair's post office visits.
  */
 import { parseClock } from '../../shared/time.ts';
-import type { Location, LocationId, PlanBlock } from '../../shared/types.ts';
+import type { Location, LocationId, PlanBlock, Point } from '../../shared/types.ts';
 import { insertBlock, planEnd, sortBlocks, type WakeWindow } from './planning.ts';
+import { compareIds } from './rng.ts';
 
 export interface Hours {
   open: number;
@@ -50,6 +51,50 @@ export function isOpenFor(loc: Location, start: number, end: number, zoo: Hours)
   return !h || (start >= h.open && end <= h.close);
 }
 
+const EATERY = /caf|bak|diner|restaurant|tavern|inn|burger|ice.?cream/i;
+
+export interface FoodStop {
+  locationId: LocationId;
+  activity: string;
+  emoji: string;
+}
+
+/**
+ * Where to eat right now: the closest place (from the villager's actual position) among open food
+ * venues and their own home. Hunger is restored by the eating activity itself, so the walk is what
+ * matters: a hotel guest must not cross the whole map to the bakery.
+ */
+export function nearestFood(
+  locations: readonly Location[],
+  homeId: LocationId,
+  from: Point,
+  mod: number,
+  zoo: Hours,
+): FoodStop {
+  const venues = locations.filter(
+    (l) =>
+      (l.kind === 'food' ||
+        ((l.kind === 'shop' || l.kind === 'public') && EATERY.test(`${l.id} ${l.name}`))) &&
+      isOpenFor(l, mod, Math.min(24 * 60, mod + 30), zoo),
+  );
+  const home = locations.find((l) => l.id === homeId);
+  const far = (l: Location) => Math.abs(l.entry.x - from.x) + Math.abs(l.entry.y - from.y);
+  const best = [...venues, ...(home ? [home] : [])].sort(
+    (a, b) => far(a) - far(b) || a.id.localeCompare(b.id),
+  )[0];
+  if (!best || best.id === homeId)
+    return { locationId: homeId, activity: 'eat a snack at home', emoji: '🍞' };
+  if (/ice.?cream/i.test(`${best.id} ${best.name}`))
+    return { locationId: best.id, activity: 'grab an ice cream snack', emoji: '🍦' };
+  if (/burger/i.test(`${best.id} ${best.name}`))
+    return { locationId: best.id, activity: 'grab a bite at the burger joint', emoji: '🍔' };
+  return {
+    locationId: best.id,
+    activity: `grab a bite to eat at the ${best.name.toLowerCase()}`,
+    emoji: '🥐',
+  };
+}
+
 function dist(a: Location, b: Location): number {
   return Math.abs(a.entry.x - b.entry.x) + Math.abs(a.entry.y - b.entry.y);
 }
@@ -65,7 +110,7 @@ function alternativeFor(
   let cands = OPEN_ALTERNATIVES.map((id) => byId.get(id)).filter((l): l is Location => !!l);
   if (cands.length === 0) cands = locations.filter((l) => l.kind === 'public' || l.kind === 'nature');
   const open = cands.filter((l) => l.id !== from.id && isOpenFor(l, start, end, zoo));
-  open.sort((a, b) => dist(from, a) - dist(from, b) || a.id.localeCompare(b.id));
+  open.sort((a, b) => dist(from, a) - dist(from, b) || compareIds(a.id, b.id));
   return open[0] ?? null;
 }
 

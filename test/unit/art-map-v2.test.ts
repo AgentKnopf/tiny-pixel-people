@@ -43,6 +43,21 @@ describe('v2 map art (assets/maps/village.json)', () => {
     );
   });
 
+  it('labels every scene with its own descriptive subtitle', () => {
+    const subtitles = map.scenes.map((s) => s.subtitle);
+    for (const s of map.scenes) expect(s.subtitle, s.id).not.toMatch(/^(scene)?$/i);
+    expect(new Set(subtitles).size).toBe(subtitles.length);
+  });
+
+  it('covers every tile with districts, and only post_row overlaps', () => {
+    for (let y = 0; y < map.height; y++)
+      for (let x = 0; x < map.width; x++) {
+        const ids = map.districts!.filter((d) => within({ x, y, w: 1, h: 1 }, d.rect)).map((d) => d.id);
+        const others = ids.filter((id) => id !== 'post_row');
+        expect(others.length, `${x},${y}: ${ids.join(',')}`).toBe(1);
+      }
+  });
+
   it('places every location inside its district', () => {
     expect(map.districts?.map((d) => d.id)).toEqual([
       'town',
@@ -112,5 +127,33 @@ describe('v2 map art (assets/maps/village.json)', () => {
       for (const p of [t.exit, ...t.spots])
         expect(seen.has(p.y * t.width + p.x), `${t.id} ${p.x},${p.y}`).toBe(true);
     }
+  });
+});
+
+describe('v1 town preservation', () => {
+  const v1 = JSON.parse(readFileSync(join(root, 'test/fixtures/art-v1-town.json'), 'utf8')) as {
+    width: number;
+    height: number;
+    layers: Record<'ground' | 'decor' | 'overhead', number[]>;
+    collision: number[];
+  };
+  /** Authorized v2 integrations: house_laude's corner and the market road joining the v1 road. */
+  const allowed = [
+    { x: 44, y: 0, w: 4, h: 6 },
+    { x: 43, y: 27, w: 4, h: 3 },
+  ];
+
+  it('keeps every other v1 town cell identical on every layer and in collision', () => {
+    const changed: string[] = [];
+    for (let y = 0; y < v1.height; y++)
+      for (let x = 0; x < v1.width; x++) {
+        if (allowed.some((r) => within({ x, y, w: 1, h: 1 }, r))) continue;
+        const a = y * v1.width + x;
+        const b = y * map.width + x;
+        for (const key of ['ground', 'decor', 'overhead'] as const)
+          if (map.layers[key][b] !== v1.layers[key][a]) changed.push(`${key} ${x},${y}`);
+        if (map.collision[b] !== v1.collision[a]) changed.push(`collision ${x},${y}`);
+      }
+    expect(changed.slice(0, 20), `${changed.length} changed cells`).toEqual([]);
   });
 });

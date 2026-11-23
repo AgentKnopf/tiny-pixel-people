@@ -7,12 +7,19 @@ const NEWS_WINDOW = 24 * 60;
 
 export function isNewsworthy(m: Memory): boolean {
   if (m.meta.archived) return false;
+  // A notice read at the board is news like a door note, whatever its importance.
+  if (m.meta.noticeId) return true;
   return NEWS_KINDS.has(m.kind) || (m.kind === 'observation' && m.importance >= 6);
 }
 
+/** Tellings each fact gets before newer news may push it aside. */
+export const NEWS_FAIR_SHARE = 2;
+
 /**
  * Up to `max` memories worth sharing with `partnerId`: recent, important, not already told to or
- * heard from them; one per origin fact.
+ * heard from them; one per origin fact. Facts told to fewer than NEWS_FAIR_SHARE villagers come
+ * first, oldest first, so a steady stream of fresh chatter cannot starve an earlier fact (a notice
+ * read in the morning still reaches others by evening). Own musings never jump that queue.
  */
 export function selectNews(
   memories: readonly Memory[],
@@ -20,23 +27,38 @@ export function selectNews(
   now: GameMinutes,
   max = 3,
 ): Memory[] {
-  const byOrigin = new Map<string, { m: Memory; score: number }>();
+  const byOrigin = new Map<string, { m: Memory; score: number; told: number }>();
   const partnerKnows = new Set<string>();
+  const toldTo = new Map<string, Set<VillagerId>>();
   for (const m of memories) {
-    if (m.meta.heardFrom === partnerId || m.meta.toldTo?.includes(partnerId))
-      partnerKnows.add(m.meta.originId ?? m.id);
+    const origin = m.meta.originId ?? m.id;
+    if (m.meta.heardFrom === partnerId || m.meta.toldTo?.includes(partnerId)) partnerKnows.add(origin);
+    for (const id of m.meta.toldTo ?? []) {
+      const set = toldTo.get(origin) ?? new Set<VillagerId>();
+      set.add(id);
+      toldTo.set(origin, set);
+    }
   }
   for (const m of memories) {
     if (!isNewsworthy(m) || now - m.createdAt > NEWS_WINDOW || m.createdAt > now) continue;
     const origin = m.meta.originId ?? m.id;
     if (partnerKnows.has(origin)) continue;
     const age = (now - m.createdAt) / NEWS_WINDOW;
-    const score = m.importance * (1 - 0.5 * age);
+    // Own musings rank below things that happened or were heard.
+    const weight = m.kind === 'reflection' ? 0.5 : 1;
+    const score = weight * m.importance * (1 - 0.5 * age);
     const prev = byOrigin.get(origin);
-    if (!prev || score > prev.score) byOrigin.set(origin, { m, score });
+    if (!prev || score > prev.score) byOrigin.set(origin, { m, score, told: toldTo.get(origin)?.size ?? 0 });
   }
+  const queued = (x: { m: Memory; told: number }) => x.m.kind !== 'reflection' && x.told < NEWS_FAIR_SHARE;
   return [...byOrigin.values()]
-    .sort((a, b) => b.score - a.score || b.m.createdAt - a.m.createdAt)
+    .sort((a, b) => {
+      const qa = queued(a);
+      const qb = queued(b);
+      if (qa !== qb) return qa ? -1 : 1;
+      if (qa) return a.m.createdAt - b.m.createdAt || b.score - a.score;
+      return b.score - a.score || b.m.createdAt - a.m.createdAt;
+    })
     .slice(0, max)
     .map((x) => x.m);
 }

@@ -43,6 +43,7 @@ interface FarmSpec {
   home: LocationId;
   birthToast: string;
   baby: string;
+  emoji: string;
 }
 
 export const FARM_TABLE: Record<FarmSpecies, FarmSpec> = {
@@ -55,6 +56,7 @@ export const FARM_TABLE: Record<FarmSpecies, FarmSpec> = {
     home: 'cow_pasture',
     birthToast: '🐄 A calf was born on the cow pasture!',
     baby: 'calf',
+    emoji: '🐄',
   },
   sheep: {
     adultAt: 3,
@@ -65,6 +67,7 @@ export const FARM_TABLE: Record<FarmSpecies, FarmSpec> = {
     home: 'sheep_pasture',
     birthToast: '🐑 A lamb was born on the sheep pasture!',
     baby: 'lamb',
+    emoji: '🐑',
   },
   chicken: {
     adultAt: 2,
@@ -75,6 +78,7 @@ export const FARM_TABLE: Record<FarmSpecies, FarmSpec> = {
     home: 'chicken_coop',
     birthToast: '🐣 A chick hatched at the coop!',
     baby: 'chick',
+    emoji: '🐔',
   },
 };
 
@@ -618,29 +622,58 @@ export class DeterministicAnimalSim implements AnimalSim {
         this.remove(rt, 'oldAge', change);
       }
     }
+    this.restock(species, now, change, rng);
     const animals = this.farmAnimals(species).filter((r) => r.s.status !== 'leaving');
-    const mothers = animals.filter((r) => r.s.sex === 'female' && r.s.stage !== 'baby');
     const hasMale = animals.some((r) => r.s.sex === 'male' && r.s.stage !== 'baby');
-    const lastBirth = Math.max(-Infinity, ...this.farmAnimals(species).map((r) => r.s.bornAt ?? -Infinity));
-    const recentBirth = now - lastBirth < BIRTH_GAP_DAYS * MINUTES_PER_DAY;
-    if (!mothers.length || !hasMale || recentBirth || this.count(species) >= this.cap) return;
-    if (!rng.chance(this.cfg.farm.breedChance)) return;
-    const mother = rng.pick(mothers)!;
-    const babies = species === 'chicken' ? rng.int(1, 2) : 1;
+    if (!hasMale) return;
+    // Breeding is per mother (each female at most once per BIRTH_GAP_DAYS); a species-wide gap
+    // cannot sustain the herds with the spec lifespans.
     let born = 0;
-    for (let i = 0; i < babies; i++) {
-      const baby = this.spawn(
-        species,
-        rng.chance(0.5) ? 'female' : 'male',
-        now,
-        this.besideMother(mother, rng),
-        rng,
-      );
-      if (!baby) break;
-      born++;
-      change.added.push(structuredClone(baby));
+    const byId = (a: Runtime, b: Runtime) => (a.s.id < b.s.id ? -1 : a.s.id > b.s.id ? 1 : 0);
+    for (const mother of [...animals].sort(byId)) {
+      const m = mother.s;
+      if (m.sex !== 'female' || m.stage === 'baby') continue;
+      if (this.count(species) >= this.cap) break;
+      if (m.lastBirthAt !== undefined && now - m.lastBirthAt < BIRTH_GAP_DAYS * MINUTES_PER_DAY) continue;
+      if (!rng.chance(this.cfg.farm.breedChance)) continue;
+      m.lastBirthAt = now;
+      const babies = species === 'chicken' ? rng.int(1, 2) : 1;
+      for (let i = 0; i < babies; i++) {
+        const baby = this.spawn(
+          species,
+          rng.chance(0.5) ? 'female' : 'male',
+          now,
+          this.besideMother(mother, rng),
+          rng,
+        );
+        if (!baby) break;
+        born++;
+        change.added.push(structuredClone(baby));
+      }
     }
     if (born) change.toasts.push(spec.birthToast);
+  }
+
+  /** The farmer buys an adult at the market when a species has no animal of one sex left. */
+  private restock(species: FarmSpecies, now: number, change: AnimalStepResult, rng: Rng): void {
+    const spec = FARM_TABLE[species];
+    const loc = this.farmHome(species);
+    if (!loc) return;
+    for (const sex of ['female', 'male'] as const) {
+      const have = this.farmAnimals(species).some((r) => r.s.sex === sex && r.s.status !== 'leaving');
+      if (have) continue;
+      const bought = this.spawn(
+        species,
+        sex,
+        now - spec.adultAt * MINUTES_PER_DAY,
+        rng.pick(this.habitatFor(species, loc).tiles),
+        rng,
+      );
+      if (!bought) continue;
+      change.added.push(structuredClone(bought));
+      const farmer = this.opts.farmerName ?? 'The farmer';
+      change.toasts.push(`${spec.emoji} ${farmer} brought a new ${species} home from the market.`);
+    }
   }
 
   private besideMother(mother: Runtime, rng: Rng): Point {
@@ -651,7 +684,10 @@ export class DeterministicAnimalSim implements AnimalSim {
       { x: mother.s.pos.x, y: mother.s.pos.y + 1 },
       { x: mother.s.pos.x, y: mother.s.pos.y - 1 },
     ].filter((p) => hab.set.has(key(p)));
-    return rng.pick(options) ?? { ...mother.s.pos };
+    // Always one draw, so the lifecycle stream never depends on where the mother stands
+    // (wandering is reseeded on restore).
+    const r = rng.next();
+    return options[Math.floor(r * options.length)] ?? { ...mother.s.pos };
   }
 
   private produce(now: number, change: AnimalChange): void {
@@ -683,8 +719,11 @@ export class DeterministicAnimalSim implements AnimalSim {
     const adults = this.farmAnimals(species).filter((r) => r.s.stage !== 'baby' && r.s.status !== 'leaving');
     const byAge = (a: Runtime, b: Runtime) =>
       (a.s.bornAt ?? 0) - (b.s.bornAt ?? 0) || (a.s.id < b.s.id ? -1 : a.s.id > b.s.id ? 1 : 0);
-    const males = adults.filter((r) => r.s.sex === 'male' && r.s.stage === 'adult').sort(byAge);
-    const pick = males[0] ?? adults.sort(byAge)[0];
+    // Never take the last animal of a sex, so every herd keeps a breeding pair.
+    const herd = this.farmAnimals(species).filter((r) => r.s.status !== 'leaving');
+    const keepsPair = (r: Runtime) => herd.some((o) => o !== r && o.s.sex === r.s.sex);
+    const candidates = adults.filter(keepsPair).sort(byAge);
+    const pick = candidates.find((r) => r.s.sex === 'male' && r.s.stage === 'adult') ?? candidates[0];
     if (!pick) return;
     pick.s.status = 'leaving';
     pick.leavingSince = now;
