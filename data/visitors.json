@@ -6,7 +6,7 @@
     "occupation": "Photographer",
     "bio": "Marlo travels with an old film camera and a notebook full of sunsets. He hopes to photograph the zoo animals at feeding time.",
     "traits": ["patient", "observant"],
-    "sprite": "characters/villager-15.png",
+    "sprite": "characters/visitor-01.png",
     "origin": "the harbour city",
     "reason": "a photo series about small towns",
     "likes": ["ice_cream", "flower"]
@@ -18,7 +18,7 @@
     "occupation": "Retired teacher",
     "bio": "Ines spent forty years teaching geography and now visits the places she used to draw on the board. She asks everyone for directions, even when she knows the way.",
     "traits": ["warm", "talkative"],
-    "sprite": "characters/villager-18.png",
+    "sprite": "characters/visitor-02.png",
     "origin": "the capital",
     "reason": "a quiet holiday by the forest",
     "likes": ["honey", "cheese"]
@@ -30,7 +30,7 @@
     "occupation": "Botanist",
     "bio": "Theo studies old trees and keeps pressed leaves in every pocket. He heard the forest grove has oaks older than the village.",
     "traits": ["curious", "shy"],
-    "sprite": "characters/villager-19.png",
+    "sprite": "characters/visitor-03.png",
     "origin": "the university town",
     "reason": "research on the old forest grove",
     "likes": ["seed", "flower"]
@@ -42,7 +42,7 @@
     "occupation": "Food critic",
     "bio": "Yara writes a weekly column about honest food in small places. She has heard rumours about the burgers here and wants to taste them herself.",
     "traits": ["picky", "funny"],
-    "sprite": "characters/villager-20.png",
+    "sprite": "characters/visitor-04.png",
     "origin": "the river city",
     "reason": "a column about the Burger Joint",
     "likes": ["burger", "bread"]
@@ -54,7 +54,7 @@
     "occupation": "Railway inspector",
     "bio": "Bodo checks railway lines all over the country and always rides in the first carriage. He collects ticket stubs and train stories.",
     "traits": ["precise", "friendly"],
-    "sprite": "characters/stranger.png",
+    "sprite": "characters/visitor-05.png",
     "origin": "the junction town",
     "reason": "inspecting the new railway line",
     "likes": ["apple", "milk"]
@@ -66,7 +66,7 @@
     "occupation": "Art student",
     "bio": "Lina sketches everything she sees, from rooftops to crows. She wants to paint the Ferris wheel at dusk.",
     "traits": ["dreamy", "kind"],
-    "sprite": "characters/villager-15.png",
+    "sprite": "characters/visitor-06.png",
     "origin": "the art academy",
     "reason": "sketching the rides and the zoo",
     "likes": ["ice_cream", "gem"]
@@ -78,7 +78,7 @@
     "occupation": "Cheese merchant",
     "bio": "Olek trades cheese from farm to farm and can tell a good wheel by its smell. He wants to see how the barn here makes theirs.",
     "traits": ["jolly", "chatty"],
-    "sprite": "characters/villager-18.png",
+    "sprite": "characters/visitor-07.png",
     "origin": "the mountain valley",
     "reason": "buying cheese from the barn",
     "likes": ["cheese", "bread"]
@@ -90,7 +90,7 @@
     "occupation": "Zookeeper",
     "bio": "Suki looks after penguins at a big city zoo and spends her holidays visiting other zoos. She talks to animals as if they were old friends.",
     "traits": ["cheerful", "caring"],
-    "sprite": "characters/villager-19.png",
+    "sprite": "characters/visitor-08.png",
     "origin": "the big city",
     "reason": "visiting the penguins at the zoo",
     "likes": ["egg", "ice_cream"]
@@ -102,7 +102,7 @@
     "occupation": "Travelling musician",
     "bio": "Fenn plays the fiddle in town squares for coins and cake. He knows a song for every kind of weather.",
     "traits": ["playful", "romantic"],
-    "sprite": "characters/villager-20.png",
+    "sprite": "characters/visitor-01.png",
     "origin": "the road",
     "reason": "playing music on the square",
     "likes": ["honey", "apple"]
@@ -114,7 +114,7 @@
     "occupation": "Birdwatcher",
     "bio": "Greta keeps a list of every bird she has ever seen and is still missing a few. She heard a crow lives on the post office roof.",
     "traits": ["quiet", "sharp-eyed"],
-    "sprite": "characters/stranger.png",
+    "sprite": "characters/visitor-02.png",
     "origin": "the lake district",
     "reason": "watching the birds and ducks in the forest",
     "likes": ["seed", "wool"]
@@ -126,7 +126,7 @@
     "occupation": "Knitwear designer",
     "bio": "Pavel designs cosy sweaters and is always looking for soft wool. He knits while he waits for anything, even trains.",
     "traits": ["gentle", "creative"],
-    "sprite": "characters/villager-15.png",
+    "sprite": "characters/visitor-03.png",
     "origin": "the coast",
     "reason": "buying wool from the farm",
     "likes": ["wool", "milk"]
@@ -138,7 +138,7 @@
     "occupation": "Travel writer",
     "bio": "Noor writes guidebooks about places that are not in guidebooks yet. She takes notes on every bench, bakery and rumour.",
     "traits": ["adventurous", "nosy"],
-    "sprite": "characters/villager-18.png",
+    "sprite": "characters/visitor-04.png",
     "origin": "far away",
     "reason": "writing a chapter about the village",
     "likes": ["bread", "ice_cream"]
@@ -150,7 +150,7 @@
     "occupation": "Retired sailor",
     "bio": "Rufus sailed around the world twice and now prefers solid ground and a good burger. He tells sea stories to anyone who sits down next to him.",
     "traits": ["grumpy", "kind-hearted"],
-    "sprite": "characters/villager-19.png",
+    "sprite": "characters/visitor-05.png",
     "origin": "the old port",
     "reason": "visiting an old friend's hometown",
     "likes": ["burger", "honey"]
@@ -162,7 +162,7 @@
     "occupation": "Veterinarian",
     "bio": "Elif just finished her studies and wants to work with farm animals. She is here to see how a small farm runs.",
     "traits": ["practical", "upbeat"],
-    "sprite": "characters/villager-20.png",
+    "sprite": "characters/visitor-06.png",
     "origin": "the valley town",
     "reason": "learning about the farm",
     "likes": ["egg", "cheese"]
