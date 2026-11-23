@@ -342,7 +342,7 @@ Rules for shy pairs (deterministic unless stated):
 - **The player** posts with `notice.post { text }` (≤ 200 chars) when within 3 tiles of `notice_board`.
 - **Event notices:** every scheduled non-date `VillageEvent` posts a notice from its host automatically, from a template and without the LLM: "📌 <title> at <place>, <HH:MM>. All welcome! (<host>)".
 - **Expiry:** notices expire after `post.noticeTtlDays` (3) days, or when their event ends. At most `post.maxNotices` (12) are active; the oldest is removed first.
-- **Reading:** a villager who passes within 3 tiles of the board reads each notice they have not read yet, as does a villager whose plan block is at `notice_board` or `post_office`. Each read gives the observation "The notice board says: <text>" (importance 4, or 5 for the player's notices). Its `meta.originId` is the notice's origin memory: Laude's log memory of it (§8.3), or the first reader's memory when Laude is absent. So notices spread as gossip and can be traced.
+- **Reading:** a villager who passes within 3 tiles of the board reads each notice they have not read yet, as does a villager whose plan block is at `notice_board` or `post_office`. Each read gives the observation "The notice board says: <text>" (importance 4, or 5 for the player's notices). Its `meta.originId` is `notice.originId ?? notice.id`. `notice.originId` is Laude's log memory of the notice (§8.3) and stays unset when Laude is absent. So notices spread as gossip and can be traced.
 
 ### 8.3 Laude knows everything at once (the omniscience hook)
 
