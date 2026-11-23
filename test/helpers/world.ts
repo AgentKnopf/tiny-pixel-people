@@ -3,7 +3,7 @@
  * provider, plus helpers to drive the day and query what happened. The engine and mind modules are
  * loaded dynamically so this file typechecks before WP2/WP3 land.
  */
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ClientMessage, InspectDataMsg, ServerMessage } from '../../src/shared/protocol.ts';
@@ -25,6 +25,8 @@ import { MockChatProvider, MockEmbeddingProvider } from '../../src/server/llm/pr
 import type { CreateMind } from '../../src/server/cognition/types.ts';
 import type { CreateSimEngine, SimEngine } from '../../src/server/sim/types.ts';
 import type { SaveData } from '../../src/server/persistence/types.ts';
+import { MemoryStore } from '../../src/server/cognition/memory.ts';
+import type { ScoreWeights } from '../../src/server/cognition/retrieval.ts';
 import { featurePath, repoPath } from './features.ts';
 
 export interface TestWorldOptions {
@@ -84,6 +86,51 @@ export function applyAffinities(save: SaveData, presets: readonly AffinityPreset
   }
 }
 
+/**
+ * Presets finished A–B conversations the way the engine records them: each side gets a
+ * `Talked with <name>:` conversation memory (built by the real MemoryStore) sharing the
+ * conversation id, and the relationship's lastTalkedAt is the last one. Ids are `<tag>-preset-<n>`,
+ * so they never collide with engine conversation ids.
+ */
+export function presetTalks(
+  save: SaveData,
+  a: VillagerId,
+  b: VillagerId,
+  times: readonly GameMinutes[],
+  tag: string,
+): void {
+  const names = new Map(
+    (JSON.parse(readFileSync(repoPath('data/villagers.json'), 'utf8')) as VillagerProfile[]).map((p) => [
+      p.id,
+      p.name,
+    ]),
+  );
+  for (const [self, other] of [
+    [a, b],
+    [b, a],
+  ] as const) {
+    const snap = save.minds.find((m) => m.villagerId === self);
+    const state = save.villagers.find((v) => v.id === self);
+    const name = names.get(other);
+    if (!snap || !state || !name) throw new Error(`talk preset: unknown villager ${self} or ${other}`);
+    const store = new MemoryStore(self, { weights: {} as ScoreWeights, defaultK: 8 });
+    store.load(snap.memories);
+    times.forEach((t, i) =>
+      store.add({
+        kind: 'conversation',
+        at: t,
+        text: `Talked with ${name}: I chatted with ${name} about the weather.`,
+        meta: { conversationId: `${tag}-preset-${i + 1}` },
+      }),
+    );
+    snap.memories = [...store.all()];
+    state.relationships[other] = {
+      ...state.relationships[other]!,
+      affinity: state.relationships[other]?.affinity ?? 0,
+      lastTalkedAt: Math.max(...times),
+    };
+  }
+}
 export interface StepInfo {
   time: GameMinutes;
   snapshot: () => WorldSnapshot;
