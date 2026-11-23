@@ -58,9 +58,10 @@ cottage ✓`. Your conversations with villagers appear in a small dialog there t
   so the day starts with real plans. A small banner at the top centre shows
   `🌅 Villagers are waking up… (n/m plans ready)` with a progress bar. The banner doesn't block
   the screen: you can still open the inspector and send messages, but nobody moves until the clock
-  runs again. The clock goes on when all plans are in, when the model has nothing
-  left to do or is unreachable, or after 5 real minutes at most (`sim.wakeUpTimeoutSec`; `0` turns
-  the wait off). Villagers still without a plan then start the day on a default plan.
+  runs again. The clock goes on once every villager's plan request has finished (with a
+  plan from the model, or a default plan if the model's answer couldn't be used), when the model is
+  unreachable, or after 5 real minutes at most (`sim.wakeUpTimeoutSec`; `0` turns the wait off).
+  Villagers still without a plan then start the day on a default plan.
 - The town darkens in the evening, lamps and windows glow at night, and it gets light again in the
   morning.
 

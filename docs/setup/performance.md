@@ -90,8 +90,8 @@ settings lively; above 20 seconds, use the CPU settings above.
   model's line leaves the news out, the game adds it (`Did you hear? …`). There is no
   setting for this; it recovers as soon as the model catches up. See
   [When the model is slow](../user-guide.md#when-the-model-is-slow) in the user guide.
-- **Waiting for plans at 06:00.** Each morning the clock holds until the villagers' day plans are
-  in, the queue is idle, the model is offline, or `sim.wakeUpTimeoutSec` (300) real seconds have
+- **Waiting for plans at 06:00.** Each morning the clock holds until every villager's day-plan
+  request has finished (with a model plan or a fallback), the model is offline, or `sim.wakeUpTimeoutSec` (300) real seconds have
   passed. On a slow model this wait gives the plans a head start; set it to `0` to never wait.
   When it times out, the log says `[sim] wake-up: only N/M plans ready, starting the day anyway`.
 - **Earlier daily event, evening planning.** The daily event is proposed at 07:00, and villagers
@@ -99,10 +99,11 @@ settings lively; above 20 seconds, use the CPU settings above.
   always gets a real model attempt; only if no answer has come by 13:00 does the villager fall
   back to a default event. A day plan the game can't use is asked for once more right away.
 - **Model or fallback, per night.** Once a night, when the first villager is asleep, the server
-  sends a log message over the WebSocket with how many answers so far came from the model and how many from a
+  prints a line with how many answers so far came from the model and how many from a
   fallback, per task, for example
-  `LLM use so far (model / fallback): convo.turn 12/30, event.propose 1/0, plan.day 14/6`. The
-  counts run from server start.
+  `2026-11-23T14:30:00.000Z INFO  [sim] LLM use so far (model / fallback): convo.turn 12/30, event.propose 1/0, plan.day 14/6`.
+  The counts run from server start. A high fallback count for a task means the model is too slow
+  (or its answers unusable) for that task.
 - **Jobs expire.** Background jobs have a lifetime in game time, for example 30 game minutes for a
   conversation turn, 2 hours for revising a plan and 6 hours for a day plan (the daily event proposal
   doesn't expire). A job that hasn't started by then is dropped, and the villager uses its fallback

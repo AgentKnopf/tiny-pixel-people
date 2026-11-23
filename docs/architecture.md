@@ -62,8 +62,8 @@ such a fallback, so the town keeps moving even with no model at all.
   starts conversations between nearby villagers, tracks event attendance, updates the player world
   and broadcasts a `tick` with the villagers that changed.
 - **Wake-up hold.** The first time each day reaches 06:00, the engine keeps stepping with no game
-  time passing until every non-transient villager's day plan is settled, the LLM queue is idle
-  (after a 1.5 s grace), the queue reports the model offline, or `sim.wakeUpTimeoutSec` (300) real
+  time passing until every non-transient villager's day plan is settled (`isPlanSettled(day)`: a model plan is in, or the plan request finished
+  with no retry pending), the queue reports the model offline, or `sim.wakeUpTimeoutSec` (300) real
   seconds have passed (`0` disables the hold). It broadcasts `sim.status` with `phase: "wakingUp"`,
   `plansReady` and `villagers` while holding (again every stats interval, for late clients) and
   `phase: "running"` at the end; a timeout logs `wake-up: only N/M plans ready, starting the day
@@ -212,6 +212,7 @@ _Generative Agents_ (Park et al., 2023), scaled down to small local models:
   Cognition also counts model and fallback answers per task (`fallbackStats` in `cognition/llm.ts`,
   per queue, from server start) and, once per game day when the first villager is asleep, sends
   them as a WebSocket `log` message: `LLM use so far (model / fallback): <task> <llm>/<fallback>, …`.
+  The engine also prints that line to stdout (`INFO  [sim] LLM use so far …`).
 - At startup `checkLlmHealth` checks the chat and embedding providers (Ollama: `GET /api/tags` and
   is the model pulled; OpenAI-compatible: `GET /models`; Anthropic and Gemini: look up the model)
   and logs one line for each. A failure doesn't stop the server: it seeds the queue's online flag
