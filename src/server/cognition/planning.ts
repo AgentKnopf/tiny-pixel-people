@@ -143,7 +143,27 @@ export function funPlace(locations: readonly Location[]): Location | undefined {
 }
 
 /** Where this villager works, from ownership and occupation keywords. */
+const placeKw = new WeakMap<Location, string[]>();
+
+function placeKeywords(l: Location): string[] {
+  let kw = placeKw.get(l);
+  if (!kw)
+    placeKw.set(l, (kw = extractKeywords(`${l.id.replace(/_/g, ' ')} ${l.name} ${l.description ?? ''}`)));
+  return kw;
+}
+
+const workCache = new WeakMap<readonly Location[], WeakMap<VillagerProfile, LocationId>>();
+
+/** Pure in (profile, locations); cached because the keyword fallback stems every location's text. */
 export function workLocation(profile: VillagerProfile, locations: readonly Location[]): LocationId {
+  let byProfile = workCache.get(locations);
+  if (!byProfile) workCache.set(locations, (byProfile = new WeakMap()));
+  let id = byProfile.get(profile);
+  if (id === undefined) byProfile.set(profile, (id = findWorkLocation(profile, locations)));
+  return id;
+}
+
+function findWorkLocation(profile: VillagerProfile, locations: readonly Location[]): LocationId {
   const owned = locations.find((l) => l.kind !== 'house' && l.ownerIds?.includes(profile.id));
   if (owned) return owned.id;
   for (const [occ, place] of OCCUPATION_PLACES) {
@@ -156,10 +176,7 @@ export function workLocation(profile: VillagerProfile, locations: readonly Locat
   for (const l of locations) {
     // Only an explicit postal occupation works at the post office (a postcard illustrator does not).
     if (l.kind === 'house' || l.kind === 'post') continue;
-    const s = keywordOverlap(
-      extractKeywords(`${l.id.replace(/_/g, ' ')} ${l.name} ${l.description ?? ''}`),
-      kw,
-    );
+    const s = keywordOverlap(placeKeywords(l), kw);
     if (s > 0 && (!best || s > best.s)) best = { id: l.id, s };
   }
   return best?.id ?? socialPlace(locations)?.id ?? profile.homeId;
@@ -488,6 +505,8 @@ export function needOverride(
   homeId: LocationId,
   mod: number,
   recentlyFixed: (need: keyof Needs) => boolean,
+  /** Where to eat from the villager's current position (default: the first café or bakery). */
+  food?: () => { locationId: LocationId; activity: string; emoji: string },
 ): { need: keyof Needs; block: PlanBlock } | null {
   if (current?.eventId || current?.taskId) return null;
   const order: (keyof Needs)[] = ['energy', 'hunger', 'social', 'fun'];
@@ -495,7 +514,9 @@ export function needOverride(
     if (needs[need] >= 20 || recentlyFixed(need)) continue;
     if (current && ADDRESSES[need].test(current.activity)) continue;
     const plan: Record<keyof Needs, { loc: LocationId; activity: string; emoji: string }> = {
-      hunger: { loc: foodPlace(locations)?.id ?? homeId, activity: 'grab a bite to eat', emoji: '🥐' },
+      hunger: food
+        ? (({ locationId, ...rest }) => ({ loc: locationId, ...rest }))(food())
+        : { loc: foodPlace(locations)?.id ?? homeId, activity: 'grab a bite to eat', emoji: '🥐' },
       energy: { loc: homeId, activity: 'take a nap', emoji: '😴' },
       social: {
         loc: socialPlace(locations)?.id ?? homeId,

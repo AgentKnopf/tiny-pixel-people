@@ -12,6 +12,14 @@ export function createRng(seed: number): Rng {
   };
 }
 
+/**
+ * Code-unit order for ids. String#localeCompare builds an ICU collator on first use, which costs
+ * several milliseconds inside a sim step; ids need a stable order, not a linguistic one.
+ */
+export function compareIds(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
 export function hashString(s: string): number {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);

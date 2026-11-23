@@ -107,8 +107,9 @@ describe('Mind planning', () => {
     await v.advanceTo(at(0, '09:00'));
     v.states.get('ben')!.needs.hunger = 10;
     const intent = v.minds.get('ben')!.update(v.view('ben'));
-    expect(intent).toMatchObject({ type: 'goto', activity: 'grab a bite to eat' });
-    expect(blockAt(v.worlds.get('ben')!.plan, minuteOfDay(v.time.now))!.activity).toBe('grab a bite to eat');
+    // The nearest food from Ben's position (his home door in this harness) is his own kitchen.
+    expect(intent).toMatchObject({ type: 'goto', locationId: 'house_ben', activity: 'eat a snack at home' });
+    expect(blockAt(v.worlds.get('ben')!.plan, minuteOfDay(v.time.now))!.activity).toBe('eat a snack at home');
   });
 
   it('moves outdoor activities indoors in the rain without rewriting the plan', async () => {

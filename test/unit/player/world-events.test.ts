@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ChatRequest, LlmQueue } from '../../../src/server/llm/types.ts';
 import { at, minuteOfDay } from '../../../src/shared/time.ts';
 import { PLAYER_ID, type DayPlan } from '../../../src/shared/types.ts';
@@ -135,6 +135,20 @@ describe('birthday', () => {
     const ev = host.events[0]!;
     expect(ev.invitees).toHaveLength(3);
     expect(ev.start).toBe(host.time + 30);
+  });
+
+  it('breaks affinity ties by code-unit id order without localeCompare', () => {
+    const { host, pw } = setup();
+    const ada = host.states.find((v) => v.id === 'ada')!;
+    ada.relationships = { dot: { affinity: 2 }, cy: { affinity: 2 }, ben: { affinity: 2 } };
+    const spy = vi.spyOn(String.prototype, 'localeCompare');
+    try {
+      pw.handleCommand({ type: 'world.trigger', kind: 'birthday', villagerId: 'ada' });
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+    expect(host.events[0]!.invitees).toEqual(['ben', 'cy', 'dot']);
   });
 
   it('picks a random non-stranger villager when none is given', () => {
