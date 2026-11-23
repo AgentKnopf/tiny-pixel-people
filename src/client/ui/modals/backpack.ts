@@ -1,12 +1,14 @@
 import { itemDef } from '../catalog.ts';
 import type { UiContext } from '../context.ts';
 import { h, replaceChildren } from '../dom.ts';
+import { icon, spriteIcon } from '../icons.ts';
 import type { ModalView } from './modal.ts';
 
 export function backpackModal(ctx: UiContext): ModalView {
   const { store, host } = ctx;
   return {
-    title: '🎒 Backpack',
+    title: 'Backpack',
+    icon: ['backpack', '🎒'],
     footer: 'Walk onto flowers, apples and other finds to pick them up. Gifts make friends.',
     className: 'modal-backpack',
     key: () => {
@@ -22,7 +24,8 @@ export function backpackModal(ctx: UiContext): ModalView {
         h(
           'div',
           { class: 'label' },
-          `🪙 ${p?.gold ?? 0} gold · `,
+          icon('coin', '🪙'),
+          ` ${p?.gold ?? 0} gold · `,
           target ? `gift to ${store.name(target)}` : 'select a villager to give gifts',
         ),
         entries.length === 0
@@ -35,7 +38,7 @@ export function backpackModal(ctx: UiContext): ModalView {
                 return h(
                   'li',
                   { class: 'item-row', 'data-item': e.itemId },
-                  h('span', { class: 'item-icon' }, def.emoji),
+                  h('span', { class: 'item-icon' }, spriteIcon(def.sprite, def.emoji)),
                   h('span', { class: 'item-name' }, def.name),
                   h('span', { class: 'item-count' }, `×${e.count}`),
                   h(

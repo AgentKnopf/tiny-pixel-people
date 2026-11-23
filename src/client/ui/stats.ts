@@ -1,6 +1,7 @@
 import { itemDef } from './catalog.ts';
 import { h, replaceChildren, setText } from './dom.ts';
 import { formatInt } from './format.ts';
+import { icon, spriteIcon } from './icons.ts';
 import type { UiStore } from './store.ts';
 
 /** Top-right card: REAL MODEL CALLS, gold + item counts, online · agents. */
@@ -34,10 +35,10 @@ export function createStatsCard(store: UiStore): HTMLElement {
     setText(agents, `👤 ${online} online · 👥 ${store.profiles.size} agents`);
 
     const p = store.player;
-    const parts: (Node | string)[] = [h('strong', null, `🪙 ${p?.gold ?? 0}`), ' gold'];
+    const parts: (Node | string)[] = [h('strong', null, icon('coin', '🪙'), ` ${p?.gold ?? 0}`), ' gold'];
     for (const entry of (p?.inventory ?? []).filter((e) => e.count > 0).slice(0, 3)) {
       const def = itemDef(store.catalog, entry.itemId);
-      parts.push(' · ', h('span', { title: def.name }, `${def.emoji} ${entry.count}`));
+      parts.push(' · ', h('span', { title: def.name }, spriteIcon(def.sprite, def.emoji), ` ${entry.count}`));
     }
     replaceChildren(purse, ...parts);
   };

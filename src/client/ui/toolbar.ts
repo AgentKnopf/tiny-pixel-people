@@ -1,14 +1,15 @@
 import { SPEEDS, type Speed } from '../../shared/protocol.ts';
 import type { WorldEventKind } from '../../shared/types.ts';
 import type { UiContext } from './context.ts';
-import { h, setText } from './dom.ts';
+import { h, replaceChildren } from './dom.ts';
+import { icon } from './icons.ts';
 
-const EVENT_BUTTONS: { kind: WorldEventKind; icon: string; label: string }[] = [
-  { kind: 'rain', icon: '🌧️', label: 'Rain' },
-  { kind: 'party', icon: '🎉', label: 'Party' },
-  { kind: 'stranger', icon: '🕵️', label: 'Stranger' },
-  { kind: 'birthday', icon: '🎂', label: 'Birthday' },
-  { kind: 'townEvent', icon: '🗓️', label: 'Town event' },
+const EVENT_BUTTONS: { kind: WorldEventKind; sprite: string; emoji: string; label: string }[] = [
+  { kind: 'rain', sprite: 'rain', emoji: '🌧️', label: 'Rain' },
+  { kind: 'party', sprite: 'party', emoji: '🎉', label: 'Party' },
+  { kind: 'stranger', sprite: 'stranger', emoji: '🕵️', label: 'Stranger' },
+  { kind: 'birthday', sprite: 'birthday', emoji: '🎂', label: 'Birthday' },
+  { kind: 'townEvent', sprite: 'town_event', emoji: '🗓️', label: 'Town event' },
 ];
 
 /** Bottom toolbar: pause, zoom, speed segmented control, world-event triggers, save replay. */
@@ -37,7 +38,7 @@ export function createToolbar(ctx: UiContext): HTMLElement {
     ),
   );
 
-  const zoom = (fn: 'zoomOut' | 'fit' | 'zoomIn', label: string, title: string) =>
+  const zoom = (fn: 'zoomOut' | 'fit' | 'zoomIn', sprite: string, label: string, title: string) =>
     h(
       'button',
       {
@@ -49,7 +50,7 @@ export function createToolbar(ctx: UiContext): HTMLElement {
           if (fn === 'fit') store.setScene('plaza');
         },
       },
-      label,
+      icon(sprite, label),
     );
 
   const events = EVENT_BUTTONS.map((b) =>
@@ -65,7 +66,7 @@ export function createToolbar(ctx: UiContext): HTMLElement {
           host.send({ type: 'world.trigger', kind: b.kind, ...(villagerId ? { villagerId } : {}) });
         },
       },
-      h('span', { class: 'icon' }, b.icon),
+      icon(b.sprite, b.emoji),
       h('span', { class: 'btn-label' }, b.label),
     ),
   );
@@ -79,7 +80,7 @@ export function createToolbar(ctx: UiContext): HTMLElement {
       'aria-label': 'Save replay',
       onclick: () => ctx.saveReplay(),
     },
-    h('span', { class: 'icon' }, '💾'),
+    icon('save', '💾'),
     h('span', { class: 'btn-label' }, 'Save replay'),
   );
 
@@ -90,17 +91,25 @@ export function createToolbar(ctx: UiContext): HTMLElement {
     h(
       'div',
       { class: 'group' },
-      zoom('zoomOut', '−', 'Zoom out'),
-      zoom('fit', '⤢', 'Fit the whole town'),
-      zoom('zoomIn', '+', 'Zoom in'),
+      zoom('zoomOut', 'zoom_out', '−', 'Zoom out'),
+      zoom('fit', 'fit', '⤢', 'Fit the whole town'),
+      zoom('zoomIn', 'zoom_in', '+', 'Zoom in'),
     ),
     h('div', { class: 'segmented', role: 'group', 'aria-label': 'Speed' }, speedButtons),
     h('div', { class: 'group' }, events, save),
   );
 
+  let pauseShown: boolean | null = null;
   const render = () => {
     const paused = store.speed === 0;
-    setText(pause, paused ? '▶ PLAY' : '❚❚ PAUSE');
+    if (paused !== pauseShown) {
+      pauseShown = paused;
+      replaceChildren(
+        pause,
+        paused ? icon('play', '▶') : icon('pause', '❚❚'),
+        h('span', { class: 'btn-label-keep' }, paused ? 'PLAY' : 'PAUSE'),
+      );
+    }
     pause.classList.toggle('active', paused);
     for (const b of speedButtons) {
       const active = !paused && Number(b.dataset.speed) === store.speed;

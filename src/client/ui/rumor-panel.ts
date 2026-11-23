@@ -1,5 +1,6 @@
 import { PLAYER_ID, type Rumor } from '../../shared/types.ts';
-import { h, replaceChildren, setText } from './dom.ts';
+import { h, replaceChildren } from './dom.ts';
+import { icon } from './icons.ts';
 import type { UiStore } from './store.ts';
 
 const MAX_HOPS = 6;
@@ -60,7 +61,8 @@ export function createRumorPanel(store: UiStore): HTMLElement {
 
     const total = store.profiles.size;
     const known = rumor.knownBy.filter((id) => id !== PLAYER_ID && store.profiles.has(id)).length;
-    setText(title, `🗣️ Rumor · ${known} of ${total} villagers know`);
+    const titleText = ` Rumor · ${known} of ${total} villagers know`;
+    if (title.lastChild?.textContent !== titleText) replaceChildren(title, icon('rumor', '🗣️'), titleText);
 
     picker.hidden = rumors.length < 2;
     replaceChildren(

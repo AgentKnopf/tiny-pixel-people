@@ -1,6 +1,7 @@
 import { PLAYER_HOME_ID } from '../../shared/types.ts';
 import type { UiContext } from './context.ts';
 import { h, setText } from './dom.ts';
+import { icon } from './icons.ts';
 
 interface Tile {
   el: HTMLButtonElement;
@@ -8,14 +9,14 @@ interface Tile {
   badge: HTMLElement;
 }
 
-function tile(icon: string, label: string, testid: string, onclick: () => void): Tile {
+function tile(sprite: string, emoji: string, label: string, testid: string, onclick: () => void): Tile {
   const sub = h('span', { class: 'dock-sub' });
   const badge = h('span', { class: 'dock-badge', hidden: true });
   const el = h(
     'button',
     { class: 'dock-tile', 'data-testid': testid, onclick },
     badge,
-    h('span', { class: 'dock-icon' }, icon),
+    h('span', { class: 'dock-icon' }, icon(sprite, emoji)),
     h('span', { class: 'dock-label' }, label),
     sub,
   );
@@ -25,16 +26,16 @@ function tile(icon: string, label: string, testid: string, onclick: () => void):
 /** Bottom-right dock: Backpack, Map, Pet, Decorate, Home, Mail, Gold. */
 export function createDock(ctx: UiContext): HTMLElement {
   const { store, host } = ctx;
-  const backpack = tile('🎒', 'Backpack', 'dock-backpack', () => ctx.openModal('backpack'));
-  const map = tile('🗺️', 'Map', 'dock-map', () => ctx.openModal('map'));
-  const pet = tile('🐾', 'Pet', 'dock-pet', () => ctx.openModal('pet'));
-  const decorate = tile('🛋️', 'Decorate', 'dock-decorate', () => ctx.openModal('decorate'));
-  const home = tile('🏠', 'Home', 'dock-home', () => {
+  const backpack = tile('backpack', '🎒', 'Backpack', 'dock-backpack', () => ctx.openModal('backpack'));
+  const map = tile('map', '🗺️', 'Map', 'dock-map', () => ctx.openModal('map'));
+  const pet = tile('paw', '🐾', 'Pet', 'dock-pet', () => ctx.openModal('pet'));
+  const decorate = tile('decorate', '🛋️', 'Decorate', 'dock-decorate', () => ctx.openModal('decorate'));
+  const home = tile('home', '🏠', 'Home', 'dock-home', () => {
     host.camera?.showScene?.('home');
     store.setScene('home');
   });
-  const mail = tile('📬', 'Mail', 'dock-mail', () => ctx.openModal('door-note', PLAYER_HOME_ID));
-  const gold = tile('🪙', 'Gold', 'dock-gold', () => ctx.openModal('backpack'));
+  const mail = tile('note', '📬', 'Mail', 'dock-mail', () => ctx.openModal('door-note', PLAYER_HOME_ID));
+  const gold = tile('coin', '🪙', 'Gold', 'dock-gold', () => ctx.openModal('backpack'));
   setText(decorate.sub, 'Your cottage');
   setText(home.sub, 'Your cottage');
 

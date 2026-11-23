@@ -5,7 +5,8 @@ import type { ModalView } from './modal.ts';
 export function mapModal(ctx: UiContext): ModalView {
   const { store, host } = ctx;
   return {
-    title: '🗺️ Map',
+    title: 'Map',
+    icon: ['map', '🗺️'],
     subtitle: 'Switch scenes',
     footer: 'Click empty ground to walk. The camera follows the scene you pick.',
     className: 'modal-map',

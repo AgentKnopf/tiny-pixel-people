@@ -6,6 +6,7 @@ import { h } from './dom.ts';
 import { createDock } from './dock.ts';
 import { createHud } from './hud.ts';
 import { createInspector } from './inspector.ts';
+import { loadIconSheet } from './icons.ts';
 import { createLlmCard } from './llm-card.ts';
 import { backpackModal } from './modals/backpack.ts';
 import { decorateModal } from './modals/decorate.ts';
@@ -128,6 +129,8 @@ export function mountUi(root: HTMLElement, host: UiHost, store: UiStore = new Ui
     }
   };
   window.addEventListener('keydown', onKey);
+
+  void loadIconSheet(root, apiBase);
 
   void fetch(`${apiBase}/api/catalog`)
     .then((r) => (r.ok ? (r.json() as Promise<Partial<Catalog>>) : null))

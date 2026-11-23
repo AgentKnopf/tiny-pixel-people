@@ -2,6 +2,7 @@ import { SAY_MAX_LENGTH } from '../../shared/protocol.ts';
 import { PLAYER_ID, type Needs, type VillagerId } from '../../shared/types.ts';
 import type { UiContext } from './context.ts';
 import { h, replaceChildren, setText } from './dom.ts';
+import { icon } from './icons.ts';
 import { currentBlockIndex, formatClock, isAboutPlayer, memoryEmoji } from './format.ts';
 
 const CLOSE_FRIEND_AFFINITY = 3;
@@ -111,8 +112,13 @@ export function createInspector(ctx: UiContext): HTMLElement {
     ev.stopPropagation();
   });
 
-  const button = (label: string, testid: string, onclick: () => void, cls = 'btn') =>
-    h('button', { class: cls, 'data-testid': testid, onclick }, label);
+  const button = (label: string, testid: string, onclick: () => void, glyph?: [string, string]) =>
+    h(
+      'button',
+      { class: 'btn', 'data-testid': testid, onclick },
+      glyph ? [icon(glyph[0], glyph[1]), ' '] : null,
+      label,
+    );
 
   const el = h(
     'aside',
@@ -149,12 +155,12 @@ export function createInspector(ctx: UiContext): HTMLElement {
     h(
       'div',
       { class: 'insp-actions' },
-      button('🫴 Ask to do it', 'insp-ask', () => say('ask')),
-      button('🗣️ Tell as rumor', 'insp-rumor', rumor),
+      button('Ask to do it', 'insp-ask', () => say('ask'), ['star', '🫴']),
+      button('Tell as rumor', 'insp-rumor', rumor, ['rumor', '🗣️']),
       partner,
-      button('💬 Have them talk', 'insp-pair', pairTalk),
-      button('📍 Find them', 'insp-find', find),
-      button('🏠 Visit their home', 'insp-visit', visit),
+      button('Have them talk', 'insp-pair', pairTalk, ['chat', '💬']),
+      button('Find them', 'insp-find', find, ['pin', '📍']),
+      button('Visit their home', 'insp-visit', visit, ['home', '🏠']),
     ),
     h('section', null, memoriesTitle, memories),
   );
@@ -220,7 +226,7 @@ export function createInspector(ctx: UiContext): HTMLElement {
         return h(
           'div',
           { class: `need need-${k}`, 'data-need': k },
-          h('span', { class: 'need-label' }, k),
+          h('span', { class: 'need-label' }, icon(k, ''), k),
           h('span', { class: 'need-track' }, h('span', { class: 'need-fill', style: `width:${v}%` })),
           h('span', { class: 'need-value' }, n ? `${v}%` : '–'),
         );
@@ -234,7 +240,7 @@ export function createInspector(ctx: UiContext): HTMLElement {
     replaceChildren(
       friendsTitle,
       'Friends ',
-      h('span', { class: 'heart' }, `❤ ${close}`),
+      h('span', { class: 'heart' }, icon('heart', '❤'), ` ${close}`),
       close === 0 ? h('span', { class: 'label-note' }, ' (no close friends yet)') : null,
     );
     replaceChildren(

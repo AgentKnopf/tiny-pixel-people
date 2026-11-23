@@ -73,7 +73,8 @@ function composeView(ctx: UiContext, houseId: LocationId): ModalView {
   );
 
   return {
-    title: `📮 Note for ${ownerLabel}'s door`,
+    title: `Note for ${ownerLabel}'s door`,
+    icon: ['note', '📮'],
     subtitle: loc?.name,
     footer: 'They read it the next time they come home, and pin a reply on the door.',
     className: 'modal-note',
@@ -121,7 +122,8 @@ function composeView(ctx: UiContext, houseId: LocationId): ModalView {
 function mailboxView(ctx: UiContext): ModalView {
   const { store } = ctx;
   return {
-    title: '📬 Your mailbox',
+    title: 'Your mailbox',
+    icon: ['note', '📬'],
     footer: 'Villagers who know you may leave a note once a mailbox is placed at your cottage.',
     className: 'modal-note',
     key: () =>

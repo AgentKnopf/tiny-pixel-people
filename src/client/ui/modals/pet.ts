@@ -5,7 +5,8 @@ import type { ModalView } from './modal.ts';
 export function petModal(ctx: UiContext): ModalView {
   const { store, host } = ctx;
   return {
-    title: '🐾 Pet',
+    title: 'Pet',
+    icon: ['paw', '🐾'],
     className: 'modal-pet',
     key: () => {
       const pet = store.player?.pet;

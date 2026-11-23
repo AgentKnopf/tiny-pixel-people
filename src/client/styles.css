@@ -118,9 +118,39 @@ body {
   font-style: italic;
 }
 
-.icon {
+/* Icons: emoji fallback text until assets/ui/icons.png loads, then the 16 px pixel sprite
+   (integer scale --s, nearest-neighbour). */
+.ui-icon {
   display: inline-block;
-  margin-right: 5px;
+  line-height: 1;
+  vertical-align: -2px;
+}
+
+.has-pixel-icons .ui-icon:not(.no-sprite) {
+  --px: calc(var(--icon-size, 16px) * var(--s, 1));
+  width: var(--px);
+  height: var(--px);
+  overflow: hidden;
+  color: transparent;
+  font-size: 0;
+  vertical-align: -3px;
+  background-image: var(--icons-url);
+  background-repeat: no-repeat;
+  background-size: calc(var(--px) * var(--icons-columns, 8)) auto;
+  background-position: calc(var(--ix, 0) * var(--px) * -1) calc(var(--iy, 0) * var(--px) * -1);
+  image-rendering: pixelated;
+}
+
+.btn .ui-icon + .btn-label {
+  margin-left: 5px;
+}
+
+.btn-label-keep {
+  margin-left: 5px;
+}
+
+.need-label .ui-icon {
+  margin-right: 3px;
 }
 
 /* ---------- Buttons ---------- */
@@ -1031,9 +1061,6 @@ select:focus {
 @media (max-width: 1560px) {
   .toolbar .btn-label {
     display: none;
-  }
-  .toolbar .icon {
-    margin-right: 0;
   }
 }
 

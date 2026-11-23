@@ -1,11 +1,13 @@
 import type { UiContext } from '../context.ts';
 import { h, replaceChildren } from '../dom.ts';
+import { icon } from '../icons.ts';
 import type { ModalView } from './modal.ts';
 
 export function decorateModal(ctx: UiContext): ModalView {
   const { store, host } = ctx;
   return {
-    title: '🛋️ Decorate your cottage',
+    title: 'Decorate your cottage',
+    icon: ['decorate', '🛋️'],
     footer: 'Earn gold by joining community events (+10) and finishing tasks (+12).',
     className: 'modal-decorate',
     key: () => {
@@ -17,7 +19,12 @@ export function decorateModal(ctx: UiContext): ModalView {
       const gold = p?.gold ?? 0;
       replaceChildren(
         body,
-        h('div', { class: 'label' }, `🪙 ${gold} gold · click to buy, click again to put away`),
+        h(
+          'div',
+          { class: 'label' },
+          icon('coin', '🪙'),
+          ` ${gold} gold · click to buy, click again to put away`,
+        ),
         h(
           'div',
           { class: 'grid grid-4' },

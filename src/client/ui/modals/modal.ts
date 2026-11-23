@@ -1,8 +1,10 @@
 import { h, replaceChildren } from '../dom.ts';
+import { icon } from '../icons.ts';
 
 export interface ModalView {
-  /** Title row content, e.g. "🗺️ Map". */
   title: string;
+  /** Sprite name in assets/ui/icons.json and its emoji fallback. */
+  icon?: [sprite: string, emoji: string];
   subtitle?: string;
   /** Fills the body; called on open and whenever a watched store topic changes. */
   render(body: HTMLElement): void;
@@ -51,7 +53,12 @@ export class ModalHost {
       h(
         'header',
         { class: 'modal-head' },
-        h('div', { class: 'modal-title' }, view.title),
+        h(
+          'div',
+          { class: 'modal-title' },
+          view.icon ? [icon(view.icon[0], view.icon[1]), ' '] : null,
+          view.title,
+        ),
         view.subtitle ? h('div', { class: 'label modal-subtitle' }, view.subtitle) : null,
       ),
       this.body,
