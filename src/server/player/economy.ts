@@ -6,7 +6,7 @@ import {
   type VillagerId,
 } from '../../shared/types.ts';
 import type { Ctx } from './context.ts';
-import { inRect } from './geometry.ts';
+import { distance, inRect } from './geometry.ts';
 
 /** Gold, event-attendance rewards and "Ask to do it" task rewards (spec §7.14). */
 export class Economy {
@@ -50,7 +50,8 @@ export class Economy {
       this.lastStatus.set(ev.id, ev.status);
       if (ev.status === 'happening') {
         const loc = this.ctx.location(ev.locationId);
-        if (loc && inRect(loc.area, this.player.pos)) {
+        // House entries sit just outside the area (in front of the door), so count them too.
+        if (loc && (inRect(loc.area, this.player.pos) || distance(loc.entry, this.player.pos) <= 1.5)) {
           this.presence.set(ev.id, (this.presence.get(ev.id) ?? 0) + dt);
         }
       }

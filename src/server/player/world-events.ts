@@ -102,7 +102,8 @@ export class WorldEvents implements WorldEventService {
       this.ctx.host.addMemory(v.id, {
         at: now,
         kind: 'event',
-        text: v.id === target.id ? 'Today is my birthday!' : `Today is ${name}'s birthday`,
+        text:
+          v.id === target.id ? `Today is my birthday! It's ${name}'s big day` : `Today is ${name}'s birthday`,
         importance: v.id === target.id ? 6 : 5,
       });
     }

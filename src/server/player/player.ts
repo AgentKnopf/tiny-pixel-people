@@ -116,8 +116,9 @@ export class PlayerWorld implements PlayerService {
 
   /** Advance by `dt` game minutes. Synchronous and cheap. */
   update(dt: number): void {
-    let changed = this.movePlayer(dt);
-    changed = this.collectItems() || changed;
+    const walked = this.movePlayer(dt);
+    let changed = walked.length > 0;
+    changed = this.collectItems(walked) || changed;
     changed = this.pet.update(dt, this.player) || changed;
     if (changed) this.broadcastPlayer();
     this.items.update();
@@ -380,19 +381,23 @@ export class PlayerWorld implements PlayerService {
 
   // ---------- helpers ----------
 
-  private movePlayer(dt: number): boolean {
-    if (this.player.path.length === 0) return false;
+  /** Returns the tiles reached this step (waypoints passed, then the current tile). */
+  private movePlayer(dt: number): Point[] {
+    if (this.player.path.length === 0) return [];
     const before = tileOf(this.player.pos);
     const step = stepAlong(this.player.pos, this.player.path, PLAYER_TILES_PER_MINUTE * dt);
+    const passed = this.player.path.slice(0, this.player.path.length - step.path.length);
     this.player.pos = step.pos;
     this.player.path = step.path;
     if (step.facing) this.player.facing = step.facing;
     const after = tileOf(this.player.pos);
-    return after.x !== before.x || after.y !== before.y || step.path.length === 0;
+    const moved = after.x !== before.x || after.y !== before.y || step.path.length === 0;
+    return moved ? [...passed, after] : [];
   }
 
-  private collectItems(): boolean {
-    const taken = this.items.takeAt(this.player.pos);
+  /** At high speed one step can cross several tiles, so check every tile walked over. */
+  private collectItems(tiles: readonly Point[]): boolean {
+    const taken = tiles.flatMap((t) => this.items.takeAt(t));
     if (taken.length === 0) return false;
     for (const item of taken) this.receive(item);
     this.items.broadcast();

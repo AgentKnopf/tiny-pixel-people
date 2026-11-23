@@ -14,4 +14,4 @@ export {
   PlayerWorld,
   type CreatePlayerWorldOptions,
   type PlayerWorldSave,
-} from './player-world.ts';
+} from './player.ts';

@@ -77,13 +77,14 @@ export class WeatherController {
       else this.applySwaps();
     }
     const hour = Math.floor(now / 60);
-    if (hour !== this.lastHour) {
-      this.lastHour = hour;
-      const h = hour % 24;
-      if (this.ctx.cfg.world.randomWeather && !this.raining && h >= 7 && h < 19) {
+    // Large steps (high speed, tests) can cross several hours; roll once per hour crossed.
+    for (let h = this.lastHour + 1; h <= hour; h++) {
+      const hod = h % 24;
+      if (this.ctx.cfg.world.randomWeather && !this.raining && hod >= 7 && hod < 19) {
         if (this.ctx.host.random() < RANDOM_RAIN_CHANCE) this.startRain();
       }
     }
+    this.lastHour = Math.max(this.lastHour, hour);
   }
 
   /** Idempotent: also catches plans written or revised while it rains. */

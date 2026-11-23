@@ -9,12 +9,16 @@ export const DECOR_NOTICE_DISTANCE = 4;
 /** Home decorating (spec §7.16): buy once, then place / put away for free. */
 export class DecorController {
   private readonly seen = new Map<VillagerId, Set<string>>();
+  /** Placed when the world was loaded; treated as already known so a restore does not re-announce them. */
+  private readonly known: readonly string[];
 
   constructor(
     private readonly ctx: Ctx,
     private readonly player: PlayerState,
     private readonly onGoldChange: (delta: number, reason: string) => void,
-  ) {}
+  ) {
+    this.known = [...player.placedDecorations];
+  }
 
   def(id: string): DecorationItem | undefined {
     return this.ctx.catalogs.decorations.find((d) => d.id === id);
@@ -64,7 +68,7 @@ export class DecorController {
     for (const v of this.ctx.awake()) {
       if (distanceToRect(home.area, v.pos) > DECOR_NOTICE_DISTANCE) continue;
       let seen = this.seen.get(v.id);
-      if (!seen) this.seen.set(v.id, (seen = new Set()));
+      if (!seen) this.seen.set(v.id, (seen = new Set(this.known)));
       const fresh = this.player.placedDecorations.filter((d) => !seen.has(d));
       if (fresh.length === 0) continue;
       for (const d of fresh) seen.add(d);
