@@ -93,6 +93,72 @@ describe('morning plans', () => {
   });
 });
 
+describe('fallback plan rescue and the dawn rush', () => {
+  it('keeps asking the model for a fallback plan in the background and adopts the answer', async () => {
+    const p = new MockChatProvider();
+    let fail = true;
+    p.setScript('plan.day', (req) => (fail && req.meta?.villagerId === 'mia' ? 'no idea' : compactPlan(req)));
+    const v = createTestVillage({ start: at(0, '05:59'), provider: p });
+    await v.advanceTo(at(0, '06:10'));
+    expect(v.worlds.get('mia')!.plan).toMatchObject({ day: 0, source: 'fallback' });
+    expect(v.minds.get('mia')!.isPlanSettled(0)).toBe(true);
+    fail = false;
+    await v.advanceTo(at(0, '07:00'));
+    const plan = v.worlds.get('mia')!.plan!;
+    expect(plan).toMatchObject({ day: 0, source: 'llm' });
+    // Blocks from now on come from the model; the morning so far stays as it was.
+    expect(plan.blocks.some((b) => b.locationId === 'cafe' && b.activity === 'relax')).toBe(true);
+    const asks = v.queue.requests.filter((r) => r.task === 'plan.day' && r.meta?.villagerId === 'mia');
+    expect(asks.map((r) => v.queue.priorities.get(r))).toContain(PRIORITY.planRescue);
+    expect(PRIORITY.planRescue).toBeLessThan(PRIORITY.planToday);
+    expect(PRIORITY.planRescue).toBeGreaterThan(PRIORITY.eventPropose);
+  });
+
+  it('puts plans ahead of everything while a morning plan is pending', async () => {
+    expect(PRIORITY.planToday).toBeGreaterThan(
+      Math.max(...Object.values(PRIORITY).filter((x) => x !== PRIORITY.planToday)),
+    );
+    const p = new MockChatProvider();
+    let answer: (() => void) | null = null;
+    p.setScript('plan.day', (req) =>
+      req.meta?.villagerId === 'mia'
+        ? new Promise<string>((resolve) => {
+            answer = () => resolve(compactPlan(req));
+          })
+        : compactPlan(req),
+    );
+    const v = createTestVillage({ start: at(0, '05:59'), provider: p });
+    v.time.now = at(0, '06:00');
+    for (const m of v.minds.values()) m.update(v.view(m.id));
+    for (let i = 0; i < 5; i++) await sleep(10);
+    const mia = v.minds.get('mia')!;
+    const ben = v.minds.get('ben')!;
+    expect(mia.isPlanSettled(0)).toBe(false);
+    expect(ben.isPlanSettled(0)).toBe(true);
+    expect(ben.load()).toBe('overloaded');
+    answer!();
+    for (let i = 0; i < 5; i++) await sleep(10);
+    expect(mia.isPlanSettled(0)).toBe(true);
+    expect(ben.load()).toBe('normal');
+  });
+
+  it('ends the dawn rush once the villager has been awake a while', async () => {
+    const p = new MockChatProvider();
+    p.setScript('plan.day', (req) =>
+      req.meta?.villagerId === 'mia' ? new Promise<string>(() => {}) : compactPlan(req),
+    );
+    const v = createTestVillage({ start: at(0, '05:59'), provider: p });
+    v.time.now = at(0, '06:00');
+    for (const m of v.minds.values()) m.update(v.view(m.id));
+    await sleep(20);
+    const mia = v.minds.get('mia')!;
+    expect(mia.dawnPlanPending()).toBe(true);
+    v.time.now = at(0, '09:00');
+    // The stalled call still raises the measured lag; only the rush itself is over.
+    expect(mia.dawnPlanPending()).toBe(false);
+  });
+});
+
 describe('provenance', () => {
   it('asks the model for the daily event even when overloaded, and marks the event', async () => {
     const p = new MockChatProvider();

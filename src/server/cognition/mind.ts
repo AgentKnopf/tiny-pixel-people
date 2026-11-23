@@ -107,15 +107,25 @@ const HOT_NEWS_WINDOW = 12 * 60;
 const SEEK_COOLDOWN = 30;
 /** Game minutes a retrieval waits for its query embedding before ranking by keywords alone. */
 const RECALL_MAX_WAIT = 10;
+/** Game minutes after waking during which a pending morning plan puts the village in a plan rush. */
+const DAWN_RUSH_WINDOW = 120;
+/** Game minutes between model retries of today's fallback plan. */
+const PLAN_RESCUE_GAP = 30;
+/** Minute of day after which a fallback plan is kept (unless the villager woke later than 10:00). */
+const PLAN_RESCUE_UNTIL = 12 * 60;
+const PLAN_RESCUE_MAX_ATTEMPTS = 8;
 
 export const PRIORITY = {
-  planToday: 105,
+  // Above everything: the engine's wake-up hold waits on these, and a late answer is a whole
+  // morning on the fallback plan.
+  planToday: 110,
+  // Model retry of a fallback plan that is already in use (see PLAN_RESCUE_*).
+  planRescue: 103,
   // Above convo.turn (100): one call a day that must not starve behind chatter.
   eventPropose: 101,
   convoFirstNews: 104,
   eventDecide: 92,
   noteReply: 108,
-  planRetry: 90,
   planTomorrow: 70,
   reflect: 20,
 } as const;
@@ -146,6 +156,10 @@ export class Mind implements VillagerMind {
   private readonly prepared = new Map<number, DayPlan>();
   private readonly planAttempts = new Map<number, number>();
   private readonly planSettled = new Set<number>();
+  /** Game time the last plan.day job for each day finished. */
+  private readonly planDoneAt = new Map<number, number>();
+  /** Day of the plan.day job in flight at planToday priority, if any. */
+  private urgentPlanDay: number | null = null;
   private readonly needFixedAt: Partial<Record<keyof Needs, GameMinutes>> = {};
   private readonly lastTalkedAt = new Map<VillagerId, GameMinutes>();
   private lastArchiveDay = -1;
@@ -484,9 +498,23 @@ export class Mind implements VillagerMind {
     return this.pending.has(key);
   }
 
-  /** How far behind the model is; optional LLM work is skipped when it is not 'normal'. */
+  /**
+   * How far behind the model is; optional LLM work is skipped when it is not 'normal'. While any
+   * villager is still waiting for this morning's plan, the village counts as overloaded: during the
+   * wake-up hold the game clock stands still, so the measured lag would read 'normal' and chatter
+   * would compete with the plans the hold is waiting for.
+   */
   load(): LoadLevel {
+    if (this.village.dawnRush()) return 'overloaded';
     return loadTracker(this.deps.queue).level(this.deps.now());
+  }
+
+  /** True while this villager's plan for today is being asked at planToday priority, soon after waking. */
+  dawnPlanPending(): boolean {
+    if (this.urgentPlanDay === null || !this.pending.has(`plan.day:${this.urgentPlanDay}`)) return false;
+    const mod = minuteOfDay(this.deps.now());
+    if (!isAwake(this.window, mod)) return true;
+    return (mod - this.window.wake + MINUTES_PER_DAY) % MINUTES_PER_DAY < DAWN_RUSH_WINDOW;
   }
 
   /**
@@ -575,9 +603,7 @@ export class Mind implements VillagerMind {
       }
     }
     if (this.plan?.day === day) {
-      const attempts = this.planAttempts.get(day) ?? 0;
-      if (this.plan.source === 'fallback' && attempts < 3 && view.now - this.plan.createdAt >= 60 * attempts)
-        this.requestDayPlan(view, day);
+      if (this.plan.source === 'fallback') this.rescuePlan(view, day);
       return;
     }
     const prepared = this.prepared.get(day);
@@ -610,20 +636,47 @@ export class Mind implements VillagerMind {
     this.world.setPlan(plan);
   }
 
-  private requestDayPlan(view: WorldView, day: number): void {
+  /** Minute of the plan window (game time) after which a fallback plan for `day` is kept. */
+  private rescueCutoff(day: number): GameMinutes {
+    const sinceWake = Math.max(PLAN_RESCUE_UNTIL - this.window.wake, DAWN_RUSH_WINDOW);
+    return day * MINUTES_PER_DAY + this.window.wake + sinceWake;
+  }
+
+  /**
+   * Today's plan is a fallback (the model was too slow or answered badly): keep asking the model in
+   * the background until late morning. A model answer replaces the blocks from now on.
+   */
+  private rescuePlan(view: WorldView, day: number): void {
+    if (this.pending.has(`plan.day:${day}`) || view.now >= this.rescueCutoff(day)) return;
+    if ((this.planAttempts.get(day) ?? 0) >= PLAN_RESCUE_MAX_ATTEMPTS) return;
+    const last = this.planDoneAt.get(day);
+    if (last !== undefined && view.now - last < PLAN_RESCUE_GAP) return;
+    this.requestDayPlan(view, day, true);
+  }
+
+  private requestDayPlan(view: WorldView, day: number, rescue = false): void {
     this.planAttempts.set(day, (this.planAttempts.get(day) ?? 0) + 1);
     this.job(`plan.day:${day}`, async () => {
       let retrying = false;
       try {
-        retrying = await this.dayPlanJob(view, day);
+        retrying = await this.dayPlanJob(view, day, rescue);
       } finally {
+        if (this.urgentPlanDay === day) this.urgentPlanDay = null;
+        this.planDoneAt.set(day, this.deps.now());
         if (!retrying) this.planSettled.add(day);
       }
     });
   }
 
   /** Returns true when an immediate retry was scheduled. */
-  private async dayPlanJob(view: WorldView, day: number): Promise<boolean> {
+  private async dayPlanJob(view: WorldView, day: number, rescue: boolean): Promise<boolean> {
+    const priority =
+      day > dayOf(this.deps.now())
+        ? PRIORITY.planTomorrow
+        : rescue
+          ? PRIORITY.planRescue
+          : PRIORITY.planToday;
+    if (priority === PRIORITY.planToday) this.urgentPlanDay = day;
     const now = view.now;
     const memories = await this.recall(
       `my plans for today ${this.profile.occupation} ${this.profile.name}`,
@@ -665,13 +718,8 @@ export class Mind implements VillagerMind {
       shape:
         '{"summary":"...","blocks":[{"start":"07:00","end":"09:00","location":"<id>","activity":"...","emoji":"🙂"}]}',
       dedupeKey: `plan:${this.id}:day${day}`,
-      // Today's plan is late already (the villager runs on the fallback): ahead of everything.
-      priority:
-        day > dayOf(this.deps.now())
-          ? PRIORITY.planTomorrow
-          : (this.planAttempts.get(day) ?? 0) > 1
-            ? PRIORITY.planRetry
-            : PRIORITY.planToday,
+      priority,
+      ...(rescue ? { deadline: Math.max(view.now + PLAN_RESCUE_GAP, this.rescueCutoff(day)) } : {}),
       temperature: this.settings.temperature,
       maxTokens: 320,
     });
