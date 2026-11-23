@@ -515,7 +515,7 @@ older) take part.
    is a little hurt.
 4. **Couples.** After two good dates (`romance.datesForCouple`), and if they like each other enough
    (affinity 7 or more, `romance.coupleAffinity`), the two become a couple:
-   `💕 Mia and Tom are now a couple!`. Couples keep going on dates.
+   `💕 Mia Hartley and Tom Fielding are now a couple!`. Couples keep going on dates.
 5. **Breaking up** happens quietly, only if a couple stops liking each other for days.
 
 Visitors can have crushes and go on dates, but they don't become couples before their train leaves.
