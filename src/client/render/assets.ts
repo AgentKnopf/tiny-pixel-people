@@ -6,6 +6,7 @@ import {
   type AnimalIndex,
   type AnimalSheetInfo,
 } from './animals.ts';
+import type { VehicleIndex } from './rides.ts';
 import { placeholderSheet, SHEET_H, SHEET_W, spriteUrl, type PlaceholderKind } from './sprites.ts';
 
 /** `tiles/village.json` sidecar (docs/art/README.md). */
@@ -107,6 +108,7 @@ export class Assets {
   glow: Drawable | null = null;
   meta: MapMeta | null = null;
   animalIndex: AnimalIndex | null = null;
+  vehicles: VehicleIndex | null = null;
   private sheets = new Map<string, Drawable>();
   private images = new Map<string, Drawable | null>();
   private placeholders = new Map<string, { image: Drawable; info: AnimalSheetInfo }>();
@@ -130,13 +132,15 @@ export class Assets {
   }
 
   async loadCommon(): Promise<void> {
-    const [iconMeta, glow, meta, animals] = await Promise.all([
+    const [iconMeta, glow, meta, animals, vehicles] = await Promise.all([
       loadJson<IconSheetMeta>(assetUrl('ui/icons.json')),
       loadImage(assetUrl('ui/glow.png')),
       loadJson<MapMeta>(assetUrl('maps/village.meta.json')),
       loadJson<AnimalIndex>(assetUrl('animals/index.json')),
+      loadJson<VehicleIndex>(assetUrl('vehicles/index.json')),
     ]);
     if (animals && Array.isArray(animals.animals)) this.animalIndex = animals;
+    if (vehicles && typeof vehicles === 'object') this.vehicles = vehicles;
     if (iconMeta) {
       const img = await loadImage(assetUrl(iconMeta.image));
       if (img) this.icons = { image: img, meta: iconMeta };
@@ -214,6 +218,26 @@ export class Assets {
       this.placeholders.set(key, ph);
     }
     return ph;
+  }
+
+  /** Any image by asset key; null until loaded (or when missing). Loading starts on first ask. */
+  image(key: string): Drawable | null {
+    const url = assetUrl(key);
+    const img = this.images.get(url);
+    if (img !== undefined) return img;
+    this.images.set(url, null);
+    void loadImage(url).then((loaded) => {
+      if (loaded) this.images.set(url, loaded);
+    });
+    return null;
+  }
+
+  /** Global tile index → tile name, over all loaded tilesets. */
+  tileNames(): Map<number, string> {
+    const out = new Map<number, string>();
+    for (const ts of this.tilesets)
+      for (const [name, i] of Object.entries(ts.meta?.tiles ?? {})) out.set(ts.ref.firstIndex + i, name);
+    return out;
   }
 
   /** Icon source rect by name (icons.json), or null when not available. */
