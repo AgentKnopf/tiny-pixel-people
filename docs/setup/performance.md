@@ -18,7 +18,7 @@ seconds. Higher speeds (2×, 4×, 8×) shrink that budget by the same factor.
 
 ### Measured on a CPU-only machine
 
-The final test run used `qwen2.5:1.5b` on a 4-core cloud machine with 7.8 GB of memory and no GPU,
+This run was made with v1 (10 villagers, before the bigger village and its live checks). It used `qwen2.5:1.5b` on a 4-core cloud machine with 7.8 GB of memory and no GPU,
 with the default settings (`llm.concurrency` 1, `sim.wakeUpTimeoutSec` 300) and a 40-minute day at
 speed 2:
 
@@ -33,7 +33,7 @@ speed 2:
 The game made about 100 model calls that day. All 10 villagers ended up with a plan from the model.
 The 06:00 wait ran to its 5-minute limit with 9 of 10 plans ready, and the last plan arrived in the
 background before noon. Gossip, the door-note reply and the village event all came from the model.
-The live check passed 6 of 7. The one failure was an extra sanity rule in the test script, not the
+The v1 live check passed 6 of its 7 checks. The one failure was an extra sanity rule in the test script, not the
 acceptance criterion: one villager stayed in a single place all day. Day plans now always include at
 least two places. An earlier run with the same setup passed all 7.
 
