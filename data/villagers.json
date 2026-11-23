@@ -205,6 +205,50 @@
     }
   },
   {
+    "id": "laude",
+    "name": "Laude",
+    "age": 46,
+    "occupation": "Postmaster",
+    "sprite": "characters/laude.png",
+    "homeId": "house_laude",
+    "wakeTime": "06:30",
+    "sleepTime": "22:00",
+    "traits": ["kind", "meticulous", "a little forgetful", "shy around Franzi"],
+    "likes": ["bread", "cake", "flower"],
+    "bio": "Laude runs the post office from 08:00 to 18:00 and files every note, letter and notice in the Keep, the old archive cupboard behind his counter. He is kind and meticulous but a little forgetful, so he checks the Keep before he answers anyone. He loves baking, never misses a bake-off and has lunch at the bakery.",
+    "seedMemories": [
+      "I work at the post office from 08:00 to 18:00 and have lunch at the bakery.",
+      "I would never miss a bake-off.",
+      "Franzi came by the post office again. I hope she did not notice how flustered I was."
+    ],
+    "initialRelationships": {
+      "franzi": 4,
+      "mia": 5,
+      "clara": 3
+    }
+  },
+  {
+    "id": "franzi",
+    "name": "Franzi",
+    "age": 31,
+    "occupation": "Illustrator",
+    "sprite": "characters/franzi.png",
+    "homeId": "house_franzi",
+    "wakeTime": "07:00",
+    "sleepTime": "22:30",
+    "traits": ["shy", "warm", "daydreamer"],
+    "likes": ["flower", "ink", "postcard"],
+    "bio": "Franzi is an illustrator who draws postcards of the village from her little house next to the post office. She is shy, warm and a daydreamer. She always seems to find a reason to visit the post office.",
+    "seedMemories": [
+      "I draw postcards of the village and post them at the post office.",
+      "Laude at the post office is very kind. I get a little nervous when I talk to him."
+    ],
+    "initialRelationships": {
+      "laude": 4,
+      "lily": 3
+    }
+  },
+  {
     "id": "finn",
     "name": "Finn Waters",
     "age": 36,
