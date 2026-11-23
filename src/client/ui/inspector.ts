@@ -1,9 +1,31 @@
 import { SAY_MAX_LENGTH } from '../../shared/protocol.ts';
-import { PLAYER_ID, type Needs, type VillagerId } from '../../shared/types.ts';
+import { PLAYER_ID, type DateRecord, type Needs, type Romance, type VillagerId } from '../../shared/types.ts';
 import type { UiContext } from './context.ts';
 import { h, replaceChildren, setText } from './dom.ts';
 import { icon } from './icons.ts';
-import { currentBlockIndex, formatClock, isAboutPlayer, memoryEmoji } from './format.ts';
+import { currentBlockIndex, formatClock, formatWhen, isAboutPlayer, memoryEmoji } from './format.ts';
+
+const DATE_STATUS: Record<DateRecord['status'], string> = {
+  planned: 'planned',
+  done: 'lovely',
+  missed: 'missed',
+  declined: 'declined',
+};
+
+/** Inspector romance lines (spec v2 §7): partner, dating, or (shy) crush. */
+export function romanceLines(r: Romance, vid: VillagerId, name: (id: VillagerId) => string = (id) => id) {
+  const other = r.pair[0] === vid ? r.pair[1] : r.pair[0];
+  const lines: { kind: string; text: string }[] = [];
+  if (r.stage === 'couple') lines.push({ kind: 'partner', text: `💕 Partner: ${name(other)}` });
+  else if (r.stage === 'dating') lines.push({ kind: 'dating', text: `💞 Dating: ${name(other)}` });
+  if (r.stage !== 'couple' && r.crushFrom.includes(vid)) {
+    lines.push({
+      kind: 'crush',
+      text: `💗 ${r.shy ? 'Shy crush' : 'Crush'} on: ${name(other)}`,
+    });
+  }
+  return lines;
+}
 
 const CLOSE_FRIEND_AFFINITY = 3;
 const NEED_LABELS: (keyof Needs)[] = ['hunger', 'energy', 'social', 'fun'];
@@ -18,6 +40,8 @@ export function createInspector(ctx: UiContext): HTMLElement {
   const name = h('h2', { class: 'insp-name', 'data-testid': 'insp-name' });
   const occupation = h('div', { class: 'insp-occupation' });
   const bio = h('blockquote', { class: 'insp-bio' });
+  const badge = h('div', { class: 'badge insp-badge', 'data-testid': 'insp-badge', hidden: true });
+  const romanceEl = h('div', { class: 'card insp-romance', 'data-testid': 'insp-romance', hidden: true });
   const thought = h('div', { class: 'insp-thought', 'data-testid': 'insp-thought' });
   const needs = h('div', { class: 'insp-needs', 'data-testid': 'insp-needs' });
   const plan = h('ul', { class: 'insp-plan', 'data-testid': 'insp-plan' });
@@ -139,12 +163,13 @@ export function createInspector(ctx: UiContext): HTMLElement {
       },
       '×',
     ),
-    h('header', null, name, occupation),
+    h('header', null, name, occupation, badge),
     bio,
     h('div', { class: 'card' }, h('div', { class: 'label' }, 'Current thought'), thought),
     h('section', null, h('div', { class: 'label' }, 'Needs'), needs),
     h('section', null, h('div', { class: 'label' }, "Today's plan ", planSource), plan),
     h('section', null, friendsTitle, friends),
+    romanceEl,
     h(
       'div',
       { class: 'insp-say' },
@@ -217,6 +242,44 @@ export function createInspector(ctx: UiContext): HTMLElement {
     setText(occupation, profile ? `${profile.occupation}${profile.age ? ` · ${profile.age}` : ''}` : '');
     setText(bio, [profile?.traits.join(', '), profile?.bio].filter(Boolean).join(' — '));
     setText(livesIn, `🏠 Lives in: ${store.locationName(profile?.homeId)}`);
+
+    const visitor = data?.visitor ?? store.visitors.get(vid) ?? null;
+    if (visitor || profile?.visitor) {
+      setText(
+        badge,
+        visitor ? `🧳 Visitor · leaves ${formatWhen(visitor.departsAt, store.time)}` : '🧳 Visitor',
+      );
+      badge.title = visitor ? `From ${visitor.origin}${visitor.reason ? ` · ${visitor.reason}` : ''}` : '';
+      badge.hidden = false;
+    } else if (profile?.transient) {
+      setText(badge, '🕵️ Stranger · leaves tonight');
+      badge.title = '';
+      badge.hidden = false;
+    } else badge.hidden = true;
+
+    const romance = data && data.romance !== undefined ? data.romance : store.romanceOf(vid);
+    const active = romance && romance.stage !== 'ended' ? romance : null;
+    replaceChildren(
+      romanceEl,
+      active
+        ? romanceLines(active, vid, (o) => store.name(o)).map((l) =>
+            h('div', { class: `romance-line romance-${l.kind}` }, l.text),
+          )
+        : null,
+      active
+        ? active.dates
+            .slice(-3)
+            .reverse()
+            .map((d) =>
+              h(
+                'div',
+                { class: `romance-date date-${d.status}` },
+                `🗓️ Date at ${store.locationName(d.locationId)} · ${formatWhen(d.at, store.time)} · ${DATE_STATUS[d.status]}`,
+              ),
+            )
+        : null,
+    );
+    romanceEl.hidden = romanceEl.childElementCount === 0;
 
     const n = state?.needs;
     replaceChildren(
@@ -300,7 +363,7 @@ export function createInspector(ctx: UiContext): HTMLElement {
     renderLive();
   };
 
-  store.subscribe(['selection', 'inspect', 'hello', 'player'], renderAll);
+  store.subscribe(['selection', 'inspect', 'hello', 'player', 'romance', 'visitors'], renderAll);
   store.subscribe(['villagers'], () => {
     if (!id()) return;
     if (!store.profiles.has(id()!)) return;

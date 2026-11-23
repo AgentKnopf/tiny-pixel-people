@@ -9,6 +9,13 @@ export function formatDay(t: number): string {
   return `Day ${dayOf(t) + 1}`;
 }
 
+/** "today 16:00", "tomorrow 10:00" or "Day 4 16:00", relative to `now`. */
+export function formatWhen(t: number, now: number): string {
+  const d = dayOf(t) - dayOf(now);
+  const day = d === 0 ? 'today' : d === 1 ? 'tomorrow' : formatDay(t);
+  return `${day} ${formatClock(t)}`;
+}
+
 /** Day vs. night for the HUD dot; matches the renderer's dusk/dawn window. */
 export function isNight(t: number): boolean {
   const m = minuteOfDay(t);

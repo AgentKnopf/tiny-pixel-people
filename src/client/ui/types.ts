@@ -10,7 +10,7 @@
  *   ui.onSelectionChange((id) => renderer.setSelected(id));
  */
 import type { ClientMessage, ServerMessage } from '../../shared/protocol.ts';
-import type { DecorationItem, ItemDef, LocationId, Point, VillagerId } from '../../shared/types.ts';
+import type { AnimalId, DecorationItem, ItemDef, LocationId, Point, VillagerId } from '../../shared/types.ts';
 
 /** Camera actions the renderer exposes to the toolbar, dock, map modal and inspector. All optional. */
 export interface CameraControls {
@@ -49,6 +49,8 @@ export interface UiController {
   setConnectionStatus(status: string): void;
   /** Open (or close with null) the inspector, e.g. when a villager is clicked on the canvas. */
   selectVillager(id: VillagerId | null): void;
+  /** Open (or close with null) the animal card for a clicked animal (closes the villager inspector). */
+  selectAnimal(id: AnimalId | null): void;
   /** Open the door-note modal for a house (clicked door). `player_home` opens the mailbox. */
   openDoorNote(houseId: LocationId): void;
   /** Called by the renderer when the user pans away from a scene (null) or a scene is entered. */
