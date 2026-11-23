@@ -148,7 +148,9 @@ export class WorldRenderer {
     if (!scene) return false;
     this.followId = null;
     this.sceneId = scene.id;
-    this.camera.frame(sceneRectPx(scene, map.tileSize), instant);
+    const rect = sceneRectPx(scene, map.tileSize);
+    const wholeTown = rect.w >= map.width * map.tileSize && rect.h >= map.height * map.tileSize;
+    this.camera.frame(rect, instant, wholeTown);
     this.emit('scene', scene.id);
     return true;
   }
@@ -188,7 +190,7 @@ export class WorldRenderer {
   /** Close-ups use at least the zoom of a ~20×12 tile scene. */
   private ensureCloseZoom(map: WorldMap): void {
     const target = fitZoom(20 * map.tileSize, 12 * map.tileSize, this.camera.viewW, this.camera.viewH);
-    if (this.camera.zoom < target) this.camera.zoomBy(target - this.camera.zoom);
+    if (this.camera.zoom < target) this.camera.zoomTo(target);
   }
 
   private trackFollow(now: number, map: WorldMap): void {
