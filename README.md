@@ -79,7 +79,8 @@ npm run dev        # server (tsx watch) + Vite dev server with /ws proxy
 npm run lint
 npm run typecheck
 npm test           # unit + acceptance tests with the mock provider, no network
-npm run check      # lint, typecheck, tests and build (what CI runs, plus format:check)
+npm run test:perf  # timing checks, one file at a time
+npm run check      # lint, typecheck, tests, timing checks and build (what CI runs, plus format:check)
 npm run format
 ```
 

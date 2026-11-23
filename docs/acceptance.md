@@ -3,7 +3,10 @@
 There are two ways to check that the village works:
 
 - **`npm test`**: unit and acceptance tests with the deterministic `mock` provider on a virtual
-  clock. No network, no model, a few seconds. CI runs this on Node 22 and 24.
+  clock. No network, no model. CI runs this on Node 22 and 24.
+- **`npm run test:perf`**: the timing checks (`v2/perf-v2.test.ts` and the animal benchmark), one
+  file at a time and never next to the other tests, so nothing competes for the CPU while they
+  measure. CI runs it as a separate step.
 - **`npm run test:live`**: one game day on the real server against the model in your config, judged
   by the same checks.
 
@@ -54,11 +57,15 @@ The exact checks are in [spec v2 §18](spec/technical-spec-v2.md#18-acceptance-c
 ## Automated suite (mock provider)
 
 ```sh
-npm test                 # everything
-npx vitest run test/acceptance            # only the acceptance suites
-npx vitest run test/acceptance/gossip.test.ts
-npm run check            # lint, typecheck, tests and build
+npm test                                   # all functional tests (no timing checks)
+npm test -- test/acceptance                # only the acceptance suites
+npm test -- test/acceptance/v2/zoo.test.ts # one file
+npm run test:perf                          # the timing checks, one file at a time
+npm run check                              # lint, typecheck, tests, then timing checks, then build
 ```
+
+Use the npm scripts rather than a bare `npx vitest run`: that would run the functional tests and
+the timing checks at the same time, and the timing checks would measure a busy machine.
 
 | File (`test/acceptance/`)   | Checks                                                                                                       |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------ |
@@ -75,25 +82,25 @@ npm run check            # lint, typecheck, tests and build
 | `player.test.ts`            | Gold, tasks, backpack, gifts, pet, decorating.                                                               |
 | `save.test.ts`              | Save and reload round trip, replay log.                                                                      |
 | `map-data.test.ts`          | Map locations, doors and scenes.                                                                             |
-| `map-v2.test.ts`            | AC8: size, districts, location ids, reachability, the unchanged v1 town, scenes, interiors.                  |
-| `zoo.test.ts`               | AC9: species, animals stay in their pens, ride queues and cycles, closing time, outings.                     |
-| `farm.test.ts`              | AC10: 60 game days of births, deaths and butcher trips, the cap of 10, products, toast wording.              |
-| `determinism-v2.test.ts`    | AC11: animals, farm, stock, train, hotel and post are identical with a fast and a silent mock.               |
-| `visitors.test.ts`          | AC12: trains, visitor counts, check-in, conversations, departure; fallback profiles.                         |
-| `visitor-gossip.test.ts`    | AC13: a fact told to a visitor reaches residents.                                                            |
-| `interiors.test.ts`         | AC14: visits, greetings, snooping, witnesses, exit, public interiors, fallback greeting, door notes.         |
-| `romance.test.ts`           | AC15: a crush within 3 nights, date invitation and answer, the date, gossip about it, couple, eligibility.   |
-| `slow-model-v2.test.ts`     | AC16: 30 s per call; new tasks fall back or are skipped as documented.                                       |
-| `save-migration.test.ts`    | AC17: a v1 save fixture loads and runs; Laude and Franzi move in; v2 round trip.                             |
-| `perf-v2.test.ts`           | AC18: sim step time, A\* and message sizes.                                                                  |
-| `letters.test.ts`           | AC20: posting, delivery rounds, reading, replies, caps, thank-you letters.                                   |
-| `notice-board.test.ts`      | AC21: event and player notices, reading, gossip, expiry.                                                     |
-| `laude-keep.test.ts`        | AC22: Laude's instant memories, the Keep, search, archiving, no extra rating calls.                          |
-| `crow.test.ts`              | AC23: perch, flights, sleep, caws and cooldown.                                                              |
-| `new-residents.test.ts`     | AC24: Laude's and Franzi's homes, the v1 set with 10 villagers, the bake-off.                                |
-| `shy-romance.test.ts`       | AC25: seven days of the shy crush: post office visits, short chats, gossip, the first date.                  |
-| `forest.test.ts`            | AC26: forest locations, animals and their hours, shyness, forest outings.                                    |
-| `observer-v2.test.ts`       | AC27: new event types and endpoints, GET only, no change to the village.                                     |
+| `v2/map-v2.test.ts`         | AC8: size, districts, location ids, reachability, the unchanged v1 town, scenes, interiors.                  |
+| `v2/zoo.test.ts`            | AC9: species, animals stay in their pens, ride queues and cycles, closing time, outings.                     |
+| `v2/farm.test.ts`           | AC10: 60 game days of births, deaths and butcher trips, the cap of 10, products, toast wording.              |
+| `v2/determinism-v2.test.ts` | AC11: animals, farm, stock, train, hotel and post are identical with a fast and a silent mock.               |
+| `v2/visitors.test.ts`       | AC12: trains, visitor counts, check-in, conversations, departure; fallback profiles.                         |
+| `v2/visitor-gossip.test.ts` | AC13: a fact told to a visitor reaches residents.                                                            |
+| `v2/interiors.test.ts`      | AC14: visits, greetings, snooping, witnesses, exit, public interiors, fallback greeting, door notes.         |
+| `v2/romance.test.ts`        | AC15: a crush within 3 nights, date invitation and answer, the date, gossip about it, couple, eligibility.   |
+| `v2/slow-model-v2.test.ts`  | AC16: 30 s per call; new tasks fall back or are skipped as documented.                                       |
+| `v2/save-migration.test.ts` | AC17: a v1 save fixture loads and runs; Laude and Franzi move in; v2 round trip.                             |
+| `v2/perf-v2.test.ts`        | AC18: sim step time, A\* and message sizes (run by `npm run test:perf`).                                     |
+| `v2/letters.test.ts`        | AC20: posting, delivery rounds, reading, replies, caps, thank-you letters.                                   |
+| `v2/notice-board.test.ts`   | AC21: event and player notices, reading, gossip, expiry.                                                     |
+| `v2/laude-keep.test.ts`     | AC22: Laude's instant memories, the Keep, search, archiving, no extra rating calls.                          |
+| `v2/crow.test.ts`           | AC23: perch, flights, sleep, caws and cooldown.                                                              |
+| `v2/new-residents.test.ts`  | AC24: Laude's and Franzi's homes, the v1 set with 10 villagers, the bake-off.                                |
+| `v2/shy-romance.test.ts`    | AC25: seven days of the shy crush: post office visits, short chats, gossip, the first date.                  |
+| `v2/forest.test.ts`         | AC26: forest locations, animals and their hours, shyness, forest outings.                                    |
+| `v2/observer-v2.test.ts`    | AC27: new event types and endpoints, GET only, no change to the village.                                     |
 
 AC19 (the UI) is covered by the client's DOM tests and a check in the browser.
 

@@ -409,5 +409,6 @@ Silkscreen) are bundled, so the client loads nothing from the internet. The look
 ## Testing
 
 `npm test` runs unit and acceptance tests with the `mock` provider and the virtual clock; no
-network. `npm run test:live` runs the same checks against the real provider in your config. See
+network. `npm run test:perf` runs the timing checks on their own (a separate Vitest project, one
+file at a time). `npm run test:live` runs the same checks against the real provider in your config. See
 [Acceptance tests](acceptance.md).
