@@ -816,6 +816,47 @@ select:focus {
   font-style: italic;
 }
 
+/* ---------- Sim status banner (waking up) ---------- */
+.sim-status {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: var(--shadow);
+  padding: 5px 14px;
+  font-size: 12px;
+  white-space: nowrap;
+  animation: toast-in 0.2s ease-out;
+}
+
+.sim-status-track {
+  width: 64px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--track);
+  overflow: hidden;
+}
+
+.sim-status-fill {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 0.3s;
+}
+
+@media (max-width: 900px) {
+  .sim-status {
+    top: auto;
+    bottom: 120px;
+  }
+}
+
 /* ---------- Toasts ---------- */
 .toasts {
   position: absolute;
