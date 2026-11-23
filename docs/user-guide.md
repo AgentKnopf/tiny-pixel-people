@@ -45,17 +45,15 @@ This guide assumes the game is running. If it isn't, see the [README](../README.
 
 The village fills the window. A dark, see-through interface floats on top of it:
 
-| Where                                                                                             | What                                                                                                                                                                                                                                                                                        |
-| ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Top left                                                                                          | The HUD: `TINY PIXEL PEOPLE`, a status badge (`LIVE`, `PAUSED`, or `CONNECTING` / `OFFLINE` when the browser lost the server), the weather, the day and the clock. The rumor tracker opens below it.                                                                                        |
-| Top right                                                                                         | The stats card: `REAL MODEL CALLS` (calls · total time · tokens), your gold and up to three item counts, how many players are online and villagers live here, the next train and the hotel (`🚂 Next train 16:00 · Hotel 3/6`), and, while calls are waiting,                               |
-| `N in queue · F failed`. See [Performance](setup/performance.md) for what the numbers mean.       |
-| Bottom left                                                                                       | The LLM card: where the villagers think. `✈ OFFLINE` with `RUNNING ON THIS MACHINE · QWEN2.5:7B VIA OLLAMA` means a local model, no internet needed; `☁ ONLINE` means a hosted API. `⚠ MODEL UNREACHABLE` means the model doesn't answer. The last line shows how long the last reply took. |
-| Bottom                                                                                            | The toolbar: `PAUSE`, zoom (`−`, fit, `+`), the speed buttons `1× 2× 4× 8×`, and the world event buttons, including 🚂 Train. On narrower windows the event buttons show only their icons; hover for the name.                                                                              |
-| Bottom right                                                                                      | The dock: `Backpack`, `Map`, `Pet`, `Decorate`, `Home`, `Letters` and `Gold`.                                                                                                                                                                                                               |
-| Right                                                                                             | The inspector, when you click a villager. Clicking an animal opens a small animal card: its name and species, and for farm and zoo animals                                                                                                                                                  |
-| also the stage (baby, adult, elder), male or female, its age in days and what it is doing. Forest |
-| animals and the crow show only their name and species.                                            |
+| Where         | What                                                                                                                                                                                                                                                                                                                                                      |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Top left      | The HUD: `TINY PIXEL PEOPLE`, a status badge (`LIVE`, `PAUSED`, or `CONNECTING` / `OFFLINE` when the browser lost the server), the weather, the day and the clock. The rumor tracker opens below it.                                                                                                                                                      |
+| Top right     | The stats card: `REAL MODEL CALLS` (calls · total time · tokens), your gold and up to three item counts, how many players are online and villagers live here, the next train and the hotel (`🚂 Next train 16:00 · Hotel 3/6`), and, while calls are waiting, `N in queue · F failed`. See [Performance](setup/performance.md) for what the numbers mean. |
+| Bottom left   | The LLM card: where the villagers think. `✈ OFFLINE` with `RUNNING ON THIS MACHINE · QWEN2.5:7B VIA OLLAMA` means a local model, no internet needed; `☁ ONLINE` means a hosted API. `⚠ MODEL UNREACHABLE` means the model doesn't answer. The last line shows how long the last reply took.                                                               |
+| Bottom        | The toolbar: `PAUSE`, zoom (`−`, fit, `+`), the speed buttons `1× 2× 4× 8×`, and the world event buttons, including 🚂 Train. On narrower windows the event buttons show only their icons; hover for the name.                                                                                                                                            |
+| Bottom centre | The place bar, when there is something to do where you stand: buy food, ride a ride, write a letter or read the notice board, and `🏠 Inside …` with `🚪 Exit` while you are inside a house.                                                                                                                                                              |
+| Bottom right  | The dock: `Backpack`, `Map`, `Pet`, `Decorate`, `Home`, `Mail` (your mailbox), `Letters` and `Gold`. `Mail` and `Letters` show how many new ones are waiting.                                                                                                                                                                                             |
+| Right         | The inspector, when you click a villager. Clicking an animal opens a small animal card: its name and species, and for farm and zoo animals also the stage (baby, adult, elder), male or female, its age in days and what it is doing. Forest animals and the crow show only their name and species.                                                       |
 
 Short messages ("toasts") pop up at the bottom centre, for example `📮 Mailbox placed at your
 cottage ✓`. Your conversations with villagers appear in a small dialog there too.
@@ -315,7 +313,7 @@ giraffes, zebras, penguins, monkeys, pandas, flamingos, kangaroos, polar bears, 
 crocodiles. The animals wander, rest and sleep inside their fences.
 
 Villagers come here to watch the animals, which is good for their fun, and to go on dates. **Click
-an animal** to open its card with its species and name.
+an animal** to open its card.
 
 ### Rides
 
@@ -327,8 +325,10 @@ an animal** to open its card with its species and name.
 
 Riders queue at the entrance. A ride starts a round as soon as someone is waiting, takes as many
 riders as fit, runs, and lets them off. A villager who waits more than 20 game minutes gives up and
-watches the rides instead. To ride yourself, walk to the ride and press **Ride** (the button shows
-the price); you join the queue like everyone else. Rides are closed when the zoo is.
+watches the rides instead. To ride yourself, walk up to the ride: the place bar at the bottom shows
+how many are waiting and a **Ride** button with the price, for example `Ride (4 gold)`. You join the queue like
+everyone else; the bar then says `in the queue`, and `riding!` during your round. The button is
+greyed out when the rides are closed (outside zoo hours) or you don't have enough gold.
 
 ### Food
 
@@ -336,8 +336,11 @@ the price); you join the queue like everyone else. Rides are closed when the zoo
   out, villagers get a veggie burger instead, so nobody goes hungry.
 - **Ice cream trucks** (10:00–19:00): ice cream for 3 gold, never sold out.
 
-Press the buy button at a food place to buy one. What you buy goes into your backpack, and you can
-give it away like anything else you carry. Some villagers love burgers or ice cream.
+Walk up to a food place and the place bar shows a buy button for each item with its price, for
+example `Burger · 5🪙`, and how many are left. The button is greyed out while the place is closed
+(it says when it opens), when the item is sold out, or when you can't afford it. What you buy goes
+into your backpack, and you can give it away like anything else you carry. Some villagers love
+burgers or ice cream.
 
 ## The farm
 
@@ -355,8 +358,8 @@ wool and eggs, grow old and die, all on their own. No farm animal ever needs the
 - **Every morning at 06:00** the animals age by a day. Very old animals die peacefully
   (`🕊️ Old Bessie the cow passed away peacefully on the farm.`), and when there is a grown-up male
   and female and room on the farm, a baby may be born (`🐣 A chick hatched at the coop!`).
-- **At 07:00** the milk, eggs and wool go to the shop, where you can buy them (milk 2, egg 1,
-  wool 3 gold). Old animals give half as much. **At 18:00** the barn turns 2 milk into 1 cheese
+- **At 07:00** the milk, eggs and wool go to the shop, where you can buy them from the place bar
+  (milk 2, egg 1, wool 3 gold). Old animals give half as much. **At 18:00** the barn turns 2 milk into 1 cheese
   (4 gold).
 - **At most 10 of each kind** live on the farm at a time (`farm.capPerSpecies`). Config can lower
   this, but never raise it.
@@ -391,9 +394,10 @@ The 🕵 **Stranger** button still works as before; strangers have nothing to do
 
 ## Going inside houses
 
-You can walk into any villager's house, the hotel lobby and the post office. Walk up to the door
-and go in. Inside, the house opens as its own small room on top of the dimmed village: you can
-walk around, and whoever is at home is there too. Press **Exit** to step back out onto the doorstep.
+You can walk into any villager's house, the hotel lobby and the post office. Click the door and
+press **🚪 Go inside**. Inside, the house opens as its own small room on top of the dimmed village:
+you can walk around, and whoever is at home is there too. The place bar shows `🏠 Inside …`; press
+**🚪 Exit** there to step back out onto the doorstep.
 
 Nothing is locked, but the owner notices:
 
@@ -414,9 +418,11 @@ to 18:00; the post box at its door takes letters at any time. Laude, the postmas
 
 ### Letters
 
-Open **Letters** in the dock to see your inbox and what you sent. **Write a letter** works inside
-the post office or right at its door. You can write to any villager, visitors included, up to 500
-characters.
+Open **Letters** in the dock: it has the tabs **Inbox** (with the number of unread letters),
+**Sent** and **Write a letter**. Writing works inside the post office or right at its door (the
+post box); elsewhere the tab tells you to walk there. At the post office, **✉️ Write a letter** is
+also in the place bar and behind the post office door. You can write to any villager, visitors
+included, up to 500 characters. Letters you receive also show in your **Mail** at home.
 
 - Your letter is posted at once. The post goes out at **11:00** and **17:00**
   (`post.deliveryTimes`), and the crow on the roof caws when it does.
@@ -430,10 +436,16 @@ characters.
 
 Letters show on doors like notes do, until they're read.
 
+The **Mail** tile in the dock opens your mailbox, and so does clicking your own door. Letters
+delivered to you appear there (marked `new` until you read them), with **✉️ Open Letters** to
+answer. Villagers who know you may also leave a door note there once you have placed the mailbox
+decoration.
+
 ### The notice board
 
-The notice board stands in front of the post office. Click it to read the notices. When you stand
-next to it, you can **Post a notice** (up to 200 characters).
+The notice board stands in front of the post office. Open it with **📌 Notice board** in the place
+bar when you are near it, or from the post office door. It lists each notice with who posted it
+and until when it hangs. Next to the board you can **📌 Post a notice** (up to 200 characters).
 
 - Every village event puts up its own notice: `📌 Bake-off at the Town square, 15:00. All welcome!
 (Mia Hartley)`.
@@ -445,8 +457,10 @@ next to it, you can **Post a notice** (up to 200 characters).
 ### The Keep
 
 Inside the post office stands the **Keep**, a cupboard where every door note, letter, notice and
-rumor in the village is written down. Click it to open the Keep: search for a word, filter by kind
-(notes, letters, notices, rumors, replies) and page back through the entries, newest first. Reading
+rumor in the village is written down. Inside, press **📒 Open the Keep** in the place bar: search
+for a word, filter by kind (notes, letters, notices, rumors, replies, or everything) and page back
+through the entries with **Older ›**, newest first. New entries appear while it is open. Outside
+the post office the Keep stays closed. Reading
 the Keep changes nothing in the village. It holds the last 2000 entries (`post.keepMax`).
 
 ### Quill the crow
