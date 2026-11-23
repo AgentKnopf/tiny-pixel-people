@@ -1,6 +1,7 @@
 /** Romance through the real engine (spec v2 §7): storage, seed, save round-trip and the full date flow. */
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { at } from '../../../src/shared/time.ts';
 import type { Romance } from '../../../src/shared/types.ts';
 import type { SaveData } from '../../../src/server/persistence/types.ts';
 import { MemoryStore } from '../../../src/server/cognition/memory.ts';
@@ -20,6 +21,8 @@ const STORES_ROMANCE = (() => {
     return false;
   }
 })();
+/** Upper bound for runs that wait for dates: they have no deadline in the spec. */
+const MAX_DAYS = 8;
 const romances = (w: TestWorld): Romance[] => w.state().romances ?? [];
 const between = (w: TestWorld, a: string, b: string) =>
   romances(w).find((r) => r.pair.includes(a) && r.pair.includes(b) && r.stage !== 'ended');
@@ -161,8 +164,21 @@ describe.skipIf(!ready(...FEATURES) || !STORES_ROMANCE)(
           ];
         },
       });
-      // The couple forms at 02:00 after the second done date.
-      await days(w, 4);
+      // When the pair first meets depends on the day's routes, so the player brings them together once;
+      // dates have no deadline (spec v2 §7), so the run is bounded but waits for the couple and its gossip.
+      await w.advanceTo('08:00');
+      w.command({ type: 'player.pairTalk', aId: 'sam', bId: 'ivy' });
+      const seen = /^I saw (Sam|Ivy) \S+ and (Sam|Ivy) \S+ on a date/;
+      const others = w.engine.profiles.map((p) => p.id).filter((id) => !['sam', 'ivy'].includes(id));
+      const witnesses = () => others.filter((id) => w.memories(id).some((m) => seen.test(m.text)));
+      const heard = () =>
+        others.filter(
+          (id) =>
+            !witnesses().includes(id) &&
+            w.memories(id).some((m) => m.kind === 'heard' && /on a date/.test(m.text)),
+        );
+      for (let d = 0; d < MAX_DAYS && !(between(w, 'sam', 'ivy')?.stage === 'couple' && heard().length); d++)
+        await days(w, 1);
       const dates = w
         .state()
         .events.filter((e) => e.kind === 'date' && [e.hostId, ...e.invitees].includes('sam'));
@@ -181,19 +197,8 @@ describe.skipIf(!ready(...FEATURES) || !STORES_ROMANCE)(
       ).toBeGreaterThanOrEqual(2);
       expect(w.memories('sam').some((m) => m.text.startsWith('I had a lovely date with Ivy'))).toBe(true);
 
-      const seen = /^I saw (Sam|Ivy) \S+ and (Sam|Ivy) \S+ on a date/;
-      const witnesses = w.engine.profiles
-        .map((p) => p.id)
-        .filter((id) => !['sam', 'ivy'].includes(id) && w.memories(id).some((m) => seen.test(m.text)));
-      expect(witnesses.length).toBeGreaterThan(0);
-      const heard = w.engine.profiles
-        .map((p) => p.id)
-        .filter(
-          (id) =>
-            !['sam', 'ivy', ...witnesses].includes(id) &&
-            w.memories(id).some((m) => m.kind === 'heard' && /on a date/.test(m.text)),
-        );
-      expect(heard.length).toBeGreaterThan(0);
+      expect(witnesses().length).toBeGreaterThan(0);
+      expect(heard().length).toBeGreaterThan(0);
 
       const r = between(w, 'sam', 'ivy')!;
       expect(r.stage).toBe('couple');
@@ -224,17 +229,30 @@ describe.skipIf(!ready(...FEATURES) || !STORES_ROMANCE)(
           start: '17:00',
         });
       });
-      await days(w, 2);
-      const rideDates = w
-        .state()
-        .events.filter(
-          (e) => e.kind === 'date' && e.hostId === 'sam' && w.location(e.locationId)?.kind === 'ride',
-        );
-      expect(rideDates.length).toBeGreaterThan(0);
-      const both = rideDates.filter((e) => e.attendees.includes('sam') && e.attendees.includes('ivy'));
-      expect(both.length, JSON.stringify(rideDates.map((e) => [e.locationId, e.attendees]))).toBeGreaterThan(
-        0,
-      );
+      // The pair meets in the morning, so the 17:00 date is the same day (asked after 17:00 it would
+      // be the next day's).
+      await w.advanceTo('08:00');
+      w.command({ type: 'player.pairTalk', aId: 'sam', bId: 'ivy' });
+      const rideDates = () =>
+        w
+          .state()
+          .events.filter(
+            (e) => e.kind === 'date' && e.hostId === 'sam' && w.location(e.locationId)?.kind === 'ride',
+          );
+      expect(await w.until(() => rideDates().length > 0, 8 * 60)).toBe(true);
+      const date = rideDates()[0]!;
+      expect(date.start).toBe(at(0, '17:00'));
+      // Before it starts nobody has attended and nothing is settled.
+      await w.advanceTo(date.start - 5);
+      expect(rideDates()[0]).toMatchObject({ status: 'scheduled', attendees: [] });
+      expect(between(w, 'sam', 'ivy')!.dates.find((d) => d.eventId === date.id)?.status).toBe('planned');
+      await w.advanceTo(date.end + 5);
+      expect(rideDates().find((e) => e.id === date.id)!.status).toBe('done');
+      const both = rideDates().filter((e) => e.attendees.includes('sam') && e.attendees.includes('ivy'));
+      expect(
+        both.length,
+        JSON.stringify(rideDates().map((e) => [e.locationId, e.attendees])),
+      ).toBeGreaterThan(0);
       const r = between(w, 'sam', 'ivy')!;
       expect(
         r.dates.filter((d) => both.some((e) => e.id === d.eventId)).every((d) => d.status === 'done'),
@@ -242,6 +260,31 @@ describe.skipIf(!ready(...FEATURES) || !STORES_ROMANCE)(
       w.dispose();
     }, 120_000);
 
+    it('a 17:00 date asked in the evening is the next day: still scheduled, nobody attends yet', async () => {
+      const w = await createTestWorld({
+        villagers: 12,
+        startAt: '18:00',
+        affinities: mutualAffinity('sam', 'ivy', 7),
+        patchSave: (s) => {
+          s.romances = [...(s.romances ?? []), crush('sam', 'ivy')];
+        },
+      });
+      w.provider.setScript('date.ask', (req) => {
+        const venues = (req.meta?.venues ?? []) as { id: string; name: string }[];
+        return JSON.stringify({ text: 'Tomorrow?', locationId: venues[0]!.id, start: '17:00' });
+      });
+      // Asked only after a chat, so none before the player brings them together.
+      const dates = () => w.state().events.filter((e) => e.kind === 'date' && e.hostId === 'sam');
+      await w.advance(1);
+      const before = dates().length;
+      w.command({ type: 'player.pairTalk', aId: 'sam', bId: 'ivy' });
+      expect(await w.until(() => dates().length > before, 3 * 60)).toBe(true);
+      const date = dates().at(-1)!;
+      expect(date.start).toBe(at(1, '17:00'));
+      await w.advanceTo(at(1, '06:00'));
+      expect(dates().find((e) => e.id === date.id)).toMatchObject({ status: 'scheduled', attendees: [] });
+      w.dispose();
+    }, 120_000);
     it('a partner who never comes makes the date missed and costs the waiter 1 affinity', async () => {
       const start = 10 * 60;
       const w = await createTestWorld({
