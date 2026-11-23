@@ -28,6 +28,12 @@ const items: ItemDef[] = (
     ['gem', 'Shiny pebble', '💎'],
     ['bread', 'Bread', '🍞'],
     ['honey', 'Honey jar', '🍯'],
+    ['burger', 'Burger', '🍔'],
+    ['ice_cream', 'Ice cream', '🍦'],
+    ['milk', 'Milk', '🥛'],
+    ['egg', 'Egg', '🥚'],
+    ['wool', 'Wool', '🧶'],
+    ['cheese', 'Cheese', '🧀'],
   ] as const
 ).map(([id, name, emoji]) => ({ id, name, emoji, sprite: `ui/icons.json#${id}` }));
 
