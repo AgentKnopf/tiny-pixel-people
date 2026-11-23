@@ -209,9 +209,20 @@ export class PriorityLlmQueue implements LlmQueue {
     return results.every((r) => r !== null) ? (results as number[][]) : null;
   }
 
-  drain(): Promise<void> {
-    if (this.isIdle()) return Promise.resolve();
-    return new Promise((r) => this.idleWaiters.push(r));
+  /**
+   * Resolves once the queue stays idle across two macrotask turns, so follow-up jobs that result
+   * continuations enqueue after their own awaits (e.g. event.propose -> event.decide) are drained too.
+   */
+  async drain(maxRounds = 1000): Promise<void> {
+    const turn = () => new Promise<void>((r) => setImmediate(r));
+    for (let round = 0; round < maxRounds; round++) {
+      if (!this.isIdle()) await new Promise<void>((r) => this.idleWaiters.push(r));
+      await turn();
+      if (!this.isIdle()) continue;
+      await turn();
+      if (this.isIdle()) return;
+    }
+    log.warn(`drain() gave up after ${maxRounds} rounds; jobs keep arriving`);
   }
 
   stats(): QueueStats {

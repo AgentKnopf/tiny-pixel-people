@@ -95,6 +95,23 @@ describe('ollama provider', () => {
     });
   });
 
+  it('sends Bearer auth only when an API key is configured (remote Ollama behind a proxy)', async () => {
+    const s = await fake((r) =>
+      r.path === '/api/tags'
+        ? { body: { models: [{ name: 'm:latest' }] } }
+        : r.path === '/api/embed'
+          ? { body: { embeddings: [[1]] } }
+          : { body: { message: { content: 'hi' } } },
+    );
+    const keyed = { baseUrl: s.url, model: 'm', apiKey: 'ollama-key' };
+    await new OllamaChatProvider(keyed).chat(jsonReq);
+    await new OllamaChatProvider(keyed).health();
+    await new OllamaEmbeddingProvider(keyed).embed(['a']);
+    expect(s.requests.map((r) => r.headers.authorization)).toEqual(Array(3).fill('Bearer ollama-key'));
+    await new OllamaChatProvider({ baseUrl: s.url, model: 'm' }).chat(jsonReq);
+    expect(s.requests.at(-1)!.headers.authorization).toBeUndefined();
+  });
+
   it('health checks /api/tags and suggests ollama pull', async () => {
     const s = await fake(() => ({ body: { models: [{ name: 'llama3.2:latest' }, { name: 'qwen2.5:7b' }] } }));
     expect((await new OllamaChatProvider({ baseUrl: s.url, model: 'llama3.2' }).health()).ok).toBe(true);

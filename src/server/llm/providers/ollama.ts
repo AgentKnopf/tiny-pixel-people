@@ -16,11 +16,17 @@ export function sameOllamaModel(a: string, b: string): boolean {
   return norm(a) === norm(b);
 }
 
+/** Ollama has no auth; remote instances behind a proxy (or hosted Ollama) take a Bearer key. */
+function ollamaAuth(opts: ProviderOptions): Record<string, string> {
+  return opts.apiKey ? { authorization: `Bearer ${opts.apiKey}` } : {};
+}
+
 /** Check that Ollama is reachable and `model` is pulled (`GET /api/tags`). */
 export async function ollamaModelHealth(opts: ProviderOptions, model: string): Promise<HealthResult> {
   try {
     const res = await requestJson(joinUrl(opts.baseUrl, '/api/tags'), undefined, {
       label: 'ollama',
+      headers: ollamaAuth(opts),
       timeoutMs: healthTimeout(opts),
       fetch: opts.fetch,
     });
@@ -62,6 +68,7 @@ export class OllamaChatProvider implements ChatProvider {
     if (req.json && this.opts.jsonMode !== false) body.format = 'json';
     const res = await requestJson(joinUrl(this.opts.baseUrl, '/api/chat'), body, {
       label: 'ollama',
+      headers: ollamaAuth(this.opts),
       timeoutMs: this.opts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
       signal: req.signal,
       fetch: this.opts.fetch,
@@ -97,6 +104,7 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
       { model: this.model, input: texts },
       {
         label: 'ollama embed',
+        headers: ollamaAuth(this.opts),
         timeoutMs: this.opts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
         signal,
         fetch: this.opts.fetch,

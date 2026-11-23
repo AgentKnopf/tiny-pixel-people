@@ -233,6 +233,24 @@ describe('PriorityLlmQueue', () => {
     expect(s.byTask!['convo.turn']!.done).toBe(2);
   });
 
+  it('drain() also waits for follow-up jobs enqueued by result continuations', async () => {
+    const p = new ScriptedProvider((_n, r) => ({ text: r.task }));
+    const q = new PriorityLlmQueue({ chat: p });
+    const log: string[] = [];
+    void q.enqueue(req('event.propose')).then(async (res) => {
+      log.push(res.text);
+      await Promise.resolve();
+      await new Promise((r) => setImmediate(r));
+      const decided = await q.enqueue(req('event.decide'));
+      log.push(decided.text);
+      await Promise.resolve();
+      log.push((await q.enqueue(req('plan.revise'))).text);
+    });
+    await q.drain();
+    expect(log).toEqual(['event.propose', 'event.decide', 'plan.revise']);
+    expect(q.stats().done).toBe(3);
+  });
+
   it('drain() resolves once queued and running jobs are finished', async () => {
     const p = new ManualProvider();
     const q = new PriorityLlmQueue({ chat: p, concurrency: 1 });
