@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { RideState, TrainState, WorldMap } from '../../src/shared/types.ts';
+import { PLAYER_ID, type RideState, type TrainState, type WorldMap } from '../../src/shared/types.ts';
 import {
   COASTER_CARS,
   alongLoop,
@@ -78,6 +78,7 @@ describe('ride frames and riders', () => {
     expect(rideFrame(ride('running'), 8, 4, 1000)).toBe(4);
     expect(rideFrame(ride('running'), 8, 4, 2250)).toBe(1);
     expect([...ridingIds([ride('running', ['a', 'b']), ride('idle', ['c'])])]).toEqual(['a', 'b']);
+    expect(ridingIds([ride('running', [PLAYER_ID])]).has(PLAYER_ID)).toBe(true);
   });
 });
 
