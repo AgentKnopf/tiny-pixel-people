@@ -420,6 +420,20 @@ export class RomanceAgent {
     return this.talks(other) >= SHY_DATE_TALKS;
   }
 
+  private dateOverlaps(view: WorldView, from: GameMinutes, to: GameMinutes): boolean {
+    return this.mind
+      .allEvents(view)
+      .some(
+        (e) =>
+          e.kind === 'date' &&
+          e.status !== 'cancelled' &&
+          e.status !== 'done' &&
+          (e.hostId === this.mind.id || e.accepted.includes(this.mind.id)) &&
+          e.start < to &&
+          e.end > from,
+      );
+  }
+
   private hasDateSoon(view: WorldView, now: GameMinutes): boolean {
     return this.mind
       .allEvents(view)
@@ -516,6 +530,19 @@ export class RomanceAgent {
     const affinity = this.affinityOf(this.mind.id, asker);
     const askerName = this.mind.nameOf(asker, view);
     const now = this.mind.deps.now();
+    // Hard rules, no model call: one date at a time, and one partner.
+    const taken = this.records(view).some(
+      (r) => isActive(r) && r.stage !== 'crush' && !r.pair.includes(asker),
+    );
+    if (taken || (view && this.dateOverlaps(view, start, start + DATE_MINUTES))) {
+      this.mind.addMemory({
+        kind: 'event',
+        at: now,
+        text: `${askerName} asked me on a date at the ${venue.name}, but I already have plans.`,
+        importance: 5,
+      });
+      return { accept: false, reply: 'Sorry, I already have plans.', source: 'fallback' };
+    }
     const res = await this.mind.ask({
       task: 'date.decide',
       ...dateDecidePrompt(

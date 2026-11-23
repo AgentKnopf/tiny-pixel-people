@@ -117,7 +117,8 @@ describe.skipIf(!ready(...FEATURES) || !STORES_ROMANCE)(
           ];
         },
       });
-      await days(w, 3);
+      // The couple forms at 02:00 after the second done date.
+      await days(w, 4);
       const dates = w
         .state()
         .events.filter((e) => e.kind === 'date' && [e.hostId, ...e.invitees].includes('sam'));
@@ -130,7 +131,10 @@ describe.skipIf(!ready(...FEATURES) || !STORES_ROMANCE)(
       const done = dates.filter(
         (e) => e.status === 'done' && e.attendees.includes('sam') && e.attendees.includes('ivy'),
       );
-      expect(done.length).toBeGreaterThanOrEqual(2);
+      expect(
+        done.length,
+        JSON.stringify(dates.map((e) => [e.id, e.locationId, e.status, e.start, e.attendees])),
+      ).toBeGreaterThanOrEqual(2);
       expect(w.memories('sam').some((m) => m.text.startsWith('I had a lovely date with Ivy'))).toBe(true);
 
       const seen = /^I saw (Sam|Ivy) \S+ and (Sam|Ivy) \S+ on a date/;
@@ -158,8 +162,7 @@ describe.skipIf(!ready(...FEATURES) || !STORES_ROMANCE)(
       expect(w.errors()).toEqual([]);
       w.dispose();
     }, 180_000);
-    // Skipped until the engine counts riders as attending an event at their ride (WP2).
-    it.skip('a date at a ride counts when both ride together', async () => {
+    it('a date at a ride counts when both ride together', async () => {
       const w = await createTestWorld({
         villagers: 12,
         startAt: '06:00',

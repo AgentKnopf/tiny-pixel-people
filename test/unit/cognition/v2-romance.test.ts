@@ -258,6 +258,43 @@ describe('dates (v2 §7)', () => {
   });
 });
 
+describe('declining without a model call', () => {
+  it('turns down a date that overlaps one already planned, or when already dating someone else', async () => {
+    const v = createTestVillage({ start: at(1, '10:00'), locations: V2_LOCATIONS });
+    mutual(v, 'ben', 'mia', 9);
+    mutual(v, 'ben', 'cleo', 9);
+    await v.advanceTo(at(1, '10:01'));
+    const ben = v.minds.get('ben')!;
+    const park = V2_LOCATIONS.find((l) => l.id === 'park')!;
+    v.events.push({
+      id: 'd-cleo',
+      title: 'Date at the Park',
+      description: '',
+      hostId: 'cleo',
+      locationId: 'park',
+      start: at(1, '17:00'),
+      end: at(1, '18:30'),
+      invitees: ['ben'],
+      accepted: ['ben'],
+      declined: [],
+      attendees: [],
+      status: 'scheduled',
+      source: 'llm',
+      kind: 'date',
+    });
+    await v.advanceTo(at(1, '10:02'));
+    const clash = await ben.romance.decide('mia', 'Park?', park, at(1, '17:30'));
+    expect(clash).toMatchObject({ accept: false, source: 'fallback' });
+    expect(v.queue.count('date.decide')).toBe(0);
+
+    ben.town.romances.put(romance('ben', 'cleo', { stage: 'dating' }));
+    const taken = await ben.romance.decide('mia', 'Park tomorrow?', park, at(2, '17:00'));
+    expect(taken.accept).toBe(false);
+    expect(v.queue.count('date.decide')).toBe(0);
+    expect((await ben.romance.decide('cleo', 'Again?', park, at(2, '17:00'))).accept).toBe(true);
+  });
+});
+
 describe('couples (v2 §7)', () => {
   it('two done dates and mutual affinity 7+ make a couple at night, with a toast and memories', async () => {
     const v = createTestVillage({ start: at(2, '01:58'), locations: V2_LOCATIONS });
