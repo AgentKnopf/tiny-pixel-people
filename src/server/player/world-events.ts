@@ -21,6 +21,11 @@ export const BIRTHDAY_DURATION_MINUTES = 120;
 export const FRIEND_AFFINITY = 2;
 const MIN_BIRTHDAY_GUESTS = 3;
 
+/** Code-unit id order: `localeCompare` builds an ICU collator on first use, which is slow inside a sim step. */
+function compareIds(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
 /** Toolbar world events (spec §7.13): rain, party, stranger, birthday, town event. */
 export class WorldEvents implements WorldEventService {
   constructor(
@@ -155,7 +160,7 @@ export class WorldEvents implements WorldEventService {
       .villagers()
       .filter((o) => o.id !== id)
       .map((o) => ({ id: o.id, affinity: v?.relationships[o.id]?.affinity ?? 0 }))
-      .sort((a, b) => b.affinity - a.affinity || a.id.localeCompare(b.id));
+      .sort((a, b) => b.affinity - a.affinity || compareIds(a.id, b.id));
     const friends = others.filter((o) => o.affinity >= FRIEND_AFFINITY);
     const picked = friends.length >= MIN_BIRTHDAY_GUESTS ? friends : others.slice(0, MIN_BIRTHDAY_GUESTS);
     return picked.map((o) => o.id);
