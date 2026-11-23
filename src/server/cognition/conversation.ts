@@ -102,10 +102,41 @@ export class LlmConversationRunner implements ConversationRunner {
       conversation.messages.push(msg);
       if (res.end && turn >= 1) break;
     }
+    if (conversation.status === 'active') this.closeWithEcho(conversation, pair, news);
     if (conversation.status === 'active') conversation.status = 'ended';
     conversation.endedAt ??= this.deps.now();
+    // Before the (possibly slow) summary: who now knows what, so nobody is told the same news twice.
+    const endAt = this.deps.now();
+    const sides: [Mind, Mind, Offered[]][] = [
+      [pair[0], pair[1], news[0]],
+      [pair[1], pair[0], news[1]],
+    ];
+    for (const [self, other, offered] of sides) {
+      self.noteTalk(other.id, endAt);
+      for (const o of offered)
+        if (findMention(o.text, conversation.messages, self.id)) markTold(o.memory, other.id);
+    }
     if (conversation.messages.length > 0) await this.wrapUp(conversation, pair, news, names);
     return conversation;
+  }
+
+  /**
+   * A chat cut short (turn cap, time) right after news was told still gets the listener's reaction:
+   * news that is never repeated does not stick, and on a slow model the next chat may be hours away.
+   */
+  private closeWithEcho(conv: Conversation, pair: [Mind, Mind], news: [Offered[], Offered[]]): void {
+    const last = conv.messages.at(-1);
+    if (!last) return;
+    const si = pair[0].id === last.speakerId ? 0 : 1;
+    const listener = pair[1 - si]!;
+    const told = news[si]!.find((o) => findMention(o.text, [last], last.speakerId));
+    if (!told || findMention(told.text, conv.messages, listener.id)) return;
+    conv.messages.push({
+      speakerId: listener.id,
+      text: `${echoLine(told.text)} I had no idea!`,
+      at: this.deps.now(),
+      source: 'fallback',
+    });
   }
 
   private load(): LoadLevel {

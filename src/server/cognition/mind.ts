@@ -73,7 +73,7 @@ import {
   type RawEventProposal,
   type WakeWindow,
 } from './planning.ts';
-import { selectNews, newsText } from './gossip.ts';
+import { isNewsworthy, selectNews, newsText } from './gossip.ts';
 import { planDayPrompt, planRevisePrompt } from './prompts/plan.ts';
 import {
   daySummaryPrompt,
@@ -100,6 +100,11 @@ const SUMMARY_RE = /^Summary of day (\d+):/;
  */
 /** Game minutes a note reply may wait for the model before the fallback reply is posted. */
 const NOTE_REPLY_DEADLINE = 180;
+/** News at least this important, at most this old (game minutes), is worth seeking someone out for. */
+const HOT_NEWS_IMPORTANCE = 7;
+const HOT_NEWS_WINDOW = 12 * 60;
+/** Game minutes between attempts to walk up to someone with news. */
+const SEEK_COOLDOWN = 30;
 /** Game minutes a retrieval waits for its query embedding before ranking by keywords alone. */
 const RECALL_MAX_WAIT = 10;
 
@@ -145,6 +150,7 @@ export class Mind implements VillagerMind {
   private readonly lastTalkedAt = new Map<VillagerId, GameMinutes>();
   private lastArchiveDay = -1;
   private eventRequested = false;
+  private lastSeekAt = -Infinity;
   private lastPlanJson = '';
 
   constructor(
@@ -219,7 +225,8 @@ export class Mind implements VillagerMind {
     this.maybeProposeEvent(view, day, mod);
     this.maybeReplan(view, day, mod);
 
-    return this.intentFor(this.effectiveBlock(view, mod), view);
+    const block = this.effectiveBlock(view, mod);
+    return this.seekListener(view, mod, block) ?? this.intentFor(block, view);
   }
 
   observe(obs: Observation): void {
@@ -373,6 +380,54 @@ export class Mind implements VillagerMind {
     );
     const candidates = this.memory.all().filter((m) => !m.meta.eventId || !known.has(m.meta.eventId));
     return selectNews(candidates, partnerId, now, max);
+  }
+
+  /** Fresh, important news that at most one villager has heard from this one so far. */
+  hotNews(now: GameMinutes): Memory | undefined {
+    return this.memory
+      .all()
+      .filter(
+        (m) =>
+          isNewsworthy(m) &&
+          m.kind !== 'reflection' &&
+          m.importance >= HOT_NEWS_IMPORTANCE &&
+          now - m.createdAt <= HOT_NEWS_WINDOW &&
+          m.createdAt <= now &&
+          (m.meta.toldTo?.length ?? 0) < 2,
+      )
+      .sort((a, b) => b.importance - a.importance || b.createdAt - a.createdAt)[0];
+  }
+
+  /**
+   * With hot news, walk up to someone who has not heard it rather than waiting to bump into them:
+   * on a slow model only a few chats happen a day, and chance meetings may never include this one.
+   */
+  private seekListener(view: WorldView, mod: number, block: PlanBlock): Intent | null {
+    const now = view.now;
+    if (now - this.lastSeekAt < SEEK_COOLDOWN || mod > planEnd(this.window) - 60) return null;
+    if (block.eventId || block.taskId || view.self.status === 'walking') return null;
+    const hot = this.hotNews(now);
+    if (!hot) return null;
+    const origin = hot.meta.originId ?? hot.id;
+    const near = new Map(view.nearby.map((n) => [n.id, n.distance]));
+    let best: { id: VillagerId; score: number } | null = null;
+    for (const [id, other] of this.village.minds) {
+      if (id === this.id || id === PLAYER_ID || !(other instanceof Mind)) continue;
+      const ov = other.lastView;
+      if (!ov || ov.self.conversationId || ['sleeping', 'talking'].includes(ov.self.status)) continue;
+      if (!isAwake(other.window, minuteOfDay(now))) continue;
+      const last = this.lastTalkedAt.get(id) ?? view.self.relationships[id]?.lastTalkedAt;
+      if (last !== undefined && now - last < this.settings.pairCooldownMinutes) continue;
+      if (!this.newsFor(id, now, 5).some((m) => (m.meta.originId ?? m.id) === origin)) continue;
+      // Someone who already heard it elsewhere is not worth the walk.
+      if (other.memory.hasOrigin(origin) || other.memory.get(origin)) continue;
+      const sameLoc = !!ov.self.locationId && ov.self.locationId === view.self.locationId;
+      const score = (near.has(id) ? 100 - near.get(id)! : sameLoc ? 50 : 0) + this.deps.random();
+      if (!best || score > best.score) best = { id, score };
+    }
+    if (!best) return null;
+    this.lastSeekAt = now;
+    return { type: 'talk', targetId: best.id };
   }
 
   noteTalk(otherId: VillagerId, at: GameMinutes): void {
