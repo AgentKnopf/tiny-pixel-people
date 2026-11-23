@@ -150,12 +150,15 @@ export interface PlanBlock {
   done?: boolean;
 }
 
+/** Whether a result came from a parsed LLM answer or from a fallback (including LLM answers that failed to parse). */
+export type Provenance = 'llm' | 'fallback';
+
 export interface DayPlan {
   day: number;
   summary: string;
   blocks: PlanBlock[];
   revision: number;
-  source: 'llm' | 'fallback';
+  source: Provenance;
   createdAt: GameMinutes;
 }
 
@@ -221,6 +224,7 @@ export interface ConversationMessage {
   speakerId: VillagerId;
   text: string;
   at: GameMinutes;
+  source?: Provenance;
 }
 
 export interface Conversation {
@@ -248,6 +252,8 @@ export interface VillageEvent {
   declined: VillagerId[];
   attendees: VillagerId[];
   status: VillageEventStatus;
+  /** How the proposal was made. */
+  source?: Provenance;
 }
 
 export type DoorNoteStatus = 'unread' | 'read' | 'replied';
@@ -263,6 +269,8 @@ export interface DoorNote {
   readAt?: GameMinutes;
   reply?: string;
   repliedAt?: GameMinutes;
+  /** Set together with `reply`. */
+  replySource?: Provenance;
   status: DoorNoteStatus;
 }
 
