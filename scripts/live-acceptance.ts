@@ -273,6 +273,10 @@ async function main(): Promise<void> {
   let walkingToPost = false;
   let keepRequested = false;
   let keepError: string | undefined;
+  const commandError = (requestId: string, command: string) => {
+    const err = messages.find((m) => m.type === 'error' && m.requestId === requestId);
+    return err?.type === 'error' ? `${command} -> ${err.message}` : undefined;
+  };
   const deadline = Date.now() + args.maxMinutes * 60_000;
   const samples: AdherenceSample[] = [];
   let factSource: string | null = null;
@@ -302,7 +306,7 @@ async function main(): Promise<void> {
           const to = s.villagers.find((x) => !visitors.has(x.id) && x.id !== factSource) ?? s.villagers[0];
           if (to) {
             letterTo = to.id;
-            send({ type: 'letter.send', to: to.id, text: LETTER });
+            send({ type: 'letter.send', to: to.id, text: LETTER, requestId: 'live-letter' });
             log(`player posted a letter to ${to.id}: "${LETTER}" (${formatClock(s.time)})`);
           }
         }
@@ -313,8 +317,7 @@ async function main(): Promise<void> {
         await sleep(500);
         send({ type: 'keep.open', limit: 50, requestId: 'live-keep' });
         await sleep(1000);
-        const err = messages.find((m) => m.type === 'error' && m.requestId?.startsWith('live-'));
-        if (err && err.type === 'error') keepError = err.message;
+        keepError = commandError('live-enter', 'player.enter') ?? commandError('live-keep', 'keep.open');
         log(`opened the Keep inside the post office (${formatClock(s.time)})`);
       }
     }
@@ -407,7 +410,7 @@ async function main(): Promise<void> {
   if (v2) {
     results.push(checkVisitors(visitorsSeen, cfg.visitors.min, trainArrived));
     const letters: Letter[] = last.letters ?? [];
-    results.push(checkLetter(letters, LETTER, letterTo));
+    results.push(checkLetter(letters, LETTER, letterTo, commandError('live-letter', 'letter.send')));
     const keep = messages.find(
       (m): m is KeepDataMsg => m.type === 'keep.data' && m.requestId === 'live-keep',
     );

@@ -400,6 +400,75 @@ function eventBlocks(meta: Obj): Block[] {
   }));
 }
 
+/** A v2 outing (spec v2 §2.1, §10): a place, a time window and what the villager does there. */
+interface Outing {
+  match: RegExp;
+  /** 'lunch' replaces the lunch block; 'afternoon' starts when work ends. */
+  slot: 'lunch' | 'afternoon';
+  minutes: number;
+  activity: (name: string) => string;
+  emoji: string;
+}
+
+const OUTINGS: Outing[] = [
+  {
+    match: /^(rollercoaster|ferris_wheel|carousel)$/,
+    slot: 'afternoon',
+    minutes: 60,
+    activity: (n) => `A ride on the ${n}`,
+    emoji: '🎢',
+  },
+  {
+    match: /^burger_joint$/,
+    slot: 'lunch',
+    minutes: 60,
+    activity: () => 'Burger lunch at the zoo',
+    emoji: '🍔',
+  },
+  {
+    match: /^ice_cream_truck_\d+$/,
+    slot: 'afternoon',
+    minutes: 30,
+    activity: () => 'An ice cream at the zoo',
+    emoji: '🍦',
+  },
+  {
+    match: /^forest_grove$/,
+    slot: 'afternoon',
+    minutes: 60,
+    activity: () => 'A walk and a picnic in the grove',
+    emoji: '🌳',
+  },
+  { match: /^post_office$/, slot: 'afternoon', minutes: 30, activity: () => 'Posting letters', emoji: '✉️' },
+  { match: /^zoo_gate$/, slot: 'afternoon', minutes: 60, activity: () => 'A visit to the zoo', emoji: '🦁' },
+];
+
+/**
+ * About a third of the villagers go on an outing each day, keyed on villager + day so a day's plans
+ * are stable. The outing kind rotates by day, so a few days cover every v2 place the map has.
+ */
+function outingBlock(
+  meta: Obj,
+  locs: Loc[],
+  times: { lunchAt: number; workEnd: number; eveningEnd: number },
+): Block | null {
+  const available = OUTINGS.map((o) => ({ o, places: locs.filter((l) => o.match.test(l.id)) })).filter(
+    (x) => x.places.length > 0,
+  );
+  if (available.length === 0) return null;
+  const id = villagerId(meta);
+  const day = typeof meta.day === 'number' ? meta.day : Math.floor(num(meta.now, 0) / 1440);
+  const h = hash(id);
+  if ((h + day) % 3 !== 0) return null;
+  const { o, places } = available[(Math.floor(h / 3) + day) % available.length]!;
+  const place = places[hash(`${id}:${day}`) % places.length]!;
+  const start = o.slot === 'lunch' ? times.lunchAt : times.workEnd;
+  const end = start + o.minutes;
+  if (o.slot === 'afternoon' && end > times.eveningEnd) return null;
+  const name = place.name === place.id ? place.id.replace(/_/g, ' ') : place.name;
+  return { start, end, location: place.id, activity: o.activity(name), emoji: o.emoji };
+}
+
 function dayPlan(meta: Obj) {
   const locs = locations(meta);
   const p = profileOf(meta);
@@ -420,6 +489,8 @@ function dayPlan(meta: Obj) {
     { start: workEnd, end: eveningEnd, location: social, activity: 'Chatting with neighbours', emoji: '💬' },
     { start: eveningEnd, end: sleepAt, location: home, activity: 'Dinner and a good book', emoji: '📖' },
   ].filter((b) => b.end > b.start);
+  const outing = outingBlock(meta, locs, { lunchAt, workEnd, eveningEnd });
+  if (outing) blocks = insertBlock(blocks, outing);
   for (const ev of eventBlocks(meta)) blocks = insertBlock(blocks, ev);
   const name = str(p.name, 'I');
   return { summary: `${name} works, has lunch, then catches up with neighbours.`, blocks: blocks.map(toOut) };

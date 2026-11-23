@@ -169,6 +169,10 @@ describe.skipIf(!readyV2(...F))(`AC9: zoo, rides and food${waitingForV2(...F)}`,
         seed: 3,
         startAt: '06:00',
         provider,
+        // Isolates the plan sanitizer: with needs on, a hungry villager's evening food override
+        // legitimately replaces the 21:00 block before this check sees it. Needs-driven outings are
+        // covered by the default-day suite below and the cognition needs tests.
+        config: { needs: { enabled: false } },
         patchSave: (save) => {
           for (const v of save.villagers) if (RIDERS.includes(v.id)) v.needs.fun = 30;
         },

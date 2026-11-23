@@ -33,14 +33,24 @@ export function checkVisitors(seen: readonly VisitorInfo[], min: number, trainAr
 }
 
 /** AC20 (live): the player's letter is delivered and read, and the reply quotes it. */
-export function checkLetter(letters: readonly Letter[], sentText: string, toId: string | null): CheckResult {
+export function checkLetter(
+  letters: readonly Letter[],
+  sentText: string,
+  toId: string | null,
+  error?: string,
+): CheckResult {
   const base = {
     id: 'AC20',
     title: 'a player letter is delivered, read and answered with a reply that refers to it',
   };
   if (!toId) return { ...base, pass: false, detail: 'the player never reached the post office' };
   const mine = letters.find((l) => l.from === PLAYER_ID && l.to === toId && l.text === sentText);
-  if (!mine) return { ...base, pass: false, detail: `no letter to ${toId} found` };
+  if (!mine)
+    return {
+      ...base,
+      pass: false,
+      detail: error ? `letter.send rejected: ${error}` : `no letter to ${toId} found`,
+    };
   const reply = letters.find((l) => l.replyTo === mine.id && l.from === toId);
   const problems: string[] = [];
   if (mine.deliveredAt === undefined) problems.push(`letter ${mine.status}, never delivered`);

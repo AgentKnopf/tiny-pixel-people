@@ -78,6 +78,8 @@ export async function animalSimFactory<O>(): Promise<(opts: O) => AnimalSim> {
   const mod = (await import(/* @vite-ignore */ repoPath(rel))) as Record<string, unknown>;
   const make = mod.createAnimalSim;
   if (typeof make !== 'function')
-    throw new Error(`${rel} does not export createAnimalSim(opts); its exports: ${Object.keys(mod).join(', ') || 'none'}`);
+    throw new Error(
+      `${rel} does not export createAnimalSim(opts); its exports: ${Object.keys(mod).join(', ') || 'none'}`,
+    );
   return make as (opts: O) => AnimalSim;
 }
