@@ -293,3 +293,100 @@ describe('mock provider: per-task answers (spec §13)', () => {
     expect(ask('day.summarize', { memories: [{ text: 'I baked bread.' }] }).summary).toContain('baked bread');
   });
 });
+
+describe('mock provider: v2 tasks (spec v2 §11)', () => {
+  it('answers every v2 task with valid JSON, even without meta', () => {
+    const tasks: LlmTask[] = [
+      'visit.greet',
+      'letter.reply',
+      'letter.write',
+      'visitor.create',
+      'date.ask',
+      'date.decide',
+    ];
+    for (const task of tasks)
+      expect(() => JSON.parse(mockAnswer({ task, messages: [] })), task).not.toThrow();
+  });
+
+  it('visit.greet names the player and the time of day', () => {
+    const r = ask('visit.greet', { playerName: 'Robin', now: 19 * 60, affinity: 0 });
+    expect(r.reply).toContain('Robin');
+    expect(r.reply).toContain('evening');
+    expect(ask('visit.greet', { playerName: 'Robin', now: 9 * 60 }).reply).toContain('morning');
+    expect(String(r.reply).length).toBeLessThanOrEqual(200);
+  });
+
+  it('letter.reply names the sender and quotes the first 6 words', () => {
+    const r = ask('letter.reply', {
+      fromName: 'Robin',
+      letterText: 'Could you bake me a lemon cake for Sunday?',
+    });
+    expect(r.reply).toContain('Robin');
+    expect(r.reply).toContain("'Could you bake me a lemon'");
+  });
+
+  it('letter.write has a template per reason, within 400 chars', () => {
+    const texts = (['thanks', 'missYou', 'shy'] as const).map(
+      (reason) => ask('letter.write', { toName: 'Laude', reason }).text as string,
+    );
+    expect(new Set(texts).size).toBe(3);
+    for (const t of texts) {
+      expect(t).toContain('Laude');
+      expect(t.length).toBeLessThanOrEqual(400);
+    }
+    expect(texts[0]).toMatch(/thank/i);
+  });
+
+  it('visitor.create picks the first free "Visitor N" name and an offered sprite', () => {
+    const v = ask('visitor.create', {
+      existingNames: ['Visitor 1', 'Visitor 3'],
+      sprites: ['characters/v4.png'],
+    });
+    expect(v).toMatchObject({ name: 'Visitor 2', sprite: 'characters/v4.png', origin: expect.any(String) });
+  });
+
+  it('date.ask picks the first venue at 17:00; date.decide accepts from affinity 4', () => {
+    const venues = [
+      { id: 'ferris_wheel', name: 'Ferris wheel' },
+      { id: 'carousel', name: 'Carousel' },
+    ];
+    const a = ask('date.ask', { partnerName: 'Franzi', venues, shy: true });
+    expect(a).toMatchObject({ locationId: 'ferris_wheel', start: '17:00' });
+    expect(a.text).toContain('Franzi');
+    expect(a.text).toContain('Ferris wheel');
+    expect(ask('date.decide', { askerName: 'Laude', affinity: 4 })).toMatchObject({ accept: true });
+    expect(ask('date.decide', { askerName: 'Laude', affinity: 3 })).toMatchObject({ accept: false });
+    expect(ask('date.decide', { askerName: 'Laude', affinity: 9 }).reply).toContain('Laude');
+  });
+
+  it('hang(): requests stay pending until aborted, then fail as a timeout', async () => {
+    const p = new MockChatProvider();
+    p.hang('visit.greet');
+    const ctrl = new AbortController();
+    const pending = p.chat({ task: 'visit.greet', messages: [], signal: ctrl.signal });
+    let settled = false;
+    void pending.then(
+      () => (settled = true),
+      () => (settled = true),
+    );
+    await new Promise((r) => setTimeout(r, 20));
+    expect(settled).toBe(false);
+    expect(p.hanging).toBe(1);
+    // other tasks still answer
+    await expect(p.chat({ task: 'date.decide', messages: [] })).resolves.toBeDefined();
+    ctrl.abort();
+    await expect(pending).rejects.toMatchObject({ kind: 'timeout' });
+    expect(p.hanging).toBe(0);
+    p.hang();
+    const ctrl2 = new AbortController();
+    const all = p.chat({ task: 'health', messages: [], signal: ctrl2.signal });
+    ctrl2.abort();
+    await expect(all).rejects.toBeInstanceOf(LlmError);
+    p.unhang();
+    p.unhang('visit.greet');
+    await expect(p.chat({ task: 'visit.greet', messages: [] })).resolves.toBeDefined();
+    p.hang();
+    p.reset();
+    await expect(p.chat({ task: 'health', messages: [] })).resolves.toBeDefined();
+  });
+});

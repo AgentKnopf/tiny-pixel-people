@@ -1,6 +1,6 @@
 import { itemDef } from './catalog.ts';
 import { h, replaceChildren, setText } from './dom.ts';
-import { formatInt } from './format.ts';
+import { formatClock, formatInt } from './format.ts';
 import { icon, spriteIcon } from './icons.ts';
 import type { UiStore } from './store.ts';
 
@@ -10,6 +10,7 @@ export function createStatsCard(store: UiStore): HTMLElement {
   const purse = h('div', { class: 'stats-purse', 'data-testid': 'stats-purse' });
   const queue = h('div', { class: 'stats-queue' });
   const agents = h('div', { class: 'stats-agents', 'data-testid': 'stats-agents' });
+  const train = h('div', { class: 'stats-train', 'data-testid': 'stats-train', hidden: true });
   const el = h(
     'div',
     { class: 'panel stats', id: 'stats' },
@@ -18,6 +19,7 @@ export function createStatsCard(store: UiStore): HTMLElement {
     purse,
     h('div', { class: 'label' }, 'Recorded from responses'),
     agents,
+    train,
     queue,
   );
 
@@ -34,6 +36,21 @@ export function createStatsCard(store: UiStore): HTMLElement {
     const online = store.connection === 'connected' ? 1 : 0;
     setText(agents, `👤 ${online} online · 👥 ${store.profiles.size} agents`);
 
+    const tr = store.train;
+    const hotel = store.hotel;
+    const tparts: string[] = [];
+    if (tr) {
+      if (tr.status === 'boarding') tparts.push(`🚂 Train boarding · departs ${formatClock(tr.departsAt)}`);
+      else if (tr.status === 'arriving') tparts.push(`🚂 Train arriving ${formatClock(tr.arrivesAt)}`);
+      else if (tr.status === 'departing') tparts.push('🚂 Train departing');
+      else tparts.push(`🚂 Next train ${formatClock(tr.arrivesAt)}`);
+    }
+    if (hotel) {
+      const used = hotel.rooms.filter((r) => r.guestId).length;
+      tparts.push(`Hotel ${used}/${hotel.rooms.length}`);
+    }
+    setText(train, tparts.join(' · '));
+    train.hidden = tparts.length === 0;
     const p = store.player;
     const parts: (Node | string)[] = [h('strong', null, icon('coin', '🪙'), ` ${p?.gold ?? 0}`), ' gold'];
     for (const entry of (p?.inventory ?? []).filter((e) => e.count > 0).slice(0, 3)) {
@@ -42,7 +59,7 @@ export function createStatsCard(store: UiStore): HTMLElement {
     }
     replaceChildren(purse, ...parts);
   };
-  store.subscribe(['stats', 'player', 'villagers', 'connection', 'hello', 'catalog'], render);
+  store.subscribe(['stats', 'player', 'villagers', 'connection', 'hello', 'catalog', 'train'], render);
   render();
   return el;
 }

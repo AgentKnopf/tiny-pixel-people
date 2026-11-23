@@ -17,6 +17,15 @@
  * - day.summarize:   memories [{ text }]
  * - player.reply:    text, canLeaveNote
  * - task.decide:     text
+ * v2 (technical-spec-v2.md §11):
+ * - plan.day:        day (number) or now; v2 places in `locations` (rides, burger_joint, ice cream trucks,
+ *                    forest_grove, post_office) give some villagers outings, keyed on villager + day
+ * - visit.greet:     playerName, houseId, affinity, now          -> { reply } naming the player, time of day
+ * - letter.reply:    letterText, fromName                         -> { reply } naming the sender, quoting the letter
+ * - letter.write:    toName, reason ('thanks' | 'missYou' | 'shy') -> { text } short template per reason
+ * - visitor.create:  existingNames, sprites                       -> a pool-style visitor with a unique name
+ * - date.ask:        partnerName, venues [{ id, name }], shy      -> the first venue at 17:00
+ * - date.decide:     askerName, affinity, locationId, start       -> accept when affinity >= 4
  */
 import { formatClock, minuteOfDay, parseClock } from '../../../shared/time.ts';
 import { LlmError } from '../errors.ts';
@@ -47,6 +56,8 @@ export class MockChatProvider implements ChatProvider {
   maxRecordedCalls = 50_000;
   private readonly scripts = new Map<LlmTask, MockHandler>();
   private readonly failures = new Map<LlmTask | '*', { remaining: number; error: () => Error }>();
+  private readonly hung = new Set<LlmTask | '*'>();
+  private hangingNow = 0;
   private latency: Latency = 0;
   private seq = 0;
 
@@ -71,6 +82,24 @@ export class MockChatProvider implements ChatProvider {
     });
   }
 
+  /**
+   * Never answer requests for `task` ('*' = every task): each one stays pending until its AbortSignal
+   * fires (the queue's timeout), then rejects as a timeout. Models a hung model server.
+   */
+  hang(task: LlmTask | '*' = '*'): void {
+    this.hung.add(task);
+  }
+
+  /** Answer normally again (requests already hanging stay pending until aborted). */
+  unhang(task: LlmTask | '*' = '*'): void {
+    this.hung.delete(task);
+  }
+
+  /** Requests currently hanging. */
+  get hanging(): number {
+    return this.hangingNow;
+  }
+
   callCount(task?: LlmTask): number {
     return task ? this.calls.filter((c) => c.task === task).length : this.calls.length;
   }
@@ -79,6 +108,7 @@ export class MockChatProvider implements ChatProvider {
     this.calls.length = 0;
     this.scripts.clear();
     this.failures.clear();
+    this.hung.clear();
     this.latency = 0;
     this.seq = 0;
   }
@@ -87,6 +117,15 @@ export class MockChatProvider implements ChatProvider {
     const started = Date.now();
     const seq = this.seq++;
     if (this.calls.length < this.maxRecordedCalls) this.calls.push({ task: req.task, meta: req.meta, seq });
+    if (this.hung.has(req.task) || this.hung.has('*')) {
+      this.hangingNow++;
+      try {
+        await untilAborted(req.signal);
+      } finally {
+        this.hangingNow--;
+      }
+      throw new LlmError('timeout', 'mock: hung request aborted');
+    }
     const delay = typeof this.latency === 'function' ? this.latency(req) : this.latency;
     if (delay > 0) await sleep(delay, req.signal);
     if (req.signal?.aborted) throw new LlmError('timeout', 'mock: request aborted');
@@ -112,6 +151,13 @@ export class MockChatProvider implements ChatProvider {
   async health(): Promise<HealthResult> {
     return { ok: true, message: `mock provider (model "${this.model}")` };
   }
+}
+
+function untilAborted(signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal?.aborted) return resolve();
+    signal?.addEventListener('abort', () => resolve(), { once: true });
+  });
 }
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
@@ -163,31 +209,17 @@ export function mockAnswer(req: ChatRequest): string {
     case 'stranger.create':
       return json(STRANGER);
     case 'visit.greet':
-      return json({
-        reply: `Oh, hello ${str(meta.playerName, 'there')}! Come on in, make yourself at home.`,
-      });
+      return json(visitGreet(meta));
     case 'letter.reply':
-      return json({
-        reply: `Thank you for your letter about '${str(meta.letterText).split(/\s+/).slice(0, 6).join(' ')}'. It made my day.`,
-      });
+      return json(letterReply(meta));
     case 'letter.write':
-      return json({
-        text: `Dear ${str(meta.toName, 'friend')}, I was thinking of you today. Warmly, ${str(meta.villagerId)}`,
-      });
+      return json(letterWrite(meta));
     case 'visitor.create':
       return json(mockVisitor(meta));
-    case 'date.ask': {
-      const venue = objs(meta.venues)[0];
-      return json({
-        text: `Would you like to go to the ${str(venue?.name, 'zoo')} with me?`,
-        locationId: str(venue?.id, 'zoo_gate'),
-        start: '17:00',
-      });
-    }
-    case 'date.decide': {
-      const accept = num(meta.affinity, 0) >= 4;
-      return json({ accept, reply: accept ? 'I would love to!' : 'Maybe another time.' });
-    }
+    case 'date.ask':
+      return json(dateAsk(meta));
+    case 'date.decide':
+      return json(dateDecide(meta));
     case 'health':
       return json({ ok: true });
   }
@@ -610,4 +642,63 @@ function mockVisitor(meta: Obj): Record<string, unknown> {
     reason: 'a short holiday',
     likes: ['ice_cream'],
   };
+}
+
+// ---------- v2: visits, letters, dates ----------
+
+function timeOfDay(now: unknown): string {
+  const m = minuteOfDay(num(now, 10 * 60));
+  if (m < 12 * 60) return 'morning';
+  if (m < 18 * 60) return 'afternoon';
+  return 'evening';
+}
+
+function visitGreet(meta: Obj) {
+  const player = str(meta.playerName, 'friend');
+  const warm = num(meta.affinity, 0) >= 3 ? ' So lovely to see you again.' : '';
+  return { reply: `Good ${timeOfDay(meta.now)}, ${player}! Come on in, make yourself at home.${warm}` };
+}
+
+function letterReply(meta: Obj) {
+  const from = str(meta.fromName, 'friend');
+  const letter = str(meta.letterText);
+  return {
+    reply: letter
+      ? `Dear ${from}, thank you for your letter about '${words(letter, 6)}'! I'll keep it in mind.`
+      : `Dear ${from}, thank you for your letter!`,
+  };
+}
+
+const LETTER_TEMPLATES: Record<string, (to: string) => string> = {
+  thanks: (to) => `Dear ${to}, thank you so much for the lovely gift. It made my day!`,
+  missYou: (to) => `Dear ${to}, I haven't seen you in a while and I miss our chats. Come by soon!`,
+  shy: (to) => `Dear ${to}, I wanted to say that I always enjoy our talks. See you around?`,
+};
+
+function letterWrite(meta: Obj) {
+  const to = str(meta.toName, 'friend');
+  const template = LETTER_TEMPLATES[str(meta.reason)] ?? ((t: string) => `Dear ${t}, I hope you are well!`);
+  return { text: template(to) };
+}
+
+function dateAsk(meta: Obj) {
+  const venues = objs(meta.venues).filter((v) => str(v.id));
+  const venue = venues[0];
+  const partner = str(meta.partnerName, 'you');
+  const place = venue ? str(venue.name, str(venue.id)) : 'the square';
+  return {
+    text:
+      meta.shy === true
+        ? `Um, ${partner}... would you maybe like to visit ${place} with me at 17:00?`
+        : `${partner}, would you like to go to ${place} with me at 17:00?`,
+    locationId: venue ? str(venue.id) : 'square',
+    start: '17:00',
+  };
+}
+
+function dateDecide(meta: Obj) {
+  const asker = str(meta.askerName, 'you');
+  return num(meta.affinity, 0) >= 4
+    ? { accept: true, reply: `I'd love to, ${asker}!` }
+    : { accept: false, reply: `That's kind of you, ${asker}, but not this time.` };
 }

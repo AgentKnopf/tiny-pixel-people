@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ClientMessage, InspectDataMsg, ServerMessage } from '../../src/shared/protocol.ts';
 import {
+  PLAYER_ID,
   type Conversation,
   type GameMinutes,
   type Location,
@@ -42,6 +43,45 @@ export interface TestWorldOptions {
   provider?: MockChatProvider;
   /** Engine factory (default: WP2's createSimEngine). The harness self-test passes a fake. */
   engineFactory?: CreateSimEngine;
+  /**
+   * Preset relationship affinities (scripted affinities, spec v2 §19). Applied through a save
+   * round-trip before the world starts, so they look exactly like grown relationships.
+   */
+  affinities?: AffinityPreset[];
+  /** Edit the starting save (e.g. preset romances) before the world starts; implies a save round-trip. */
+  patchSave?: (save: SaveData) => void;
+  /**
+   * A model that never answers: every request hangs until the queue's timeout aborts it. Implies
+   * drainLlm: false, so the virtual clock never waits on the LLM.
+   */
+  neverAnswer?: boolean;
+  /** Await the LLM queue between steps (default true; false when neverAnswer). */
+  drainLlm?: boolean;
+}
+
+export interface AffinityPreset {
+  from: VillagerId;
+  to: VillagerId;
+  affinity: number;
+}
+
+/** Both directions of a pair at the same affinity. */
+export function mutualAffinity(a: VillagerId, b: VillagerId, affinity: number): AffinityPreset[] {
+  return [
+    { from: a, to: b, affinity },
+    { from: b, to: a, affinity },
+  ];
+}
+
+/** Apply affinity presets to a save in place (unknown villagers throw, so typos surface). */
+export function applyAffinities(save: SaveData, presets: readonly AffinityPreset[]): void {
+  for (const p of presets) {
+    const v = save.villagers.find((x) => x.id === p.from);
+    if (!v) throw new Error(`affinity preset: unknown villager ${p.from}`);
+    if (p.from !== p.to && !save.villagers.some((x) => x.id === p.to) && p.to !== PLAYER_ID)
+      throw new Error(`affinity preset: unknown villager ${p.to}`);
+    v.relationships[p.to] = { ...v.relationships[p.to], affinity: Math.max(-10, Math.min(10, p.affinity)) };
+  }
 }
 
 export interface StepInfo {
@@ -125,15 +165,35 @@ export async function createTestWorld(opts: TestWorldOptions = {}): Promise<Test
   const createSimEngine = opts.engineFactory ?? (await loadEngineFactory());
   const config = testConfig(opts);
   const provider = opts.provider ?? new MockChatProvider(config.llm.model);
-  const engine = createSimEngine({
-    config,
-    providers: { chat: provider, embeddings: opts.embeddings === false ? null : new MockEmbeddingProvider() },
-    startAt: toGameTime(opts.startAt ?? '06:00'),
-    ...(opts.map ? { map: opts.map } : {}),
-    ...(opts.profiles ? { profiles: opts.profiles } : {}),
-    ...(opts.restore ? { restore: opts.restore } : {}),
-    ...(opts.createMind ? { createMind: opts.createMind } : {}),
-  });
+  if (opts.neverAnswer) provider.hang('*');
+  const drainLlm = opts.drainLlm ?? !opts.neverAnswer;
+  const build = (restore: SaveData | undefined) =>
+    createSimEngine({
+      config,
+      providers: {
+        chat: provider,
+        embeddings: opts.embeddings === false ? null : new MockEmbeddingProvider(),
+      },
+      startAt: toGameTime(opts.startAt ?? '06:00'),
+      ...(opts.map ? { map: opts.map } : {}),
+      ...(opts.profiles ? { profiles: opts.profiles } : {}),
+      ...(restore ? { restore } : {}),
+      ...(opts.createMind ? { createMind: opts.createMind } : {}),
+    });
+  let restore = opts.restore;
+  if (opts.affinities?.length || opts.patchSave) {
+    let save: SaveData;
+    if (restore) save = structuredClone(restore);
+    else {
+      const first = build(undefined);
+      save = first.toSaveData();
+      first.stop();
+    }
+    if (opts.affinities) applyAffinities(save, opts.affinities);
+    opts.patchSave?.(save);
+    restore = save;
+  }
+  const engine = build(restore);
   const messages: ServerMessage[] = [];
   let ticks = 0;
   const unsubscribe = engine.onMessage((msg) => {
@@ -176,7 +236,7 @@ export async function createTestWorld(opts: TestWorldOptions = {}): Promise<Test
       const chunk = o.chunk ?? 5;
       while (engine.now() < end) {
         const dt = Math.min(chunk, end - engine.now());
-        await engine.advance(dt, { drainLlm: true, step: 1 });
+        await engine.advance(dt, { drainLlm, step: 1 });
         o.onStep?.({ time: engine.now(), snapshot: () => engine.snapshot() });
       }
     },
@@ -184,7 +244,7 @@ export async function createTestWorld(opts: TestWorldOptions = {}): Promise<Test
       const end = engine.now() + maxMinutes;
       while (engine.now() < end) {
         if (pred(world)) return true;
-        await engine.advance(step, { drainLlm: true, step: 1 });
+        await engine.advance(step, { drainLlm, step: 1 });
       }
       return pred(world);
     },
