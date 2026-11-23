@@ -9,7 +9,8 @@ import { MockChatProvider } from '../../src/server/llm/providers/mock.ts';
 import type { ChatProvider } from '../../src/server/llm/types.ts';
 import { JsonSaveStore } from '../../src/server/persistence/json-store.ts';
 import { createSimEngine } from '../../src/server/sim/engine.ts';
-import { createStubMind } from '../../src/server/sim/stub-mind.ts';
+import { createStubMind, StubMind } from '../../src/server/sim/stub-mind.ts';
+import type { Intent, WorldView } from '../../src/server/cognition/types.ts';
 import { RIDE_MAX_WAIT_MINUTES, Rides } from '../../src/server/sim/rides.ts';
 import { Train } from '../../src/server/sim/train.ts';
 import type { TickMessage, ToastMsg, TrainUpdatedMsg } from '../../src/shared/protocol.ts';
@@ -257,5 +258,44 @@ describe('wake-up hold without drainLlm', () => {
     expect(await Promise.race([done, timeout])).toBe('done');
     expect(engine.now()).toBeCloseTo(at(0, '06:08'));
     expect(engine.wakingUp).toBe(false);
+  });
+});
+
+class RideFan extends StubMind {
+  override update(view: WorldView): Intent {
+    const fans = ['mia', 'tom', 'lily'];
+    const m = view.now % 1440;
+    if (fans.includes(view.profile.id) && m >= 600 && m < 640)
+      return { type: 'goto', locationId: 'rollercoaster', activity: 'riding the rollercoaster', emoji: '🎢' };
+    return super.update(view);
+  }
+}
+
+describe('villagers on rides', () => {
+  it('queue for the rollercoaster, ride one cycle with fun gain, and do not ride again that visit', async () => {
+    const { engine, messages } = createSimTestWorld({
+      startAt: '09:40',
+      createMind: (p, d) => new RideFan(p, d),
+      config: { needs: { enabled: false } },
+    });
+    for (const id of ['mia', 'tom', 'lily']) engine.villager(id)!.needs.fun = 10;
+    const statuses = new Map<string, Set<string>>();
+    engine.onMessage((m) => {
+      if (m.type !== 'tick') return;
+      for (const f of m.villagers) {
+        if (['mia', 'tom', 'lily'].includes(f.id) && /riding the rollercoaster|watching the rides/i.test(f.activity))
+          (statuses.get(f.id) ?? statuses.set(f.id, new Set()).get(f.id)!).add(`${f.status}:${f.activity}`);
+      }
+    });
+    await engine.advance(70);
+    const rides = messages.filter((m) => m.type === 'ride.updated');
+    expect(rides.some((m) => m.type === 'ride.updated' && m.ride.status === 'running')).toBe(true);
+    for (const id of ['mia', 'tom', 'lily']) {
+      expect([...(statuses.get(id) ?? [])], id).toContain('acting:riding the Rollercoaster');
+      expect(engine.villager(id)!.needs.fun, id).toBeGreaterThanOrEqual(10 + 35);
+    }
+    const boardings = rides.flatMap((m) => (m.type === 'ride.updated' && m.ride.status === 'running' ? m.ride.riders : []));
+    for (const id of ['mia', 'tom', 'lily']) expect(new Set(boardings).has(id)).toBe(true);
+    expect(engine.snapshot().rides!.find((r) => r.locationId === 'rollercoaster')).toMatchObject({ queue: [] });
   });
 });

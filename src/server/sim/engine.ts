@@ -88,6 +88,9 @@ export const MAX_VILLAGERS = 20;
 /** The crow caws when the player comes this close (tiles). */
 export const CROW_CAW_RADIUS = 3;
 export const ANIMALS_NEARBY_RADIUS = 4;
+/** What villagers do at a ride after their cycle, or after giving up on the queue (spec v2 §4). */
+export const RIDE_FALLBACK_ACTIVITY = 'watching the rides';
+const RIDE_EMOJI: Record<string, string> = { rollercoaster: '🎢', ferris_wheel: '🎡', carousel: '🎠' };
 /** Bubbles stay visible for this many real milliseconds. */
 export const BUBBLE_MS = 5000;
 const STATS_INTERVAL_MS = 2000;
@@ -122,6 +125,8 @@ interface Runtime {
   bubble: { text: string; untilMs: number; untilGame: GameMinutes } | null;
   seen: Map<string, { activity: string; at: GameMinutes }>;
   approach: { conversationId: string; partnerId: VillagerId } | null;
+  /** Ride this villager already rode during the current visit (one cycle per visit). */
+  rodeAt?: string | null;
 }
 
 interface ActiveConversation {
@@ -601,6 +606,7 @@ export class Engine implements SimEngine, SimHost {
     if (!a || !b || a === b) return null;
     for (const rt of [a, b]) {
       if (rt.state.status === 'sleeping' || rt.state.conversationId) return null;
+      if (this.rides.isRiding(rt.profile.id)) return null;
     }
     if (!force && this.activeVillagerConversations() >= Math.max(1, this.config.llm.concurrency)) return null;
     const now = this.now();
@@ -628,6 +634,7 @@ export class Engine implements SimEngine, SimHost {
       };
       rt.target = null;
       rt.arrived = false;
+      this.rides.leave(rt.profile.id);
     }
     b.state.path = [];
     if (distance(a.state.pos, b.state.pos) > CONVERSATION_DISTANCE) {
@@ -1068,7 +1075,24 @@ export class Engine implements SimEngine, SimHost {
 
   private stepRides(): void {
     for (const ride of this.rides.step(this.clock.time)) this.broadcast({ type: 'ride.updated', ride });
-    for (const event of this.rides.takeEvents()) this.bus.emit('ride', event);
+    for (const event of this.rides.takeEvents()) {
+      const rt = this.runtimes.get(event.riderId);
+      const loc = locationById(this.map.locations, event.rideId);
+      if (rt && loc) {
+        const name = loc.name.replace(/^the /i, '');
+        if (event.kind === 'boarded') {
+          this.setActivity(rt, `riding the ${name}`, RIDE_EMOJI[loc.id] ?? '🎡', 'acting');
+        } else {
+          if (event.kind === 'finished') {
+            const gain = this.rides.spec(loc.id)?.funGain ?? 0;
+            rt.state.needs.fun = Math.min(100, rt.state.needs.fun + gain);
+          }
+          rt.rodeAt = loc.id;
+          this.setActivity(rt, RIDE_FALLBACK_ACTIVITY, '👀', 'acting');
+        }
+      }
+      this.bus.emit('ride', event);
+    }
   }
 
   private animalsNear(pos: Point): { id: string; species: AnimalSpecies; distance: number }[] {
@@ -1179,9 +1203,12 @@ export class Engine implements SimEngine, SimHost {
       rt.target.activity = activity;
       rt.target.emoji = emoji;
       rt.target.sleep = sleep;
-      if (rt.arrived) this.setActivity(rt, activity, emoji, this.arrivedStatus(rt, loc));
+      const atRide = loc.kind === 'ride' && (this.rides.rideOf(rt.profile.id) || rt.rodeAt === loc.id);
+      if (rt.arrived && !atRide) this.setActivity(rt, activity, emoji, this.arrivedStatus(rt, loc));
       return;
     }
+    this.rides.leave(rt.profile.id);
+    rt.rodeAt = null;
     const spot = this.pickSpot(loc, rt.profile.id) ?? loc.entry;
     let path = this.paths.find(s.pos, spot);
     if (!path && (spot.x !== loc.entry.x || spot.y !== loc.entry.y)) path = this.paths.find(s.pos, loc.entry);
@@ -1219,7 +1246,14 @@ export class Engine implements SimEngine, SimHost {
     rt.arrived = true;
     const loc = t.locationId ? locationById(this.map.locations, t.locationId) : null;
     rt.state.locationId = t.locationId;
-    this.setActivity(rt, t.activity, t.emoji, this.arrivedStatus(rt, loc));
+    if (loc?.kind === 'ride' && !t.sleep && this.rides.join(rt.profile.id, loc.id)) {
+      this.setActivity(rt, `waiting for the ${loc.name.replace(/^the /i, '')}`, '⏳', 'idle');
+    } else if (loc?.kind === 'ride' && !t.sleep) {
+      rt.rodeAt = loc.id;
+      this.setActivity(rt, RIDE_FALLBACK_ACTIVITY, '👀', 'acting');
+    } else {
+      this.setActivity(rt, t.activity, t.emoji, this.arrivedStatus(rt, loc));
+    }
     if (t.locationId && !t.sleep) {
       try {
         rt.mind.onArrive(this.buildView(rt), t.locationId);
@@ -1267,7 +1301,12 @@ export class Engine implements SimEngine, SimHost {
   }
 
   private isBusy(rt: Runtime): boolean {
-    return rt.state.status === 'sleeping' || rt.state.status === 'talking' || !!rt.state.conversationId;
+    return (
+      rt.state.status === 'sleeping' ||
+      rt.state.status === 'talking' ||
+      !!rt.state.conversationId ||
+      this.rides.isRiding(rt.profile.id)
+    );
   }
 
   private pickSpot(loc: Location | null, villagerId: VillagerId): Point | null {
