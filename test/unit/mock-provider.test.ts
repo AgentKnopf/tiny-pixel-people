@@ -302,6 +302,21 @@ describe('mock provider: per-task answers (spec §13)', () => {
     expect(late.start).toBe('17:30');
   });
 
+  it('event.propose breaks affinity ties by name, then id, independent of input order', () => {
+    const villagers = [
+      { id: 'b2', name: 'Bo', affinity: 3 },
+      { id: 'zed', name: 'Zed', affinity: 3 },
+      { id: 'b1', name: 'Bo', affinity: 3 },
+      { id: 'al', name: 'Al', affinity: 3 },
+      { id: 'cy', name: 'Cy', affinity: 5 },
+      { id: 'di', name: 'Di', affinity: 1 },
+    ];
+    const meta = { villagerId: 'mia', profile: BAKER, locations: LOCATIONS, now: 600 };
+    const e = ask('event.propose', { ...meta, villagers });
+    expect(e.invitees).toEqual(['Cy', 'Al', 'Bo', 'Bo', 'Zed']);
+    expect(ask('event.propose', { ...meta, villagers: [...villagers].reverse() })).toEqual(e);
+  });
+
   it('event.decide: accepts when affinity >= 0', () => {
     expect(ask('event.decide', { affinity: 0 }).accept).toBe(true);
     expect(ask('event.decide', { affinity: -1 }).accept).toBe(false);
@@ -397,6 +412,28 @@ describe('mock provider: v2 tasks (spec v2 §11)', () => {
     expect(texts[0]).toMatch(/thank/i);
   });
 
+  it('plan.day: a visitor spends the working day out in town, not at the hotel it sleeps in', () => {
+    const ids = [...LOCATIONS.map((l) => l.id), 'hotel', 'station', 'zoo_gate', 'carousel', 'forest_grove'];
+    const typed = [...LOCATIONS, loc('hotel', 'hotel'), loc('station', 'station'), loc('zoo_gate', 'zoo')];
+    const guest = { ...BAKER, id: 'visitor_1', occupation: 'Photographer', homeId: 'hotel', visitor: true };
+    const spots = new Set<string>();
+    for (const locations of [ids, typed])
+      for (let day = 0; day < 4; day++) {
+        const meta = { villagerId: guest.id, profile: guest, locations, day };
+        const { blocks } = ask('plan.day', meta) as { blocks: Block[] };
+        const daytime = blocks.filter(
+          (b) => parseClock(b.start) >= parseClock('09:00') && parseClock(b.end) <= parseClock('17:00'),
+        );
+        expect(daytime.length).toBeGreaterThan(0);
+        for (const b of daytime) expect(['hotel', 'station', 'house_01']).not.toContain(b.location);
+        for (const b of daytime) spots.add(b.location);
+      }
+    expect(spots.size).toBeGreaterThan(1);
+    const baker = ask('plan.day', { villagerId: 'mia', profile: BAKER, locations: LOCATIONS, day: 0 }) as {
+      blocks: Block[];
+    };
+    expect(baker.blocks.some((b) => b.location === 'bakery')).toBe(true);
+  });
   it('visitor.create answers with a data/visitors.json profile whose name is free', () => {
     const sprites = [...new Set(visitorPool.map((p) => p.sprite))];
     const existingNames = [visitorPool[0]!.name, visitorPool[1]!.name.toUpperCase(), 'Mia'];

@@ -19,7 +19,9 @@
  * - task.decide:     text
  * v2 (technical-spec-v2.md §11):
  * - plan.day:        day (number) or now; v2 places in `locations` (rides, burger_joint, ice cream trucks,
- *                    forest_grove, post_office) give some villagers outings, keyed on villager + day
+ *                    forest_grove, post_office) give some villagers outings, keyed on villager + day;
+ *                    visitors and strangers (profile.visitor / transient) spend the working day exploring a
+ *                    town place picked by villager + day instead of working
  * - visit.greet:     playerName, houseId, affinity, now          -> { reply } naming the player, time of day
  * - letter.reply:    letterText, fromName                         -> { reply } naming the sender, quoting the letter
  * - letter.write:    toName, reason ('thanks' | 'missYou' | 'shy') -> { text } short template per reason
@@ -267,6 +269,9 @@ function villagerId(meta: Obj): string {
   return str(meta.villagerId, str(profileOf(meta).id, 'someone'));
 }
 
+/** Locale-free ordering: localeCompare pays a one-off ICU start-up cost inside the first sim step. */
+const byCodeUnits = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
 function hash(s: string): number {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
@@ -335,7 +340,26 @@ const WORKPLACES: [RegExp, RegExp, string, string][] = [
   [/artist|paint|music/i, /park|plaza|square/i, 'Making art', '🎨'],
 ];
 
+function planDayOf(meta: Obj): number {
+  return typeof meta.day === 'number' ? meta.day : Math.floor(num(meta.now, 0) / 1440);
+}
+
+/** Places a guest in town can spend the day at; ids are used when the kinds are unknown. */
+function sightseeingSpots(locs: Loc[], homeId: string): Loc[] {
+  const kinds = new Set(['shop', 'public', 'nature', 'zoo', 'ride', 'food']);
+  return locs.filter((l) =>
+    l.kind ? kinds.has(l.kind) : l.id !== homeId && !/house|home|hotel|station/i.test(l.id),
+  );
+}
+
 function workplace(meta: Obj, locs: Loc[], homeId: string): { loc: string; activity: string; emoji: string } {
+  const guest = profileOf(meta);
+  if (guest.visitor === true || guest.transient === true) {
+    // Visitors are on holiday: they spend the day out in town, not at the hotel they sleep in.
+    const spots = sightseeingSpots(locs, homeId);
+    const spot = spots[hash(`${villagerId(meta)}:${planDayOf(meta)}`) % Math.max(1, spots.length)];
+    if (spot) return { loc: spot.id, activity: `Exploring the ${spot.name.replace(/_/g, ' ')}`, emoji: '🧭' };
+  }
   const occupation = str(profileOf(meta).occupation);
   for (const [occ, place, activity, emoji] of WORKPLACES) {
     if (!occ.test(occupation)) continue;
@@ -459,7 +483,7 @@ function outingBlock(
   );
   if (available.length === 0) return null;
   const id = villagerId(meta);
-  const day = typeof meta.day === 'number' ? meta.day : Math.floor(num(meta.now, 0) / 1440);
+  const day = planDayOf(meta);
   const h = hash(id);
   if ((h + day) % 3 !== 0) return null;
   const { o, places } = available[(Math.floor(h / 3) + day) % available.length]!;
@@ -601,7 +625,12 @@ function proposeEvent(meta: Obj) {
   const start = Math.min(Math.max(15 * 60, earliest), 20 * 60);
   const invitees = objs(meta.villagers)
     .filter((v) => str(v.id) !== self && str(v.name))
-    .sort((x, y) => num(y.affinity, 0) - num(x.affinity, 0) || str(x.name).localeCompare(str(y.name)))
+    .sort(
+      (x, y) =>
+        num(y.affinity, 0) - num(x.affinity, 0) ||
+        byCodeUnits(str(x.name), str(y.name)) ||
+        byCodeUnits(str(x.id), str(y.id)),
+    )
     .slice(0, 5)
     .map((v) => str(v.name));
   return {
