@@ -38,15 +38,22 @@ describe.skipIf(!ready(...SIM_FEATURES))(`AC4: door notes${waitingFor(...SIM_FEA
     w.command({ type: 'note.post', houseId: homeId, text: NOTE });
     note = () => w.state().notes.find((n) => n.houseId === homeId && n.text === NOTE);
     let wasHome = false;
-    const end = at(1, '02:00');
-    while (w.now() < end && note()?.status !== 'replied') {
+    let before = w.now();
+    const sample = () => {
       const v = w.villager(ownerId);
       const home = v.locationId === homeId;
-      if (home && !wasHome && firstArrival === null) firstArrival = w.now();
+      // The mock replies within the arrival step, so the arrival counts from the start of that step.
+      if (home && !wasHome && firstArrival === null) firstArrival = before;
       if (!home && wasHome && firstArrival !== null && leftAgainAt === null) leftAgainAt = w.now();
       if (firstArrival === null) statusWhileAway.add(note()?.status ?? 'missing');
       wasHome = home;
+    };
+    sample();
+    const end = at(1, '02:00');
+    while (w.now() < end && note()?.status !== 'replied') {
+      before = w.now();
       await w.advance(1, { chunk: 1 });
+      sample();
     }
   }, 300_000);
 

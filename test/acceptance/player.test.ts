@@ -68,23 +68,36 @@ describe.skipIf(!ready(...ECON))(`§14.1 gold and tasks${waitingFor(...ECON)}`, 
 
 const BAG = [...SIM_FEATURES, 'player', 'inventory', 'items'] as Feature[];
 describe.skipIf(!ready(...BAG))(`§14.1 backpack and gifts${waitingFor(...BAG)}`, () => {
-  it('picks up an item by walking onto it, respawns it, and gifts it to a villager', async () => {
-    w = await createTestWorld({ startAt: '08:00', config: { economy: { itemRespawnGameMinutes: 30 } } });
-    await w.advance(5);
-    const items0 = w.state().items;
+  async function pickUpFirst(tw: TestWorld) {
+    await tw.advance(5);
+    const items0 = tw.state().items;
     expect(items0.length).toBeGreaterThan(0);
     const item = items0[0]!;
-    expect(await walkTo(w, item.pos, 120)).toBe(true);
-    await w.advance(1);
-    expect(count(w, item.itemId)).toBe(1);
-    expect(w.state().items.some((i) => i.id === item.id)).toBe(false);
-    expect(w.of('items.updated').length).toBeGreaterThan(0);
+    expect(await walkTo(tw, item.pos, 120)).toBe(true);
+    await tw.advance(1);
+    expect(count(tw, item.itemId)).toBe(1);
+    expect(tw.state().items.some((i) => i.id === item.id)).toBe(false);
+    expect(tw.of('items.updated').length).toBeGreaterThan(0);
+    return { item, items0 };
+  }
 
+  it('picks up an item by walking onto it and respawns it', async () => {
+    w = await createTestWorld({ startAt: '08:00', config: { economy: { itemRespawnGameMinutes: 30 } } });
+    const { item, items0 } = await pickUpFirst(w);
     await w.advance(60);
     expect(w.state().items.filter((i) => i.itemId === item.itemId).length).toBeGreaterThanOrEqual(
       items0.filter((i) => i.itemId === item.itemId).length,
     );
+  }, 120_000);
 
+  it('gifts a picked-up item to a villager', async () => {
+    // No respawn, so walking to the villager cannot pick up a second item of the same kind.
+    w = await createTestWorld({
+      startAt: '08:00',
+      config: { economy: { itemRespawnGameMinutes: 1_000_000 } },
+    });
+    const { item } = await pickUpFirst(w);
+    await w.advance(60);
     const v = w.state().villagers.find(awake)!;
     const mems = w.memories(v.id).length;
     const aff = w.villager(v.id).relationships[PLAYER_ID]?.affinity ?? 0;
@@ -101,7 +114,6 @@ describe.skipIf(!ready(...BAG))(`§14.1 backpack and gifts${waitingFor(...BAG)}`
     );
   }, 120_000);
 });
-
 const PET = [...SIM_FEATURES, 'player', 'pet'] as Feature[];
 describe.skipIf(!ready(...PET))(`§14.1 pet${waitingFor(...PET)}`, () => {
   it('follows the player within 2 tiles and villagers notice it', async () => {
