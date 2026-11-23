@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { FARM_SPECIES, ZOO_SPECIES, type AnimalState, type FarmSpecies } from '../../../src/shared/types.ts';
-import { MINUTES_PER_DAY, minuteOfDay } from '../../../src/shared/time.ts';
+import { dayOf, MINUTES_PER_DAY, minuteOfDay } from '../../../src/shared/time.ts';
+import type { AppConfig } from '../../../src/server/config.ts';
 import { FARM_TABLE } from '../../../src/server/sim/animals.ts';
 import { animalTestMap, inRect, LAKE, makeSim, testConfig, WATER } from './animal-fixture.ts';
 
@@ -27,32 +28,46 @@ function run(sim: ReturnType<typeof makeSim>, from: number, minutes: number, eac
 }
 
 describe('AnimalSim farm lifecycle (60 game days, 1-minute steps)', () => {
-  const sim = makeSim();
+  // Burger stock as FarmEconomy keeps it: butcher adds cow 4 / sheep 2 / chicken 2, villagers eat 2 a day.
+  let burgers = 6;
+  const sim = makeSim({ burgerStock: () => burgers });
   const map = animalTestMap();
-  const pens = new Map(map.locations.map((l) => [l.id, l.pen]));
+  const pens = new Map(map.locations.map((l) => [l.id, l.pen!]));
   const maxAlive: Record<FarmSpecies, number> = { cow: 0, sheep: 0, chicken: 0 };
   const births: Record<FarmSpecies, number> = { cow: 0, sheep: 0, chicken: 0 };
   const oldAge: Record<FarmSpecies, number> = { cow: 0, sheep: 0, chicken: 0 };
   const butchered: Record<FarmSpecies, number> = { cow: 0, sheep: 0, chicken: 0 };
   const productsByDay = new Map<number, Record<string, number>>();
+  const productionMismatches: string[] = [];
   const toasts: string[] = [];
   let outOfPen = 0;
   for (const sp of FARM_SPECIES) maxAlive[sp] = sim.count(sp);
 
   for (let t = START + 1; t <= START + 60 * MINUTES_PER_DAY; t++) {
+    // The first step after a start past 07:00 catches up on that day's production.
+    const productionDue = minuteOfDay(t) === 7 * 60 || t === START + 1;
+    const expected = productionDue ? eligibleProducers(sim.all(), t) : null;
     const c = sim.step(t, []);
+    if (minuteOfDay(t) === 12 * 60) burgers = Math.max(0, burgers - 2);
     for (const a of c.added) if (a.group === 'farm') births[a.species as FarmSpecies]++;
     for (const r of c.removed) {
       const sp = r.species as FarmSpecies;
       if (r.reason === 'oldAge') oldAge[sp]++;
-      else butchered[sp]++;
+      else {
+        butchered[sp]++;
+        burgers += sp === 'cow' ? 4 : 2;
+      }
     }
     for (const p of c.produced) {
-      const day = Math.floor(t / MINUTES_PER_DAY);
-      const rec = productsByDay.get(day) ?? {};
+      const rec = productsByDay.get(dayOf(t)) ?? {};
       rec[p.itemId] = (rec[p.itemId] ?? 0) + p.count;
-      productsByDay.set(day, rec);
+      productsByDay.set(dayOf(t), rec);
     }
+    if (expected) {
+      const got = c.produced.map((p) => `${p.animalId}:${p.itemId}`).sort();
+      if (JSON.stringify(got) !== JSON.stringify(expected))
+        productionMismatches.push(`day ${dayOf(t)}: expected ${expected.join(',')} got ${got.join(',')}`);
+    } else if (c.produced.length) productionMismatches.push(`products outside 07:00 at ${t}`);
     toasts.push(...c.toasts);
     for (const sp of FARM_SPECIES) maxAlive[sp] = Math.max(maxAlive[sp], sim.count(sp));
     if (t % 30 === 0)
@@ -72,16 +87,21 @@ describe('AnimalSim farm lifecycle (60 game days, 1-minute steps)', () => {
     }
   });
 
-  it('produces milk and eggs daily and wool at least every 3 days', () => {
+  it('keeps every herd alive', () => {
+    for (const sp of FARM_SPECIES) expect(sim.count(sp), sp).toBeGreaterThanOrEqual(2);
+  });
+
+  it('produces at 07:00 for exactly the eligible animals, with products every day', () => {
+    expect(productionMismatches).toEqual([]);
     for (let day = 0; day < 60; day++) {
       const rec = productsByDay.get(day) ?? {};
-      expect(rec.milk, `milk day ${day}`).toBeGreaterThanOrEqual(1);
-      expect(rec.egg, `egg day ${day}`).toBeGreaterThanOrEqual(1);
+      expect(
+        Object.values(rec).reduce((a, b) => a + b, 0),
+        `products day ${day}`,
+      ).toBeGreaterThanOrEqual(1);
     }
-    for (let day = 0; day + 2 < 60; day++) {
-      const wool = [0, 1, 2].reduce((n, d) => n + (productsByDay.get(day + d)?.wool ?? 0), 0);
-      expect(wool, `wool days ${day}-${day + 2}`).toBeGreaterThanOrEqual(1);
-    }
+    const total = (item: string) => [...productsByDay.values()].reduce((n, r) => n + (r[item] ?? 0), 0);
+    for (const item of ['milk', 'egg', 'wool']) expect(total(item), item).toBeGreaterThanOrEqual(1);
   });
 
   it('emits friendly butcher toasts with no graphic words', () => {
@@ -94,6 +114,147 @@ describe('AnimalSim farm lifecycle (60 game days, 1-minute steps)', () => {
 
   it('keeps farm animals inside their pens', () => {
     expect(outOfPen).toBe(0);
+  });
+});
+
+/** Spec §3.2 production, derived independently: adults produce on schedule, elders at half rate. */
+function eligibleProducers(animals: readonly AnimalState[], at: number): string[] {
+  const day = dayOf(at);
+  const out: string[] = [];
+  for (const a of animals) {
+    if (a.group !== 'farm' || a.status === 'leaving') continue;
+    const sp = a.species as FarmSpecies;
+    // Stages are refreshed at 06:00, before production.
+    const age = Math.floor((at - a.bornAt!) / MINUTES_PER_DAY);
+    const t = FARM_TABLE[sp];
+    if (age < t.adultAt) continue;
+    if (t.product.femaleOnly && a.sex !== 'female') continue;
+    const every = t.product.everyDays * (age >= t.elderAt ? 2 : 1);
+    if (a.lastProducedAt !== undefined && dayOf(a.lastProducedAt) + every > day) continue;
+    out.push(`${a.id}:${t.product.itemId}`);
+  }
+  return out.sort();
+}
+
+function cow(
+  id: string,
+  sex: 'female' | 'male',
+  extra: Partial<AnimalState> & { lastBirthAt?: number } = {},
+) {
+  return {
+    id,
+    species: 'cow' as const,
+    group: 'farm' as const,
+    name: id,
+    sex,
+    bornAt: START - 5 * MINUTES_PER_DAY,
+    stage: 'adult' as const,
+    lifespanDays: 30,
+    homeId: 'cow_pasture',
+    pos: { x: 8, y: 42 },
+    facing: 'down' as const,
+    status: 'idle' as const,
+    ...extra,
+  };
+}
+
+/** A seeded world where the cow herd is replaced by `cows`. */
+function withCows(cows: AnimalState[], now: number, farm: Partial<AppConfig['farm']> = {}) {
+  const saved = makeSim().serialize();
+  return makeSim({
+    now,
+    config: testConfig({ farm }),
+    restore: {
+      animals: [...saved.animals.filter((a) => a.species !== 'cow'), ...cows],
+      farm: { ...saved.farm, nextSeq: 500, lastLifecycleDay: dayOf(now) - 1, lastButcherDay: dayOf(now) - 1 },
+    },
+  });
+}
+
+describe('AnimalSim breeding, restock and butcher guards', () => {
+  it('lets each mother give birth at most once per 2 days, also across a restore', () => {
+    const day = 3;
+    const at6 = day * MINUTES_PER_DAY + 6 * 60;
+    const mother = cow('cow_m', 'female', { lastBirthAt: at6 - MINUTES_PER_DAY });
+    const sim = withCows([mother, cow('cow_b', 'male')], at6 - 1, { breedChance: 1, butcherAtCount: 10 });
+    const calves = (from: number, to: number, s = sim) => {
+      let n = 0;
+      for (let t = from; t <= to; t++) n += s.step(t, []).added.filter((a) => a.species === 'cow').length;
+      return n;
+    };
+    expect(calves(at6, at6 + 60)).toBe(0); // gap from yesterday's birth
+    // Save just before the next 06:00, restore, and the gap still applies on the day after the birth.
+    const save = JSON.parse(JSON.stringify(sim.serialize())) as ReturnType<typeof sim.serialize>;
+    const restored = makeSim({
+      now: at6 + MINUTES_PER_DAY - 1,
+      config: testConfig({ farm: { breedChance: 1, butcherAtCount: 10 } }),
+      restore: save,
+    });
+    expect(calves(at6 + MINUTES_PER_DAY, at6 + MINUTES_PER_DAY + 10, restored)).toBe(1);
+    const saved2 = JSON.parse(JSON.stringify(restored.serialize())) as ReturnType<typeof sim.serialize>;
+    const m2 = saved2.animals.find((a) => a.id === 'cow_m') as AnimalState & { lastBirthAt?: number };
+    expect(m2.lastBirthAt).toBe(at6 + MINUTES_PER_DAY);
+    const again = makeSim({
+      now: at6 + 2 * MINUTES_PER_DAY - 1,
+      config: testConfig({ farm: { breedChance: 1, butcherAtCount: 10 } }),
+      restore: saved2,
+    });
+    expect(calves(at6 + 2 * MINUTES_PER_DAY, at6 + 2 * MINUTES_PER_DAY + 10, again)).toBe(0);
+    expect(calves(at6 + 3 * MINUTES_PER_DAY - 9, at6 + 3 * MINUTES_PER_DAY + 10, again)).toBe(1);
+  });
+
+  it('continues identically when restored right before the 06:00 lifecycle', () => {
+    const boundary = 9 * MINUTES_PER_DAY + 6 * 60 - 1;
+    const a = makeSim();
+    run(a, START, boundary - START);
+    const save = JSON.parse(JSON.stringify(a.serialize())) as ReturnType<typeof a.serialize>;
+    const b = makeSim({ now: boundary, restore: save });
+    const events = (s: ReturnType<typeof makeSim>) => {
+      const out: string[] = [];
+      for (let t = boundary + 1; t <= boundary + 4 * MINUTES_PER_DAY; t++) {
+        const c = s.step(t, []);
+        for (const x of c.added) out.push(`${t}+${x.id}:${x.sex}`);
+        // Wandering is reseeded on restore, so the butcher walk may take a few minutes more or less.
+        for (const x of c.removed) out.push(`${dayOf(t)}-${x.id}:${x.reason}`);
+        for (const x of c.produced) out.push(`${t}*${x.animalId}:${x.itemId}`);
+      }
+      return out;
+    };
+    const ea = events(a);
+    expect(ea.some((e) => e.includes('+'))).toBe(true);
+    expect(events(b)).toEqual(ea);
+  });
+
+  it('buys a missing sex at the market, under the cap', () => {
+    const at6 = 3 * MINUTES_PER_DAY + 6 * 60;
+    const sim = withCows([cow('cow_f1', 'female'), cow('cow_f2', 'female')], at6 - 1, { breedChance: 0 });
+    const c = sim.step(at6, []);
+    const bought = c.added.filter((a) => a.species === 'cow');
+    expect(bought.map((a) => [a.sex, a.stage])).toEqual([['male', 'adult']]);
+    expect(c.toasts).toContain('🐄 Tom brought a new cow home from the market.');
+
+    const full = Array.from({ length: 10 }, (_, i) => cow(`cow_f${i}`, 'female'));
+    const capped = withCows(full, at6 - 1, { breedChance: 1, butcherAtCount: 10 });
+    for (let t = at6; t < at6 + 2 * MINUTES_PER_DAY; t++) {
+      capped.step(t, []);
+      expect(capped.count('cow')).toBeLessThanOrEqual(10);
+    }
+  });
+
+  it('never sends the last animal of a sex to the butcher', () => {
+    const at16 = 3 * MINUTES_PER_DAY + 16 * 60;
+    const herd = [
+      cow('cow_bull', 'male', { bornAt: START - 9 * MINUTES_PER_DAY }),
+      ...Array.from({ length: 8 }, (_, i) =>
+        cow(`cow_f${i}`, 'female', { bornAt: START - (5 + i * 0.1) * MINUTES_PER_DAY }),
+      ),
+    ];
+    const sim = withCows(herd, at16 - 1);
+    sim.step(at16, []);
+    const leaving = sim.leavingAnimal();
+    expect(leaving?.species).toBe('cow');
+    expect(leaving?.sex).toBe('female');
+    expect(leaving?.id).toBe('cow_f7'); // the oldest cow other than the only bull
   });
 });
 
@@ -123,40 +284,18 @@ describe('AnimalSim caps', () => {
   });
 
   it('holds the cap after loading a save with 10 of a species', () => {
-    const base = makeSim();
-    const saved = base.serialize();
-    const cows: AnimalState[] = Array.from({ length: 10 }, (_, i) => ({
-      id: `cow_${100 + i}`,
-      species: 'cow',
-      group: 'farm',
-      name: `Cow ${i}`,
-      sex: i % 2 ? 'male' : 'female',
-      bornAt: START - 5 * MINUTES_PER_DAY,
-      stage: 'adult',
-      lifespanDays: 30,
-      homeId: 'cow_pasture',
-      pos: { x: 7 + i, y: 42 },
-      facing: 'down',
-      status: 'idle',
-    }));
-    const animals = [...saved.animals.filter((a) => a.species !== 'cow'), ...cows];
-    const sim = makeSim({
-      config: testConfig({ farm: { breedChance: 1, butcherAtCount: 10 } }),
-      restore: { animals, farm: { ...saved.farm, nextSeq: 200 } },
-    });
+    const cows = Array.from({ length: 10 }, (_, i) => cow(`cow_${100 + i}`, i % 2 ? 'male' : 'female'));
+    const sim = withCows(cows, START, { breedChance: 1, butcherAtCount: 10 });
     expect(sim.count('cow')).toBe(10);
-    let births = 0;
-    run(sim, START, 10 * MINUTES_PER_DAY, (t) => {
+    let calves = 0;
+    run(sim, START, 10 * MINUTES_PER_DAY, () => {
       expect(sim.count('cow')).toBeLessThanOrEqual(10);
-      void t;
     });
-    // Butcher at 10 frees a slot; any calf must fit under the cap.
-    for (const a of sim.all()) if (a.species === 'cow' && a.stage === 'baby') births++;
-    expect(sim.count('cow')).toBeLessThanOrEqual(10);
-    expect(births).toBeGreaterThanOrEqual(0);
+    for (const a of sim.all()) if (a.species === 'cow' && a.stage === 'baby') calves++;
+    // The butcher frees slots; calves only fill them.
+    expect(calves).toBeGreaterThan(0);
   });
 });
-
 describe('AnimalSim save/restore', () => {
   it('round-trips farm and zoo animals and continues the farm identically', () => {
     const a = makeSim();
