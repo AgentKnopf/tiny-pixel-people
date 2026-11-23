@@ -1,11 +1,15 @@
 import type { AnimalId, LocationId, Point, VillagerId, WorldMap } from '../../shared/types.ts';
 import { FRAME_H, FRAME_W, spriteTopLeft } from './sprites.ts';
 
+export const NOTICE_BOARD_ID = 'notice_board';
+
 export type HitResult =
   | { kind: 'villager'; id: VillagerId }
   | { kind: 'animal'; id: AnimalId }
   | { kind: 'player' }
   | { kind: 'door'; houseId: LocationId }
+  | { kind: 'notice' }
+  | { kind: 'object'; id: string; locationId: LocationId }
   | { kind: 'ground'; tile: Point; blocked: boolean }
   | { kind: 'none' };
 
@@ -38,8 +42,8 @@ function inBox(p: Point, b: { x: number; y: number; w: number; h: number }): boo
 }
 
 /**
- * What is under the art-pixel point `p`. Villagers win over animals, animals over doors and doors
- * over ground; among villagers (or animals) the one drawn on top (largest y) wins.
+ * What is under the art-pixel point `p`. Villagers win over animals, animals over doors, doors over
+ * the notice board and that over ground; among villagers (or animals) the one drawn on top (largest y) wins.
  */
 export function hitTest(
   map: WorldMap,
@@ -57,6 +61,8 @@ export function hitTest(
   for (const loc of map.locations) {
     if (loc.door && inBox(tile, doorHitBox(loc.door))) return { kind: 'door', houseId: loc.id };
   }
+  const board = map.locations.find((l) => l.id === NOTICE_BOARD_ID);
+  if (board && inBox(tile, board.area)) return { kind: 'notice' };
   if (player && inBox(p, spriteHitBox(player.pos, ts))) return { kind: 'player' };
   if (tile.x < 0 || tile.y < 0 || tile.x >= map.width || tile.y >= map.height) return { kind: 'none' };
   return { kind: 'ground', tile, blocked: map.collision[tile.y * map.width + tile.x] === 1 };
