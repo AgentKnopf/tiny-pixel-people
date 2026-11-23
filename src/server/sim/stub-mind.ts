@@ -59,7 +59,10 @@ export class StubMind implements VillagerMind {
   ) {
     this.id = profile.id;
     this.memoryList = deps.snapshot ? [...deps.snapshot.memories] : [];
-    this.seq = this.memoryList.length;
+    this.seq = this.memoryList.reduce(
+      (max, m) => Math.max(max, Number(/-m(\d+)$/.exec(m.id)?.[1] ?? 0)),
+      this.memoryList.length,
+    );
     if (!deps.snapshot) {
       for (const text of profile.seedMemories ?? []) {
         this.observe({ at: deps.now(), kind: 'observation', text, importance: 4 });
