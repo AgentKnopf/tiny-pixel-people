@@ -7,8 +7,8 @@ There are three ways to check that the village works:
 - **`npm run test:perf`**: the timing checks (`v2/perf-v2.test.ts` and the animal benchmark), one
   file at a time and never next to the other tests, so nothing competes for the CPU while they
   measure. CI runs it as a separate step.
-- **`npm run test:live`**: one game day on the real server against the model in your config, judged
-  by the same checks.
+- **`npm run test:live`**: one game day (or more with `--days`) on the real server against the
+  model in your config, judged by the same checks.
 
 ## The acceptance criteria
 
@@ -137,12 +137,24 @@ The script:
 3. Checks that the server reports the model from your config (AC7) and sets the speed.
 4. At 08:00 tells an awake villager the fact _"The mayor's cat is named Biscuit."_ and pins a door
    note on the house of a villager who is out.
-5. At 12:00 inspects every villager (AC6).
-6. Plays until midnight, or until the real-time limit, and judges plans (AC2), gossip (AC3, looks
-   for "Biscuit" from another speaker by 20:00), the door note (AC4) and events (AC5).
-7. Prints the LLM queue statistics (calls done and failed, average time per call, per task) and
+5. From 08:30 walks the player to the post office and posts a letter to a resident. At 18:00 it
+   goes inside and opens the Keep.
+6. At 12:00 inspects every villager (AC6).
+7. Plays until midnight of the last day (`--days`, default 1), or until the real-time limit. It
+   judges the first day's plans (AC2), gossip (AC3, looks for "Biscuit" from another speaker by
+   20:00), the door note (AC4) and events (AC5). Then the v2 checks: visitors arrive by train and
+   check in (AC12), the letter is delivered, read and answered with a reply that refers to it
+   (AC20), the Keep lists the door note and the letter, newest first (AC22), butcher toasts have
+   no graphic words (AC10), and a crush leads to a date (AC15).
+8. Prints the LLM queue statistics (calls done and failed, average time per call, per task) and
    the first distinct server warnings, to tell a slow model from a bug.
-8. Prints a PASS/FAIL report. Exit code 0 means every check passed.
+9. Prints a report with PASS, FAIL or SKIP for each check. Exit code 0 means every check that was
+   judged passed.
+
+A check is **SKIP** when the run never gave it a chance: no train arrived yet (AC12), no animal
+went to the butcher (AC10), or no date in a run shorter than 3 days (AC15; use `--days 3` or
+more). Skipped checks count neither as passed nor as failed. If the WebSocket connection drops,
+the script reconnects; lines broadcast in between are lost, and a failed gossip check says so.
 
 A check can pass on a deterministic fallback as well as on model output (for example canned
 gossip lines or a default event). So each check of model output gets a second line saying where
@@ -157,7 +169,8 @@ note replies; `mixed` means both. For untagged results the script uses the per-t
 statistics: no successful call for that task means `fallback`, otherwise `unknown` (a successful
 call can still fall back if its answer doesn't parse). The summary counts the passed checks by
 source, for example `6/7 checks passed (model-output checks: 1 via LLM, 3 via fallback, 0 unknown)`
-(`mixed` counts as fallback). Several checks passing via fallback means the model is too slow for
+(`mixed` counts as fallback). Skipped checks are left out of the count and named after it, as in
+`5/6 checks passed (1 skipped)`. Several checks passing via fallback means the model is too slow for
 the settings; see [Performance and slow hardware](setup/performance.md).
 
 | Option               | Default         | Meaning                          |
@@ -167,6 +180,7 @@ the settings; see [Performance and slow hardware](setup/performance.md).
 | `--day-length <min>` | from config     | Real minutes per game day at 1×. |
 | `--max-minutes <n>`  | `90`            | Real-time limit for the run.     |
 | `--villagers <n>`    | from config     | Number of villagers.             |
+| `--days <n>`         | `1`             | Game days to play.               |
 | `--report <file>`    | –               | Also write the results as JSON.  |
 
 With the defaults (15-minute day, speed 4) a day takes about 4 real minutes, which is short for a
