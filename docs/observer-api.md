@@ -93,7 +93,7 @@ The whole village at a glance.
   derived or `null`.
 - `mood`: one word derived from the needs: `asleep`, `tired`, `hungry`, `lonely` or `bored` (a need
   below 25), otherwise `happy` (average ≥ 75), `content` (≥ 50) or `meh`.
-- `x`, `y`: tile coordinates (the map is 48×30 tiles of 16 px).
+- `x`, `y`: tile coordinates (the map is 128×60 tiles of 16 px).
 
 ### `GET /api/agents/{id}`
 
@@ -252,7 +252,7 @@ waiting.
 
 ### `GET /api/screenshot?scale=1`
 
-A PNG of the whole map (768×480 px at `scale=1`; `scale` 1–4 enlarges it without smoothing) with
+A PNG of the whole map (2048×960 px at `scale=1`; `scale` 1–4 enlarges it without smoothing) with
 every villager, visitor and the player in place. It has no day/night lighting, bubbles or UI.
 `501` if the art files in `assets/` are missing.
 
@@ -293,7 +293,6 @@ The v2 village adds fields, endpoints and town log types. Everything stays read-
 - `/api/agents/{id}` adds `romance` (stage, partner, dates) and, for visitors, `visitor`. The
   `player` object shows `inside` while you are inside a house. `relationships[].kind` can also be
   `crush`, `shy_crush`, `dating` or `partner`.
-- `x`, `y` are tiles on the 128×60 map.
 
 ### New endpoints
 
