@@ -47,8 +47,8 @@ import type {
   WorldSnapshot,
 } from './types.ts';
 
-/** Becomes 2 (spec v2 §14) with the WP2 PR that first sends v2 messages; the v2 types below are additive. */
-export const PROTOCOL_VERSION = 1;
+/** 2 = v2 expansion (spec v2 §14); the v2 message types and fields are additive. */
+export const PROTOCOL_VERSION = 2;
 export const WS_PATH = '/ws';
 
 export const SPEEDS = [0, 1, 2, 4, 8] as const;

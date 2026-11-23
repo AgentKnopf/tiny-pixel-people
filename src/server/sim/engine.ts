@@ -9,18 +9,24 @@ import {
 import { MINUTES_PER_DAY, dayOf, formatClock, minuteOfDay, parseClock } from '../../shared/time.ts';
 import {
   PLAYER_ID,
+  type AnimalSpecies,
   type Conversation,
   type DoorNote,
   type GameMinutes,
+  type HouseVisit,
   type Location,
   type Memory,
+  type Notice,
+  type LocationId,
   type PlayerState,
+  type Romance,
   type Provenance,
   type Point,
   type VillageEvent,
   type VillagerId,
   type VillagerProfile,
   type VillagerState,
+  type VisitorInfo,
   type WorldMap,
   type WorldSnapshot,
 } from '../../shared/types.ts';
@@ -35,6 +41,7 @@ import type {
   WorldView,
 } from '../cognition/types.ts';
 import { createConversationRunner } from '../cognition/conversation.ts';
+import { loadTracker } from '../cognition/llm.ts';
 import { createMind, Mind } from '../cognition/mind.ts';
 import type { AppConfig } from '../config.ts';
 import { createLlmQueue, type PriorityLlmQueue } from '../llm/queue.ts';
@@ -48,21 +55,49 @@ import {
   type PlayerReplyRequest,
   type PlayerWorld,
 } from '../player/index.ts';
+import { LAUDE_ID, NOTICE_BOARD_ID } from '../player/post-office.ts';
+import { POST_OFFICE_ID } from '../player/house-visits.ts';
+import { playerConversationId } from '../player/player.ts';
+import { createAnimalSim, type AnimalStepResult, type DeterministicAnimalSim } from './animals.ts';
 import { SimBus } from './bus.ts';
 import { SimClock } from './clock.ts';
 import { advanceAlongPath, distance, facingFor, tileOf } from './movement.ts';
 import { CONVERSATION_SOCIAL_BONUS, initialNeeds, updateNeeds } from './needs.ts';
-import { PathFinder } from './pathfinding.ts';
-import { isAwakeAt } from './plan.ts';
+import { isWalkable, PathFinder } from './pathfinding.ts';
+import { currentBlock, isAwakeAt } from './plan.ts';
 import { Rng } from './rng.ts';
 import { createStubConversationRunner } from './stub-mind.ts';
 import { TownLog } from './town-log.ts';
 import { recordTownLog } from './town-recorder.ts';
+import { Rides } from './rides.ts';
+import { Train } from './train.ts';
 import type { AdvanceOptions, SimEngine, SimEngineOptions } from './types.ts';
-import { isAt, loadMap, loadProfiles, locationAt, locationById, nearestWalkable } from './world.ts';
+import {
+  distanceToArea,
+  isAt,
+  loadMap,
+  loadProfiles,
+  loadAmbientData,
+  loadRomanceSeeds,
+  loadZooData,
+  type AmbientData,
+  type ZooData,
+  type RomanceSeed,
+  locationAt,
+  locationById,
+  nearestWalkable,
+} from './world.ts';
 
 const log = createLogger('sim');
 
+/** SimEngineOptions plus data-file overrides (default: data/romance.json, zoo.json, ambient.json). */
+export interface EngineOptions extends SimEngineOptions {
+  worldData?: { romances?: RomanceSeed[]; zoo?: ZooData; ambient?: AmbientData };
+}
+
+/** Visitors head for the station at least this long before their train leaves. */
+export const VISITOR_STATION_LEAD_MINUTES = 45;
+const TRAIN_WAIT_ACTIVITY = 'waiting for the train';
 /** Villager walking speed in tiles per game minute. */
 export const WALK_TILES_PER_GAME_MINUTE = 1.5;
 /** Villagers this close (tiles) may start a conversation (spots on the square are ~3 tiles apart). */
@@ -81,6 +116,17 @@ export const PLAYER_CHAT_HOLD_MINUTES = 5;
 const SOCIAL_TRAITS = /outgoing|friendly|cheerful|social|warm|generous|chatty|organi[sz]ed|lively/i;
 const PLAYER_REPLY_FALLBACK = "Sorry, I'm a bit distracted right now.";
 export const MAX_VILLAGERS = 20;
+/** The crow caws when the player comes this close (tiles). */
+export const CROW_CAW_RADIUS = 3;
+export const ANIMALS_NEARBY_RADIUS = 4;
+/** Villagers this close (tiles) to the notice board read it (spec v2 §8.2). */
+export const NOTICE_READ_RADIUS = 3;
+/** An owner greeting the player stops for at most this long (spec v2 §6). */
+export const GREETING_HOLD_MINUTES = 10;
+/** What villagers do at a ride after their cycle, or after giving up on the queue (spec v2 §4). */
+export const RIDE_FALLBACK_ACTIVITY = 'watching the rides';
+export const AFTER_RIDE_ACTIVITY = 'chatting about the ride';
+const RIDE_EMOJI: Record<string, string> = { rollercoaster: '🎢', ferris_wheel: '🎡', carousel: '🎠' };
 /** Bubbles stay visible for this many real milliseconds. */
 export const BUBBLE_MS = 5000;
 const STATS_INTERVAL_MS = 2000;
@@ -88,6 +134,14 @@ const STATS_INTERVAL_MS = 2000;
 export const WAKE_UP_MINUTE = 6 * 60;
 /** Virtual-clock mode gives up waiting after this many drain rounds. */
 const WAKE_UP_MAX_ROUNDS = 5;
+/** Minds asked for their day plan per hold step at wake-up. */
+const WAKE_UP_THINK_BATCH = 2;
+/**
+ * New A* searches per sim step. Villagers whose walk would need more wait a step: their mind
+ * re-issues the goto, so a crowd leaving at the same minute is spread over a few steps.
+ */
+const PATH_SEARCHES_PER_STEP = 6;
+const PATH_MAX_DEFERRALS = 2;
 /** Real-time grace before an idle LLM queue counts as "every plan request has finished". */
 const WAKE_UP_IDLE_GRACE_MS = 1500;
 /** WP3's nightly usage line; also printed to the server terminal. */
@@ -115,6 +169,12 @@ interface Runtime {
   bubble: { text: string; untilMs: number; untilGame: GameMinutes } | null;
   seen: Map<string, { activity: string; at: GameMinutes }>;
   approach: { conversationId: string; partnerId: VillagerId } | null;
+  /** Ride this villager already rode during the current visit (one cycle per visit). */
+  rodeAt?: string | null;
+  /** Finished a cycle during the current ride block; stays at `to` until the plan moves on. */
+  doneRide?: { rideId: string; to: string } | null;
+  /** Steps in a row this villager's goto waited for the A* budget. */
+  pathDeferrals: number;
 }
 
 interface ActiveConversation {
@@ -166,6 +226,19 @@ export interface SimHost {
 
 const clampAffinity = (v: number) => Math.max(-10, Math.min(10, v));
 
+/** Uniform in [0, 1) from three integers (a mulberry32 round over a mixed key). */
+function hashUnit(seed: number, a: number, b: number): number {
+  let t = (seed ^ Math.imul(a, 0x9e3779b1) ^ Math.imul(b + 1, 0x85ebca77)) >>> 0;
+  t = (t + 0x6d2b79f5) >>> 0;
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+
+function visitorField(info: VisitorInfo | null): { visitor?: VisitorInfo } {
+  return info ? { visitor: structuredClone(info) } : {};
+}
+
 export function toPublicProfile(p: VillagerProfile): VillagerProfilePublic {
   const out: VillagerProfilePublic = {
     id: p.id,
@@ -178,6 +251,7 @@ export function toPublicProfile(p: VillagerProfile): VillagerProfilePublic {
     sprite: p.sprite,
   };
   if (p.transient) out.transient = true;
+  if (p.visitor) out.visitor = true;
   return out;
 }
 
@@ -191,6 +265,10 @@ export class Engine implements SimEngine, SimHost {
   readonly store: JsonSaveStore;
   /** Town event log and game-to-real time anchors (observer API). */
   readonly townLog: TownLog;
+  readonly animals: DeterministicAnimalSim;
+  /** null when `train.enabled` is false or the map has no station. */
+  readonly train: Train | null;
+  readonly rides: Rides;
 
   private readonly clock: SimClock;
   private readonly rng: Rng;
@@ -208,6 +286,8 @@ export class Engine implements SimEngine, SimHost {
   private history: Conversation[] = [];
   private readonly active = new Map<string, ActiveConversation>();
   private eventPresence = new Map<string, Map<string, number>>();
+  /** Villagers who boarded the ride an event is held at while that event was happening. */
+  private eventRiders = new Map<string, Set<VillagerId>>();
 
   private seq = 0;
   private lastMinute: number;
@@ -220,9 +300,24 @@ export class Engine implements SimEngine, SimHost {
   private stepping = false;
   private wokeDay = -1;
   private idleProbe: { done: boolean } | null = null;
-  private wakeHold: { day: number; startedMs: number; ready: number; rounds: number } | null = null;
+  private wakeHold: {
+    day: number;
+    startedMs: number;
+    ready: number;
+    rounds: number;
+    /** Villagers who have not been asked for their day yet (WAKE_UP_THINK_BATCH per hold step). */
+    unasked: VillagerId[];
+  } | null = null;
+  /** New A* searches left in the current step (PATH_SEARCHES_PER_STEP). */
+  private pathBudget = Infinity;
+  private playerNearCrow = false;
+  private deferred: ServerMessage[] = [];
+  private romanceList: Romance[] = [];
+  /** Visitors who have had a conversation with a resident. */
+  private readonly visitorsMet = new Set<VillagerId>();
+  private worldDraws = { minute: -1, n: 0 };
 
-  constructor(opts: SimEngineOptions) {
+  constructor(opts: EngineOptions) {
     const cfg = opts.config;
     this.config = cfg;
     this.map = opts.map ?? loadMap();
@@ -279,7 +374,18 @@ export class Engine implements SimEngine, SimHost {
     this.onMessage(createReplayRecorder(this.store, () => this.now()));
     this.playerWorld = createPlayerWorld({
       host: this.createPlayerHost(),
-      config: { player: cfg.player, economy: cfg.economy, world: cfg.world, maxVillagers: MAX_VILLAGERS },
+      config: {
+        player: cfg.player,
+        economy: cfg.economy,
+        world: cfg.world,
+        maxVillagers: MAX_VILLAGERS,
+        zoo: cfg.zoo,
+        train: cfg.train,
+        visitors: cfg.visitors,
+        hotel: cfg.hotel,
+        interiors: cfg.interiors,
+        post: cfg.post,
+      },
       ...(restore ? { restore } : {}),
     });
     if (restore) {
@@ -299,6 +405,24 @@ export class Engine implements SimEngine, SimHost {
       const snapshot = restore?.minds.find((m) => m.villagerId === p.id);
       this.addRuntime(p, saved ? this.restoreState(saved) : this.initialState(p), snapshot);
     }
+    this.moveIn(restore, profiles);
+    this.romanceList = structuredClone(restore?.romances ?? []);
+    this.seedRomances(opts.worldData?.romances ?? loadRomanceSeeds());
+    const farmer = [...this.runtimes.values()].find((r) => /farmer/i.test(r.profile.occupation));
+    this.animals = createAnimalSim({
+      config: cfg,
+      map: this.map,
+      now: startAt,
+      ...(restore ? { restore: { animals: restore.animals, farm: restore.farm } } : {}),
+      ...(farmer ? { farmerName: farmer.profile.name.split(' ')[0]! } : {}),
+      findPath: (from, to) => this.paths.find(from, to),
+      zoo: opts.worldData?.zoo ?? loadZooData(),
+      ambient: opts.worldData?.ambient ?? loadAmbientData(),
+      burgerStock: () => this.playerWorld.farm.stock()['burger_joint']?.['burger'] ?? 0,
+    });
+    const hasStation = this.map.locations.some((l) => l.kind === 'station');
+    this.train = cfg.train.enabled && hasStation ? new Train(cfg.train, startAt, restore?.train) : null;
+    this.rides = new Rides(this.map.locations, cfg.zoo, startAt);
     this.registerBuiltins();
     recordTownLog(this, this.townLog);
     this.townLog.anchor(true);
@@ -336,7 +460,11 @@ export class Engine implements SimEngine, SimHost {
         events: this.eventList,
         notes: this.noteList,
         activeConversations: [...this.active.values()].map((a) => a.conversation),
+        animals: [...this.animals.all()],
       }),
+      rides: [...this.rides.all()],
+      train: this.train?.state() ?? null,
+      romances: structuredClone(this.romanceList),
       ...this.playerWorld.snapshot(),
     };
   }
@@ -370,9 +498,13 @@ export class Engine implements SimEngine, SimHost {
         this.step(0);
         this.emitTick(false);
         const hold = this.wakeHold;
-        if (hold && ++hold.rounds > WAKE_UP_MAX_ROUNDS) this.endWakeUp(hold.day, true);
-        await this.queue.drain();
-        if (this.pending.size > 0) await Promise.race([Promise.allSettled([...this.pending]), settle()]);
+        if (hold && hold.unasked.length === 0 && ++hold.rounds > WAKE_UP_MAX_ROUNDS)
+          this.endWakeUp(hold.day, true);
+        // Without drainLlm a hung provider must not block advance(); the hold then ends by rounds or timeout.
+        if (opts.drainLlm) {
+          await this.queue.drain();
+          if (this.pending.size > 0) await Promise.race([Promise.allSettled([...this.pending]), settle()]);
+        }
         await settle();
         continue;
       }
@@ -434,6 +566,9 @@ export class Engine implements SimEngine, SimHost {
       notes: this.noteList,
       conversations: this.conversations().filter((c) => c.startedAt >= now - 2 * MINUTES_PER_DAY),
       ...this.playerWorld.serialize(),
+      ...this.animals.serialize(),
+      train: this.train?.state() ?? null,
+      romances: this.romanceList,
       observer: this.townLog.serialize(),
     });
   }
@@ -530,11 +665,66 @@ export class Engine implements SimEngine, SimHost {
     return this.noteList;
   }
 
+  romances(): readonly Romance[] {
+    return this.romanceList;
+  }
+
+  /** Store a romance record (keyed by id, or by pair when the id is new), broadcast and save it (spec v2 §7). */
+  upsertRomance(romance: Romance): void {
+    const pair = [...romance.pair].sort() as [VillagerId, VillagerId];
+    const record: Romance = structuredClone({ ...romance, pair });
+    const i = this.romanceList.findIndex(
+      (r) => r.id === record.id || (r.stage !== 'ended' && r.pair[0] === pair[0] && r.pair[1] === pair[1]),
+    );
+    if (i >= 0) this.romanceList[i] = record;
+    else this.romanceList.push(record);
+    this.broadcast({ type: 'romance.updated', romance: structuredClone(record) });
+    this.bus.emit('romance.updated', { romance: record });
+  }
+
+  /** The villager's current romance for the inspector: couple, then dating, then crush. */
+  private romanceOf(id: VillagerId): Romance | null {
+    const rank: Record<Romance['stage'], number> = { couple: 3, dating: 2, crush: 1, ended: 0 };
+    let best: Romance | null = null;
+    for (const r of this.romanceList)
+      if (r.pair.includes(id) && r.stage !== 'ended' && (!best || rank[r.stage] > rank[best.stage])) best = r;
+    return best;
+  }
+
+  /** Seeds from data/romance.json whose pair is in the world and has no record yet (fresh start and v1 saves). */
+  private seedRomances(seeds: readonly RomanceSeed[]): void {
+    const now = this.now();
+    for (const seed of seeds) {
+      const pair = [...seed.pair].sort() as [VillagerId, VillagerId];
+      if (!pair.every((id) => this.runtimes.has(id))) continue;
+      if (this.romanceList.some((r) => r.pair[0] === pair[0] && r.pair[1] === pair[1])) continue;
+      this.romanceList.push({
+        id: `romance-${pair[0]}-${pair[1]}`,
+        pair,
+        stage: seed.stage,
+        since: now,
+        crushFrom: [...seed.crushFrom],
+        ...(seed.shy ? { shy: true } : {}),
+        dates: [],
+        updatedAt: now,
+      });
+    }
+  }
+
   upsertNote(note: DoorNote): void {
     const i = this.noteList.findIndex((n) => n.id === note.id);
+    const prev = i >= 0 ? this.noteList[i] : undefined;
     if (i >= 0) this.noteList[i] = note;
     else this.noteList.push(note);
     this.broadcast({ type: 'note.updated', note: structuredClone(note) });
+    // The Keep logs every note created, read or replied to (spec v2 §8.3), not every rewrite.
+    if (!prev || prev.status !== note.status || prev.reply !== note.reply) {
+      try {
+        this.playerWorld.onNoteChanged(note);
+      } catch (err) {
+        log.error('onNoteChanged failed', err);
+      }
+    }
   }
 
   addVillager(profile: VillagerProfile, at?: Point): boolean {
@@ -555,7 +745,14 @@ export class Engine implements SimEngine, SimHost {
     for (const a of [...this.active.values()]) {
       if (a.conversation.participants.includes(id)) this.endConversation(a, 'aborted');
     }
+    // Nobody steps a departed villager's mind again, so a romance between two who both left would
+    // otherwise stay open forever.
+    const now = this.now();
+    for (const r of [...this.romanceList])
+      if (r.pair.includes(id) && r.stage !== 'ended')
+        this.upsertRomance({ ...r, stage: 'ended', updatedAt: now });
     this.runtimes.delete(id);
+    this.visitorsMet.delete(id);
     this.lastFrames.delete(id);
     this.broadcast({ type: 'villagers.changed', added: [], removed: [id] });
   }
@@ -566,6 +763,7 @@ export class Engine implements SimEngine, SimHost {
     if (!a || !b || a === b) return null;
     for (const rt of [a, b]) {
       if (rt.state.status === 'sleeping' || rt.state.conversationId) return null;
+      if (this.rides.isRiding(rt.profile.id)) return null;
     }
     if (!force && this.activeVillagerConversations() >= Math.max(1, this.config.llm.concurrency)) return null;
     const now = this.now();
@@ -579,6 +777,8 @@ export class Engine implements SimEngine, SimHost {
     };
     const entry: ActiveConversation = { conversation, sent: 0, started: false, withPlayer: false };
     this.active.set(conversation.id, entry);
+    if (a.profile.visitor && !b.profile.visitor) this.visitorsMet.add(aId);
+    if (b.profile.visitor && !a.profile.visitor) this.visitorsMet.add(bId);
     for (const [rt, other] of [
       [a, b],
       [b, a],
@@ -593,6 +793,7 @@ export class Engine implements SimEngine, SimHost {
       };
       rt.target = null;
       rt.arrived = false;
+      this.rides.leave(rt.profile.id);
     }
     b.state.path = [];
     if (distance(a.state.pos, b.state.pos) > CONVERSATION_DISTANCE) {
@@ -676,6 +877,7 @@ export class Engine implements SimEngine, SimHost {
       bubble: null,
       seen: new Map(),
       approach: null,
+      pathDeferrals: 0,
     };
     if (state.locationId === profile.homeId && state.path.length === 0) {
       const home = locationById(this.map.locations, profile.homeId);
@@ -723,6 +925,8 @@ export class Engine implements SimEngine, SimHost {
           this.noteRead(id, note);
       },
       upsertEvent: (event) => this.upsertEvent(event),
+      upsertRomance: (romance) => this.upsertRomance(romance),
+      romances: () => this.romanceList,
       events: () => this.eventList,
       notes: () => this.noteList,
       recordLearned: (fact) => {
@@ -733,6 +937,15 @@ export class Engine implements SimEngine, SimHost {
         }
         this.bus.emit('learned', { fact });
       },
+      sendLetter: (to, text, opts) => {
+        try {
+          return this.playerWorld.postLetter(id, to, text, opts);
+        } catch (err) {
+          log.error('postLetter failed', err);
+          return null;
+        }
+      },
+      observeFor: (villagerId, obs) => this.observe(villagerId, obs),
       taskCompleted: (taskId, block) => {
         try {
           this.playerWorld.onTaskCompleted(id, taskId, block);
@@ -754,12 +967,23 @@ export class Engine implements SimEngine, SimHost {
     }
   }
 
+  /**
+   * Randomness for WP8's deterministic systems (visitors, hotel, weather, pet). It is keyed on the
+   * game minute and the call count within it, not drawn from the engine RNG: conversations and
+   * plans consume that one differently when the LLM is slow, and trains must not notice (spec v2 AC11).
+   */
+  private worldRandom(): number {
+    const minute = Math.floor(this.clock.time);
+    if (minute !== this.worldDraws.minute) this.worldDraws = { minute, n: 0 };
+    return hashUnit(this.config.sim.seed, minute, this.worldDraws.n++);
+  }
+
   private createPlayerHost(): PlayerHost {
     const queue = this.queue;
     return {
       map: this.map,
       now: () => this.now(),
-      random: () => this.rng.next(),
+      random: () => this.worldRandom(),
       findPath: (from, to) => this.paths.find(from, to),
       villagers: () => [...this.runtimes.values()].map((r) => r.state),
       setPlan: (id, plan) => {
@@ -782,7 +1006,30 @@ export class Engine implements SimEngine, SimHost {
           log.warn(`could not add ${profile.id}: village full or duplicate`);
       },
       removeVillager: (id) => this.removeVillager(id),
+      requestGreeting: (id, visit) => this.requestGreeting(id, visit),
+      letterRead: (id, letter) => {
+        const rt = this.runtimes.get(id);
+        if (!rt?.mind.onLetterRead) return;
+        try {
+          rt.mind.onLetterRead(this.buildView(rt), letter);
+        } catch (err) {
+          log.error(`onLetterRead failed for ${id}`, err);
+        }
+      },
+      caw: (reason) => this.animals.caw(reason),
       llm: queue,
+      loadLevel: () => loadTracker(queue).level(this.now()),
+      joinRide: (rideId) =>
+        this.rides.join(PLAYER_ID, rideId)
+          ? { ok: true }
+          : { ok: false, reason: 'That ride is closed right now' },
+      triggerTrain: () => {
+        if (!this.train) return { ok: false, reason: 'There is no train service' };
+        if (this.train.state(this.now()).status !== 'away')
+          return { ok: false, reason: 'The train is already here' };
+        this.train.triggerNow(this.now());
+        return { ok: true };
+      },
     };
   }
 
@@ -864,15 +1111,28 @@ export class Engine implements SimEngine, SimHost {
     }
     const nowMs = performance.now();
     if (!this.wakeHold || this.wakeHold.day !== day) {
-      this.wakeHold = { day, startedMs: nowMs, ready: -1, rounds: 0 };
+      this.wakeHold = { day, startedMs: nowMs, ready: -1, rounds: 0, unasked: [...this.runtimes.keys()] };
       this.townLog.anchor(true);
       this.log('info', 'Villagers are waking up…');
-      // Minds start their day plans from update(); on a fresh world nobody has thought yet.
-      for (const rt of [...this.runtimes.values()]) this.think(rt);
+    }
+    if (this.wakeHold.unasked.length > 0) {
+      // Minds start their day plans from update(); on a fresh world nobody has thought yet. A few
+      // per (zero-length) hold step keep the first morning step inside the step budget.
+      for (const id of this.wakeHold.unasked.splice(0, WAKE_UP_THINK_BATCH)) {
+        const rt = this.runtimes.get(id);
+        if (rt) this.think(rt);
+      }
       ({ ready, total } = this.wakeUpCounts(day));
       if (ready >= total) {
         this.endWakeUp(day, false);
         return false;
+      }
+      if (this.wakeHold.unasked.length > 0) {
+        if (ready !== this.wakeHold.ready) {
+          this.wakeHold.ready = ready;
+          this.broadcastSimStatus('wakingUp', ready, total);
+        }
+        return true;
       }
     }
     const waited = nowMs - this.wakeHold.startedMs;
@@ -946,6 +1206,8 @@ export class Engine implements SimEngine, SimHost {
     if (this.stepping) return;
     this.stepping = true;
     try {
+      if (this.deferred.length > 0) for (const m of this.deferred.splice(0)) this.broadcast(m);
+      this.pathBudget = PATH_SEARCHES_PER_STEP;
       if (dt > 0) {
         const prevDay = dayOf(this.clock.time);
         this.clock.time += dt;
@@ -953,8 +1215,12 @@ export class Engine implements SimEngine, SimHost {
         const day = dayOf(this.clock.time);
         if (day !== prevDay) this.onNewDay(day);
         this.updateNeedsAndBlocks(dt);
+        // Before movement: a rider who arrives this step waits in the queue until the next one.
+        this.stepRides();
         for (const rt of [...this.runtimes.values()]) this.think(rt);
         for (const rt of [...this.runtimes.values()]) this.moveVillager(rt, dt);
+        this.stepAnimals();
+        this.stepTrain();
         const minute = Math.floor(this.clock.time);
         if (minute > this.lastMinute) {
           this.lastMinute = minute;
@@ -963,6 +1229,7 @@ export class Engine implements SimEngine, SimHost {
         }
         this.updateEvents(dt);
       }
+      this.holdRidingPlayer();
       try {
         this.playerWorld.update(dt);
       } catch (err) {
@@ -975,7 +1242,234 @@ export class Engine implements SimEngine, SimHost {
       this.updateConversations();
     } finally {
       this.stepping = false;
+      this.pathBudget = Infinity;
     }
+  }
+
+  // ---------- v2 deterministic subsystems ----------
+
+  private stepAnimals(): void {
+    const now = this.clock.time;
+    const occupants: Point[] = [...this.runtimes.values()].map((r) => r.state.pos);
+    const player = this.player;
+    if (!player.inside) occupants.push(player.pos);
+    let change: AnimalStepResult;
+    try {
+      change = this.animals.step(now, occupants);
+    } catch (err) {
+      log.error('animal step failed', err);
+      return;
+    }
+    const crowId = this.animals.crowId();
+    const crow = crowId ? this.animals.all().find((a) => a.id === crowId) : undefined;
+    const near = !!crow && !player.inside && distance(player.pos, crow.pos) <= CROW_CAW_RADIUS;
+    if (near && !this.playerNearCrow) this.animals.caw('player');
+    this.playerNearCrow = near;
+    if (change.added.length > 0 || change.removed.length > 0 || change.updated.length > 0) {
+      this.broadcast({
+        type: 'animals.changed',
+        added: change.added,
+        removed: change.removed,
+        updated: change.updated,
+      });
+    }
+    for (const e of change.emotes)
+      this.broadcast({ type: 'animal.emote', animalId: e.animalId, emote: e.emote });
+    for (const t of change.toasts) {
+      const [icon = '🐾', ...rest] = t.split(' ');
+      this.toast(icon, rest.join(' '));
+    }
+    if (change.farmerNotes.length > 0) {
+      const farmer = [...this.runtimes.values()].find((r) => /farmer/i.test(r.profile.occupation));
+      for (const text of change.farmerNotes) {
+        if (farmer) this.observe(farmer.profile.id, { at: now, kind: 'observation', text, importance: 4 });
+      }
+    }
+    try {
+      this.playerWorld.onAnimalChange(change);
+    } catch (err) {
+      log.error('onAnimalChange failed', err);
+    }
+    this.bus.emit('animals.step', { time: now, change });
+  }
+
+  private stepTrain(): void {
+    if (!this.train) return;
+    const now = this.clock.time;
+    const changed = this.train.step(now);
+    for (const event of this.train.takeEvents()) {
+      try {
+        if (event.kind === 'arrived') this.trainArrived(now);
+        else if (event.kind === 'departing') this.trainDeparting(now);
+      } catch (err) {
+        log.error(`train ${event.kind} failed`, err);
+      }
+      this.bus.emit('train', event);
+    }
+    // setPassengers in the event handlers marks the train dirty; the second step picks that up.
+    const passengers = this.train.step(now);
+    if (changed || passengers) this.broadcast({ type: 'train.updated', train: this.train.state(now) });
+  }
+
+  private platformTiles(): Point[] {
+    const rect =
+      this.map.railway?.platform ?? this.map.locations.find((l) => l.kind === 'station')?.area ?? null;
+    if (!rect) return [];
+    const out: Point[] = [];
+    for (let y = rect.y; y < rect.y + rect.h; y++)
+      for (let x = rect.x; x < rect.x + rect.w; x++) if (isWalkable(this.map, x, y)) out.push({ x, y });
+    return out;
+  }
+
+  private onPlatform(pos: Point): boolean {
+    const rect = this.map.railway?.platform ?? this.map.locations.find((l) => l.kind === 'station')?.area;
+    if (!rect) return false;
+    const t = tileOf(pos);
+    return t.x >= rect.x && t.x < rect.x + rect.w && t.y >= rect.y && t.y < rect.y + rect.h;
+  }
+
+  private trainArrived(now: GameMinutes): void {
+    const profiles = this.playerWorld.onTrainArrived(now);
+    const tiles = this.platformTiles();
+    const added: VillagerId[] = [];
+    profiles.forEach((p, i) => {
+      const at =
+        tiles.length > 0 ? tiles[Math.floor(((i + 0.5) * tiles.length) / profiles.length)]! : undefined;
+      if (this.addVillager(p, at)) added.push(p.id);
+      else log.warn(`could not add visitor ${p.id}: village full or duplicate`);
+    });
+    this.train!.setPassengers({ arriving: added });
+  }
+
+  private trainDeparting(now: GameMinutes): void {
+    const station = this.map.locations.find((l) => l.kind === 'station');
+    const onPlatform = [...this.runtimes.values()]
+      .filter(
+        (r) =>
+          r.profile.visitor &&
+          (this.onPlatform(r.state.pos) || (!!station && r.state.locationId === station.id && r.arrived)),
+      )
+      .map((r) => r.profile.id);
+    const leaving = this.playerWorld.onTrainDeparting(now, onPlatform);
+    for (const id of leaving) this.removeVillager(id);
+    this.train!.setPassengers({ departing: leaving });
+  }
+
+  private stepRides(): void {
+    for (const ride of this.rides.step(this.clock.time)) this.broadcast({ type: 'ride.updated', ride });
+    for (const event of this.rides.takeEvents()) {
+      if (event.riderId === PLAYER_ID && event.kind === 'boarded') this.seatPlayer(event.rideId);
+      const rt = this.runtimes.get(event.riderId);
+      const loc = locationById(this.map.locations, event.rideId);
+      if (rt && loc) {
+        const name = loc.name.replace(/^the /i, '');
+        if (event.kind === 'boarded') {
+          this.setActivity(rt, `riding the ${name}`, RIDE_EMOJI[loc.id] ?? '🎡', 'acting');
+          for (const e of this.eventList) {
+            if (e.status !== 'happening' || e.locationId !== loc.id) continue;
+            const riders = this.eventRiders.get(e.id) ?? new Set<VillagerId>();
+            riders.add(rt.profile.id);
+            this.eventRiders.set(e.id, riders);
+          }
+        } else {
+          if (event.kind === 'finished') {
+            const gain = this.rides.spec(loc.id)?.funGain ?? 0;
+            rt.state.needs.fun = Math.min(100, rt.state.needs.fun + gain);
+            // One cycle per visit: the rider steps off and spends the rest of the block nearby.
+            const to = this.afterRidePlace(loc);
+            if (to) {
+              rt.doneRide = { rideId: loc.id, to: to.id };
+              this.goTo(rt, to.id, AFTER_RIDE_ACTIVITY, '😄', false);
+              continue;
+            }
+          }
+          rt.rodeAt = loc.id;
+          this.setActivity(rt, RIDE_FALLBACK_ACTIVITY, '👀', 'acting');
+        }
+      }
+      this.bus.emit('ride', event);
+    }
+  }
+
+  /** The player boards like a villager: off any walk-up path and onto a spot at the ride. */
+  private seatPlayer(rideId: LocationId): void {
+    const loc = locationById(this.map.locations, rideId);
+    if (!loc) return;
+    // PlayerWorld exposes its state read-only; the engine owns where riders are.
+    const p = this.playerWorld.state as PlayerState;
+    const riders = this.rides.all().find((r) => r.locationId === rideId)?.riders ?? [];
+    const spots = loc.spots?.length ? loc.spots : [loc.entry];
+    const seat = spots[Math.max(0, riders.indexOf(PLAYER_ID)) % spots.length]!;
+    p.path = [];
+    p.pos = { x: seat.x, y: seat.y };
+    this.broadcast({ type: 'player.updated', player: structuredClone(p) });
+  }
+
+  /** A riding player stays on the ride until the cycle ends; walks ordered meanwhile are dropped. */
+  private holdRidingPlayer(): void {
+    const p = this.playerWorld.state as PlayerState;
+    if (p.path.length === 0 || p.inside || !this.rides.isRiding(PLAYER_ID)) return;
+    p.path = [];
+    this.broadcast({ type: 'player.updated', player: structuredClone(p) });
+  }
+  private afterRidePlace(ride: Location): Location | null {
+    let best: Location | null = null;
+    let bestD = Infinity;
+    for (const l of this.map.locations) {
+      if (l.kind !== 'public' && l.kind !== 'food' && l.kind !== 'nature') continue;
+      // Zoo food stands sit next to the rides; a public place across town is a last resort.
+      const d =
+        Math.abs(l.entry.x - ride.entry.x) +
+        Math.abs(l.entry.y - ride.entry.y) +
+        (l.kind === 'food' ? 0 : 40);
+      if (d < bestD) {
+        best = l;
+        bestD = d;
+      }
+    }
+    return best;
+  }
+
+  private animalsNear(pos: Point): { id: string; species: AnimalSpecies; distance: number }[] {
+    const out: { id: string; species: AnimalSpecies; distance: number }[] = [];
+    for (const a of this.animals.all()) {
+      const d = distance(pos, a.pos);
+      if (d <= ANIMALS_NEARBY_RADIUS) out.push({ id: a.id, species: a.species, distance: d });
+    }
+    return out.sort((a, b) => a.distance - b.distance);
+  }
+
+  /** Eating at the burger joint or an ice cream truck (spec v2 §3.4); never waits for stock. */
+  private eatAt(rt: Runtime, loc: Location): void {
+    const needs = rt.state.needs;
+    if (loc.id.startsWith('ice_cream_truck')) {
+      this.playerWorld.consumeFood(loc.id, 'ice_cream');
+      needs.hunger = Math.min(100, needs.hunger + 10);
+      needs.fun = Math.min(100, needs.fun + 10);
+      this.bus.emit('food.eaten', { villagerId: rt.profile.id, venueId: loc.id, itemId: 'ice_cream' });
+    } else if (loc.id === 'burger_joint') {
+      const fromStock = this.playerWorld.consumeFood(loc.id, 'burger');
+      needs.hunger = Math.min(100, needs.hunger + 50);
+      this.bus.emit('food.eaten', {
+        villagerId: rt.profile.id,
+        venueId: loc.id,
+        itemId: fromStock ? 'burger' : 'veggie_burger',
+      });
+    }
+  }
+
+  /** Residents in the profile list but not in the save (Laude and Franzi for a v1 save) move in at home. */
+  private moveIn(restore: SaveData | null, profiles: readonly VillagerProfile[]): void {
+    if (!restore) return;
+    const names = profiles
+      .filter((p) => !p.transient && this.runtimes.has(p.id) && !restore.villagers.some((v) => v.id === p.id))
+      .map((p) => p.name.split(' ')[0]!);
+    if (names.length === 0) return;
+    const who = names.length === 1 ? names[0]! : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
+    const where = this.map.locations.some((l) => l.id === 'bakery') ? ' near the bakery' : '';
+    // Sent on the first step: nobody listens while the engine is being built.
+    this.deferred.push({ type: 'toast', icon: '🏡', text: `${who} moved in${where}!` });
+    this.deferred.push({ type: 'log', level: 'info', text: `${who} moved in${where}.`, time: this.now() });
   }
 
   private onNewDay(day: number): void {
@@ -1011,6 +1505,7 @@ export class Engine implements SimEngine, SimHost {
 
   private think(rt: Runtime): void {
     if (rt.state.status === 'talking' || rt.state.conversationId) return;
+    if (this.catchTrain(rt)) return;
     let intent: Intent;
     try {
       intent = rt.mind.update(this.buildView(rt));
@@ -1021,16 +1516,62 @@ export class Engine implements SimEngine, SimHost {
     this.applyIntent(rt, intent);
   }
 
+  /**
+   * A visitor whose train leaves soon walks to the station whatever its plan says (spec v2 §5.2:
+   * stays are 1–3 days). The lead covers the walk from where it is, so a late plan block or a
+   * far-away event cannot make it miss the train.
+   */
+  private leavingSoon(rt: Runtime): boolean {
+    if (!rt.profile.visitor) return false;
+    const info = this.playerWorld.visitors.info(rt.profile.id);
+    const station = this.map.locations.find((l) => l.kind === 'station');
+    if (!info || !station) return false;
+    const walk =
+      (Math.abs(station.entry.x - rt.state.pos.x) + Math.abs(station.entry.y - rt.state.pos.y)) /
+      WALK_TILES_PER_GAME_MINUTE;
+    return this.clock.time >= info.departsAt - Math.max(VISITOR_STATION_LEAD_MINUTES, walk * 1.5 + 15);
+  }
+
+  private catchTrain(rt: Runtime): boolean {
+    if (!this.leavingSoon(rt)) return false;
+    const station = this.map.locations.find((l) => l.kind === 'station')!;
+    if (rt.target?.locationId === station.id) {
+      if (rt.arrived && rt.state.activity.text !== TRAIN_WAIT_ACTIVITY)
+        this.setActivity(rt, TRAIN_WAIT_ACTIVITY, '🧳', 'acting');
+      return true;
+    }
+    rt.doneRide = null;
+    this.goTo(rt, station.id, TRAIN_WAIT_ACTIVITY, '🧳', false);
+    return true;
+  }
+
   private applyIntent(rt: Runtime, intent: Intent): void {
     const s = rt.state;
+    // A boarded rider stays on for the whole cycle; the next intent applies once it ends.
+    if (this.rides.isRiding(rt.profile.id)) return;
+    if (rt.doneRide) {
+      const done = rt.doneRide;
+      const atRide = intent.type === 'act' && s.locationId === done.rideId;
+      if ((intent.type === 'goto' && intent.locationId === done.rideId) || atRide) {
+        this.goTo(rt, done.to, AFTER_RIDE_ACTIVITY, '😄', false);
+        return;
+      }
+      if (
+        intent.type !== 'wait' &&
+        intent.type !== 'talk' &&
+        !(intent.type === 'act' && s.locationId === done.to)
+      )
+        rt.doneRide = null;
+      else if (intent.type === 'act') return;
+    }
     switch (intent.type) {
       case 'goto':
-        this.goTo(rt, intent.locationId, intent.activity, intent.emoji ?? '🚶', false);
+        this.goTo(rt, intent.locationId, intent.activity, intent.emoji ?? '🚶', false, true);
         break;
       case 'sleep':
-        this.goTo(rt, rt.profile.homeId, 'sleeping', '💤', true);
+        this.goTo(rt, rt.profile.homeId, 'sleeping', '💤', true, true);
         break;
-      case 'act':
+      case 'act': {
         s.path = [];
         rt.target = {
           locationId: s.locationId,
@@ -1040,8 +1581,15 @@ export class Engine implements SimEngine, SimHost {
           sleep: false,
         };
         rt.arrived = true;
+        const loc = s.locationId ? locationById(this.map.locations, s.locationId) : null;
+        if (loc?.kind === 'ride') {
+          // Queue, ride and "watching the rides" own the activity while the villager stays here.
+          if (!this.rides.rideOf(rt.profile.id) && rt.rodeAt !== loc.id) this.enterRide(rt, loc);
+          break;
+        }
         this.setActivity(rt, intent.activity, intent.emoji ?? '✨', 'acting');
         break;
+      }
       case 'talk':
         if (!this.isBusy(rt)) {
           const other = this.runtimes.get(intent.targetId);
@@ -1054,7 +1602,14 @@ export class Engine implements SimEngine, SimHost {
     }
   }
 
-  private goTo(rt: Runtime, locationId: string, activity: string, emoji: string, sleep: boolean): void {
+  private goTo(
+    rt: Runtime,
+    locationId: string,
+    activity: string,
+    emoji: string,
+    sleep: boolean,
+    deferrable = false,
+  ): void {
     const s = rt.state;
     const loc =
       locationById(this.map.locations, locationId) ?? locationById(this.map.locations, rt.profile.homeId);
@@ -1063,10 +1618,21 @@ export class Engine implements SimEngine, SimHost {
       rt.target.activity = activity;
       rt.target.emoji = emoji;
       rt.target.sleep = sleep;
-      if (rt.arrived) this.setActivity(rt, activity, emoji, this.arrivedStatus(rt, loc));
+      const atRide = loc.kind === 'ride' && (this.rides.rideOf(rt.profile.id) || rt.rodeAt === loc.id);
+      if (rt.arrived && !atRide) this.setActivity(rt, activity, emoji, this.arrivedStatus(rt, loc));
       return;
     }
     const spot = this.pickSpot(loc, rt.profile.id) ?? loc.entry;
+    const cached = this.paths.has(s.pos, spot);
+    // A villager deferred PATH_MAX_DEFERRALS steps in a row searches anyway, so nobody starves.
+    if (deferrable && !cached && this.pathBudget <= 0 && rt.pathDeferrals < PATH_MAX_DEFERRALS) {
+      rt.pathDeferrals++;
+      return;
+    }
+    rt.pathDeferrals = 0;
+    if (!cached) this.pathBudget--;
+    this.rides.leave(rt.profile.id);
+    rt.rodeAt = null;
     let path = this.paths.find(s.pos, spot);
     if (!path && (spot.x !== loc.entry.x || spot.y !== loc.entry.y)) path = this.paths.find(s.pos, loc.entry);
     if (!path) {
@@ -1097,13 +1663,28 @@ export class Engine implements SimEngine, SimHost {
     return 'acting';
   }
 
+  /** Join the ride's queue, or watch when it is closed or full of waiting riders. */
+  private enterRide(rt: Runtime, loc: Location): void {
+    if (this.rides.join(rt.profile.id, loc.id)) {
+      this.setActivity(rt, `waiting for the ${loc.name.replace(/^the /i, '')}`, '⏳', 'idle');
+    } else {
+      rt.rodeAt = loc.id;
+      this.setActivity(rt, RIDE_FALLBACK_ACTIVITY, '👀', 'acting');
+    }
+  }
+
   private arrive(rt: Runtime): void {
     const t = rt.target;
     if (!t) return;
     rt.arrived = true;
     const loc = t.locationId ? locationById(this.map.locations, t.locationId) : null;
     rt.state.locationId = t.locationId;
-    this.setActivity(rt, t.activity, t.emoji, this.arrivedStatus(rt, loc));
+    if (loc?.kind === 'ride' && !t.sleep) {
+      this.enterRide(rt, loc);
+    } else {
+      this.setActivity(rt, t.activity, t.emoji, this.arrivedStatus(rt, loc));
+      if (loc?.kind === 'food' && !t.sleep) this.eatAt(rt, loc);
+    }
     if (t.locationId && !t.sleep) {
       try {
         rt.mind.onArrive(this.buildView(rt), t.locationId);
@@ -1151,7 +1732,13 @@ export class Engine implements SimEngine, SimHost {
   }
 
   private isBusy(rt: Runtime): boolean {
-    return rt.state.status === 'sleeping' || rt.state.status === 'talking' || !!rt.state.conversationId;
+    return (
+      this.leavingSoon(rt) ||
+      rt.state.status === 'sleeping' ||
+      rt.state.status === 'talking' ||
+      !!rt.state.conversationId ||
+      this.rides.isRiding(rt.profile.id)
+    );
   }
 
   private pickSpot(loc: Location | null, villagerId: VillagerId): Point | null {
@@ -1264,15 +1851,24 @@ export class Engine implements SimEngine, SimHost {
         now - rt.lastConversationEnd >= VILLAGER_CONVERSATION_COOLDOWN,
     );
     this.rng.shuffle(free);
+    // Visitors who have not met a resident yet go first and look a little further (spec v2 §5.2:
+    // every visitor talks with residents), so a hotel-bound guest is not left to other guests.
+    const lonely = (rt: Runtime) => !!rt.profile.visitor && !this.visitorsMet.has(rt.profile.id);
+    free.sort((x, y) => Number(lonely(y)) - Number(lonely(x)));
     const used = new Set<Runtime>();
     for (const a of free) {
       if (used.has(a)) continue;
-      for (const b of free) {
+      const partners = lonely(a)
+        ? [...free].sort((x, y) => Number(!!x.profile.visitor) - Number(!!y.profile.visitor))
+        : free;
+      for (const b of partners) {
         if (a === b || used.has(b)) continue;
         const loc = a.state.locationId ? locationById(this.map.locations, a.state.locationId) : null;
         const sameSmall =
           !!loc && a.state.locationId === b.state.locationId && (loc.kind === 'shop' || loc.kind === 'house');
-        if (!sameSmall && distance(a.state.pos, b.state.pos) > CHAT_RADIUS) continue;
+        const meet = (lonely(a) && !b.profile.visitor) || (lonely(b) && !a.profile.visitor);
+        const radius = meet ? NEARBY_RADIUS : CHAT_RADIUS;
+        if (!sameSmall && distance(a.state.pos, b.state.pos) > radius) continue;
         const lastTalked = a.state.relationships[b.profile.id]?.lastTalkedAt;
         if (lastTalked !== undefined && now - lastTalked < this.config.cognition.pairCooldownMinutes)
           continue;
@@ -1284,8 +1880,9 @@ export class Engine implements SimEngine, SimHost {
         } catch (err) {
           log.error('wantsToTalkTo failed', err);
         }
-        // Mark the pair as "considered" so a refusal does not get re-rolled every minute.
-        this.touchPair(a, b, now);
+        // Mark the pair as "considered" so a refusal does not get re-rolled every minute. A guest
+        // meeting its first resident may ask again next minute: the refusal costs no LLM call.
+        if (!meet) this.touchPair(a, b, now);
         if (!willing) continue;
         if (this.startConversation(a.profile.id, b.profile.id)) {
           used.add(a);
@@ -1426,9 +2023,17 @@ export class Engine implements SimEngine, SimHost {
         this.eventPresence.set(e.id, presence);
       }
       if (loc) {
+        const riders = this.eventRiders.get(e.id);
         for (const rt of this.runtimes.values()) {
           if (rt.state.status === 'sleeping') continue;
-          if (isAt(loc, rt.state.pos)) presence.set(rt.profile.id, (presence.get(rt.profile.id) ?? 0) + dt);
+          const id = rt.profile.id;
+          // At a ride, queueing, riding, and the after-ride chat of someone who boarded during
+          // this event all count as taking part (spec v2 §7 dates at rides).
+          const taking =
+            isAt(loc, rt.state.pos) ||
+            (loc.kind === 'ride' &&
+              (this.rides.rideOf(id) === loc.id || (rt.doneRide?.rideId === loc.id && !!riders?.has(id))));
+          if (taking) presence.set(id, (presence.get(id) ?? 0) + dt);
         }
         if (isAt(loc, this.player.pos)) presence.set(PLAYER_ID, (presence.get(PLAYER_ID) ?? 0) + dt);
       }
@@ -1445,6 +2050,7 @@ export class Engine implements SimEngine, SimHost {
     e.attendees = attendees;
     e.status = 'done';
     this.eventPresence.delete(e.id);
+    this.eventRiders.delete(e.id);
     const names = attendees.map((id) => this.nameOf(id));
     const who = [...names, ...(playerAttended ? [this.player.name] : [])];
     for (const id of attendees) {
@@ -1513,7 +2119,29 @@ export class Engine implements SimEngine, SimHost {
       events: this.eventList.filter((e) => e.status !== 'cancelled' && e.end >= now - MINUTES_PER_DAY),
       villagerNames: names,
       weather: { ...this.playerWorld.weather },
+      animalsNearby: this.animalsNear(rt.state.pos),
+      romances: this.romanceList.filter((r) => r.pair.includes(rt.profile.id)),
+      noticesInReach: this.noticesInReach(rt),
+      lettersAtHome: this.playerWorld.post
+        .letters()
+        .filter((l) => l.to === rt.profile.id && l.status === 'delivered'),
+      ...(rt.profile.id === LAUDE_ID
+        ? { searchKeep: (query: string, k: number) => this.playerWorld.post.keep.search(query, k) }
+        : {}),
+      ...(rt.profile.visitor ? visitorField(this.playerWorld.visitors.info(rt.profile.id)) : {}),
     };
+  }
+
+  /** Villagers read the board within 3 tiles of it, or when their plan block is at the board or the post office. */
+  private noticesInReach(rt: Runtime): readonly Notice[] {
+    const notices = this.playerWorld.post.notices();
+    if (notices.length === 0) return [];
+    const board = locationById(this.map.locations, NOTICE_BOARD_ID);
+    const near = !!board && distanceToArea(board, rt.state.pos) <= NOTICE_READ_RADIUS;
+    const blockLoc = currentBlock(rt.state.plan, this.now())?.locationId;
+    const planned =
+      blockLoc === NOTICE_BOARD_ID || (blockLoc === POST_OFFICE_ID && rt.state.locationId === POST_OFFICE_ID);
+    return near || planned ? notices : [];
   }
 
   private frameOf(rt: Runtime): VillagerFrame {
@@ -1544,7 +2172,14 @@ export class Engine implements SimEngine, SimHost {
       if (forceAll || this.lastFrames.get(f.id) !== key) frames.push(f);
       this.lastFrames.set(f.id, key);
     }
-    this.broadcast({ type: 'tick', time: this.clock.time, speed: this.clock.speed, villagers: frames });
+    const animals = this.animals.frames();
+    this.broadcast({
+      type: 'tick',
+      time: this.clock.time,
+      speed: this.clock.speed,
+      villagers: frames,
+      ...(animals.length > 0 ? { animals } : {}),
+    });
   }
 
   /** All frames (used by tests and new clients). */
@@ -1653,6 +2288,8 @@ export class Engine implements SimEngine, SimHost {
       memories: structuredClone(memories),
       relationships: structuredClone(rt.state.relationships),
       ...(conv ? { currentConversation: structuredClone(conv) } : {}),
+      romance: structuredClone(this.romanceOf(villagerId)),
+      ...(rt.profile.visitor ? visitorField(this.playerWorld.visitors.info(villagerId)) : {}),
     };
     return [msg];
   }
@@ -1705,6 +2342,60 @@ export class Engine implements SimEngine, SimHost {
    * The villager answers the player (WP8 already broadcast the player's line). The villager stops
    * and faces the player until a few minutes after its last reply.
    */
+  /** The owner stops for up to GREETING_HOLD_MINUTES (👋) and greets the player via `mind.greetVisitor` (spec v2 §6). */
+  private requestGreeting(id: VillagerId, visit: HouseVisit): Promise<{ reply: string; source: Provenance }> {
+    const rt = this.runtimes.get(id);
+    if (!rt?.mind.greetVisitor) return Promise.reject(new Error(`${id} cannot greet`));
+    const now = this.now();
+    if (!rt.state.conversationId && rt.state.status !== 'sleeping') {
+      const conversation: Conversation = {
+        id: `c${++this.seq}`,
+        participants: [PLAYER_ID, id],
+        locationId: rt.state.locationId,
+        startedAt: now,
+        messages: [],
+        status: 'active',
+      };
+      this.active.set(conversation.id, {
+        conversation,
+        sent: 0,
+        started: true,
+        withPlayer: true,
+        publicId: playerConversationId(id),
+        pendingReplies: 0,
+        holdUntil: now + GREETING_HOLD_MINUTES,
+      });
+      rt.state.conversationId = conversation.id;
+      rt.state.status = 'talking';
+      rt.state.path = [];
+      rt.approach = null;
+      rt.target = null;
+      rt.arrived = false;
+      rt.state.activity = {
+        text: `greeting ${this.player.name}`,
+        emoji: '👋',
+        locationId: rt.state.locationId,
+        since: now,
+      };
+      const p = this.player.pos;
+      rt.state.facing = facingFor(p.x - rt.state.pos.x, p.y - rt.state.pos.y, rt.state.facing);
+    }
+    let reply: Promise<{ reply: string; source: Provenance }>;
+    try {
+      reply = rt.mind.greetVisitor(this.buildView(rt), visit);
+    } catch (err) {
+      reply = Promise.reject(err);
+    }
+    const shown = reply.then((r) => {
+      const live = this.runtimes.get(id);
+      const text = typeof r?.reply === 'string' ? r.reply.trim() : '';
+      if (live && text) live.bubble = { text, untilMs: Date.now() + BUBBLE_MS, untilGame: this.now() + 10 };
+      return r;
+    });
+    this.track(shown.catch(() => undefined));
+    return shown;
+  }
+
   private requestPlayerReply(req: PlayerReplyRequest): void {
     const rt = this.runtimes.get(req.villagerId);
     if (!rt) return;
@@ -1817,4 +2508,4 @@ function settle(): Promise<void> {
   return new Promise((r) => setImmediate(r));
 }
 
-export const createSimEngine = (opts: SimEngineOptions): Engine => new Engine(opts);
+export const createSimEngine = (opts: EngineOptions): Engine => new Engine(opts);

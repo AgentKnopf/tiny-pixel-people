@@ -48,6 +48,26 @@ describe('needs', () => {
     ).toBeNull();
   });
 
+  it('sends a hungry villager to the nearest open food place, or home when that is closer', () => {
+    const needs = { hunger: NEED_LOW - 5, energy: 80, social: 80, fun: 80 };
+    const burger = locations.find((l) => l.id === 'burger_joint')!;
+    const block = { activity: 'look around', locationId: 'hotel' };
+    const noon = 12 * 60;
+    expect(
+      urgentNeedFix(needs, block, locations, 'hotel', { pos: burger.entry, minute: noon }),
+    ).toMatchObject({
+      locationId: 'burger_joint',
+      activity: expect.stringMatching(/bite/),
+    });
+    // The zoo food is closed at night; the hotel guest eats a snack in their room instead.
+    const night = urgentNeedFix(needs, block, locations, 'hotel', { pos: burger.entry, minute: 23 * 60 });
+    expect(night?.locationId).not.toBe('burger_joint');
+    const home = locations.find((l) => l.id === 'house_01')!;
+    expect(
+      urgentNeedFix(needs, block, locations, 'house_01', { pos: home.entry, minute: noon })?.locationId,
+    ).toBe('house_01');
+  });
+
   it('sends a hungry villager to the bakery in the sim', async () => {
     const { engine } = createSimTestWorld({ startAt: '09:00', config: { sim: { villagers: 10 } } });
     const tom = engine.villager('tom')!;

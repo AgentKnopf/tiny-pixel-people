@@ -112,7 +112,7 @@ describe('AC1: one-command start (npm start entry point, mock provider)', () => 
     expect(state.time).toMatch(/^\d{2}:\d{2}$/);
     expect(state.agents.length).toBeGreaterThan(0);
     const h = await hello(s.url);
-    expect(h.protocolVersion).toBe(1);
+    expect(h.protocolVersion).toBe(2);
     expect(h.map.width).toBeGreaterThan(0);
     expect(h.map.scenes.length).toBeGreaterThan(0);
   }, 40_000);
