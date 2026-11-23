@@ -37,7 +37,7 @@ import type {
 import { isTrivialObservation } from './importance.ts';
 import { asArray, asBool, asNumber, asRecord, asString, clamp, parseClockLoose, pick } from './json.ts';
 import { extractKeywords, keywordOverlap } from './keywords.ts';
-import { ask } from './llm.ts';
+import { ask, loadTracker, type AskResult, type AskSpec, type LoadLevel } from './llm.ts';
 import { MemoryStore } from './memory.ts';
 import {
   blockAt,
@@ -81,6 +81,21 @@ import { villageFor, type Village } from './village.ts';
 const log = createLogger('mind');
 
 const SUMMARY_RE = /^Summary of day (\d+):/;
+
+/**
+ * Queue priorities set by cognition (TASK_PRIORITY has the defaults). On a slow model the order
+ * decides what gets done at all: today's late plan first, then the daily event and the answers
+ * it needs, then dialogue, then background work.
+ */
+export const PRIORITY = {
+  planToday: 105,
+  eventPropose: 95,
+  eventDecide: 92,
+  noteReply: 108,
+  planRetry: 90,
+  planTomorrow: 70,
+  reflect: 20,
+} as const;
 
 export class Mind implements VillagerMind {
   readonly id: VillagerId;
@@ -174,6 +189,8 @@ export class Mind implements VillagerMind {
 
     const day = planDayFor(this.window, now);
     this.ensurePlan(view, day);
+    // Plan tomorrow in the evening, while the model is less busy than at the morning rush.
+    if (mod >= planEnd(this.window) - 90 && this.load() !== 'overloaded') this.prepareDay(view, day + 1);
     this.syncEvents(view, day);
     this.markDone(mod);
     if (view.self.locationId === this.profile.homeId) this.readNotes(view);
@@ -227,9 +244,16 @@ export class Mind implements VillagerMind {
     const last = this.lastTalkedAt.get(otherId) ?? view.self.relationships[otherId]?.lastTalkedAt;
     if (last !== undefined && view.now - last < this.settings.pairCooldownMinutes) return false;
     const affinity = view.self.relationships[otherId]?.affinity ?? 0;
+    const other = this.village.minds.get(otherId);
+    const news =
+      this.newsFor(otherId, view.now, 1).length > 0 || (other?.newsFor(this.id, view.now, 1).length ?? 0) > 0;
+    // A slow model can only carry a few conversations: keep the ones that spread news.
+    const load = this.load();
+    if (load === 'overloaded') return news;
     let p = 0.3 + 0.04 * affinity;
-    if (selectNews(this.memory.all(), otherId, view.now, 1).length > 0) p += 0.35;
+    if (news) p += 0.35;
     if (view.self.needs.social < 40) p += 0.15;
+    if (load === 'busy' && !news) p *= 0.3;
     return this.deps.random() < clamp(p, 0.05, 0.95);
   }
 
@@ -270,7 +294,7 @@ export class Mind implements VillagerMind {
       view.self.activity.text || 'going about your day',
       input.mode,
     );
-    const res = await ask(this.deps.queue, {
+    const res = await this.ask({
       task: 'player.reply',
       ...p,
       meta: { ...this.baseMeta(view), text, mode: input.mode, itemId: input.itemId, liked: input.liked },
@@ -309,6 +333,8 @@ export class Mind implements VillagerMind {
       !explicit &&
       this.settings.importanceMode === 'llm' &&
       !isTrivialObservation(m.kind, m.text) &&
+      // Routine perception keeps its heuristic score; only notable ones are worth a model call.
+      !(m.kind === 'observation' && m.importance <= 2) &&
       m.kind !== 'plan' &&
       m.kind !== 'summary' &&
       m.kind !== 'reflection'
@@ -374,6 +400,15 @@ export class Mind implements VillagerMind {
     return this.pending.has(key);
   }
 
+  /** How far behind the model is; optional LLM work is skipped when it is not 'normal'. */
+  load(): LoadLevel {
+    return loadTracker(this.deps.queue).level(this.deps.now());
+  }
+
+  ask<T>(spec: AskSpec<T>): Promise<AskResult<T>> {
+    return ask(this.deps.queue, { now: () => this.deps.now(), ...spec });
+  }
+
   private baseMeta(view: WorldView | null): Record<string, unknown> {
     return {
       villagerId: this.id,
@@ -395,9 +430,11 @@ export class Mind implements VillagerMind {
     const oldest = this.ratingQueue[0]!.createdAt;
     if (this.ratingQueue.length < this.settings.importanceBatchSize && now - oldest < 30) return;
     const batch = this.ratingQueue.splice(0, this.settings.importanceBatchSize);
+    // Under load the heuristic scores stay.
+    if (this.load() !== 'normal') return;
     this.job('importance', async () => {
       const p = importancePrompt(this.profile, batch);
-      const res = await ask(this.deps.queue, {
+      const res = await this.ask({
         task: 'importance.rate',
         ...p,
         meta: {
@@ -442,7 +479,7 @@ export class Mind implements VillagerMind {
     }
     if (this.plan?.day === day) {
       const attempts = this.planAttempts.get(day) ?? 0;
-      if (this.plan.source === 'fallback' && attempts < 2 && view.now - this.plan.createdAt >= 60)
+      if (this.plan.source === 'fallback' && attempts < 3 && view.now - this.plan.createdAt >= 60 * attempts)
         this.requestDayPlan(view, day);
       return;
     }
@@ -511,7 +548,7 @@ export class Mind implements VillagerMind {
         ...(view.weather ? { weather: view.weather } : {}),
         allowProposal,
       });
-      const res = await ask(this.deps.queue, {
+      const res = await this.ask({
         task: 'plan.day',
         ...p,
         meta: { ...this.baseMeta(view), day, acceptedEvents },
@@ -520,8 +557,15 @@ export class Mind implements VillagerMind {
         shape:
           '{"summary":"...","blocks":[{"start":"07:00","end":"09:00","location":"<id>","activity":"...","emoji":"🙂"}]}',
         dedupeKey: `plan:${this.id}:day${day}`,
+        // Today's plan is late already (the villager runs on the fallback): ahead of everything.
+        priority:
+          day > dayOf(this.deps.now())
+            ? PRIORITY.planTomorrow
+            : (this.planAttempts.get(day) ?? 0) > 1
+              ? PRIORITY.planRetry
+              : PRIORITY.planToday,
         temperature: this.settings.temperature,
-        maxTokens: 700,
+        maxTokens: 320,
       });
       const parsed = res.value;
       if (!parsed) return;
@@ -570,6 +614,10 @@ export class Mind implements VillagerMind {
     const end = planEnd(this.window);
     if (mod > end - 60 || this.pending.has('plan.revise')) return;
     this.replanReason = null;
+    if (this.load() !== 'normal') {
+      this.goShareNews(view, mod);
+      return;
+    }
     this.lastRevisionAt = view.now;
     this.job('plan.revise', async () => {
       const plan = this.plan!;
@@ -585,7 +633,7 @@ export class Mind implements VillagerMind {
         ...(view.weather ? { weather: view.weather } : {}),
         endOfDay: end,
       });
-      const res = await ask(this.deps.queue, {
+      const res = await this.ask({
         task: 'plan.revise',
         ...p,
         meta: { ...this.baseMeta(view), plan, reason },
@@ -611,6 +659,30 @@ export class Mind implements VillagerMind {
         source: 'llm',
       });
       if (res.value.summary) this.world.setThought(res.value.summary);
+    });
+  }
+
+  /** Without a model to re-plan: spend a little while where people meet, to pass the news on. */
+  private goShareNews(view: WorldView, mod: number): void {
+    const place = socialPlace(view.locations);
+    if (!place || !this.plan || mod + 60 > planEnd(this.window)) return;
+    const start = mod + 5;
+    if (this.plan.blocks.some((b) => (b.eventId || b.taskId) && b.start < start + 45 && b.end > start))
+      return;
+    this.lastRevisionAt = view.now;
+    this.setPlan({
+      ...this.plan,
+      blocks: normalizeBlocks(
+        insertBlock(this.plan.blocks, {
+          start,
+          end: start + 45,
+          locationId: place.id,
+          activity: 'share the news with friends',
+          emoji: '💬',
+        }),
+        this.window,
+        this.profile.homeId,
+      ),
     });
   }
 
@@ -678,6 +750,8 @@ export class Mind implements VillagerMind {
     if (b.importanceSinceReflection < this.settings.reflectionThreshold) return;
     if (b.lastReflectionAt !== null && view.now - b.lastReflectionAt < this.settings.reflectionMinGapMinutes)
       return;
+    // Reflection waits until the model has time again (the importance keeps adding up).
+    if (this.load() !== 'normal') return;
     b.importanceSinceReflection = 0;
     b.lastReflectionAt = view.now;
     this.job('reflect', async () => {
@@ -687,7 +761,7 @@ export class Mind implements VillagerMind {
         .slice(-20);
       let sources = recent;
       if (this.settings.reflectionMode === 'two-step') {
-        const q = await ask(this.deps.queue, {
+        const q = await this.ask({
           task: 'reflect.questions',
           ...reflectQuestionsPrompt(this.profile, recent),
           meta: { ...this.baseMeta(view), memories: recent.map((m) => ({ text: m.text })) },
@@ -709,13 +783,15 @@ export class Mind implements VillagerMind {
         }
       }
       if (sources.length === 0) return;
-      const res = await ask(this.deps.queue, {
+      const res = await this.ask({
         task: 'reflect',
         ...reflectPrompt(this.profile, sources),
         meta: { ...this.baseMeta(view), memories: sources.map((m) => ({ text: m.text })) },
         parse: (raw) => parseInsights(raw, sources),
         fallback: () => [],
         shape: '{"insights":[{"text":"...","because":[1,2]}]}',
+        priority: PRIORITY.reflect,
+        deadline: view.now + 180,
         temperature: this.settings.temperature,
         maxTokens: 300,
       });
@@ -812,7 +888,7 @@ export class Mind implements VillagerMind {
         overlapping.map((b) => b.activity).join('; '),
         memories,
       );
-      const res = await ask(this.deps.queue, {
+      const res = await this.ask({
         task: 'event.decide',
         ...p,
         meta: { ...this.baseMeta(view), event: e, affinity },
@@ -831,6 +907,10 @@ export class Mind implements VillagerMind {
               : 'Not really my thing.',
         }),
         shape: '{"accept":true,"reason":"..."}',
+        priority: PRIORITY.eventDecide,
+        offline: this.load() === 'overloaded',
+        deadline: Math.min(e.start - 30, view.now + (this.load() === 'normal' ? 120 : 45)),
+        noRepair: this.load() !== 'normal',
         temperature: this.settings.temperature,
         maxTokens: 100,
       });
@@ -899,7 +979,7 @@ export class Mind implements VillagerMind {
         view.locations,
         villagers.slice(0, 8).map((v) => v.name),
       );
-      const res = await ask(this.deps.queue, {
+      const res = await this.ask({
         task: 'event.propose',
         ...p,
         meta: { ...this.baseMeta(view), villagers },
@@ -907,8 +987,10 @@ export class Mind implements VillagerMind {
         fallback: () => fallbackProposal(this.profile, view),
         shape:
           '{"title":"...","description":"...","location":"<id>","start":"15:00","durationMinutes":120,"invitees":["Name"]}',
+        priority: PRIORITY.eventPropose,
+        deadline: view.now + (this.load() === 'normal' ? 120 : 45),
         temperature: this.settings.temperature,
-        maxTokens: 250,
+        maxTokens: 200,
       });
       this.createEvent(res.value, this.lastView ?? view);
     });
@@ -1039,7 +1121,7 @@ export class Mind implements VillagerMind {
   private replyToNote(view: WorldView, note: DoorNote, author: string): void {
     this.job(`note.reply:${note.id}`, async () => {
       const memories = await this.memory.retrieve(note.text, view.now, { k: 5 });
-      const res = await ask(this.deps.queue, {
+      const res = await this.ask({
         task: 'note.reply',
         ...noteReplyPrompt(this.profile, author, note.text, memories),
         meta: { ...this.baseMeta(view), noteText: note.text, noteId: note.id, authorId: note.authorId },
@@ -1048,6 +1130,7 @@ export class Mind implements VillagerMind {
         acceptText: (t) => cleanLine(t, 400),
         fallback: () => fallbackNoteReply(this.profile, note.text),
         shape: '{"reply":"..."}',
+        priority: PRIORITY.noteReply,
         temperature: this.settings.temperature,
         maxTokens: 200,
       });
@@ -1083,7 +1166,7 @@ export class Mind implements VillagerMind {
       resolveLocation(text, view.locations, this.profile.homeId) ??
       blockAt(this.plan, mod)?.locationId ??
       this.profile.homeId;
-    const res = await ask(this.deps.queue, {
+    const res = await this.ask({
       task: 'task.decide',
       ...taskDecidePrompt(
         this.profile,
@@ -1165,12 +1248,12 @@ export class Mind implements VillagerMind {
       this.lastArchiveDay = nextDay;
       this.memory.archiveOld(now);
     }
-    if (
-      !this.prepared.has(nextDay) &&
-      this.plan?.day !== nextDay &&
-      (this.planAttempts.get(nextDay) ?? 0) === 0
-    )
-      this.requestDayPlan(view, nextDay);
+    this.prepareDay(view, nextDay);
+  }
+
+  private prepareDay(view: WorldView, day: number): void {
+    if (!this.prepared.has(day) && this.plan?.day !== day && (this.planAttempts.get(day) ?? 0) === 0)
+      this.requestDayPlan(view, day);
   }
 
   private summarizeDay(view: WorldView, day: number, mems: Memory[]): void {
@@ -1179,7 +1262,7 @@ export class Mind implements VillagerMind {
         .sort((a, b) => b.importance - a.importance || a.createdAt - b.createdAt)
         .slice(0, 25);
       top.sort((a, b) => a.createdAt - b.createdAt);
-      const res = await ask(this.deps.queue, {
+      const res = await this.ask({
         task: 'day.summarize',
         ...daySummaryPrompt(this.profile, day, top),
         meta: {
@@ -1200,6 +1283,7 @@ export class Mind implements VillagerMind {
           );
         },
         shape: '{"summary":"..."}',
+        offline: this.load() !== 'normal',
         temperature: 0.3,
         maxTokens: 220,
       });
