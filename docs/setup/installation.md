@@ -34,8 +34,13 @@ whether the model answered its health check:
 ```
 INFO  [main] config: /path/to/tiny-pixel-people/config.json
 INFO  [main] LLM ollama/qwen2.5:7b: ...
+INFO  [main] resuming save "default" from /path/to/tiny-pixel-people/saves/default
+INFO  [main] world: 48x30 tiles, 10 villagers
 INFO  [main] Tiny Pixel People running at http://127.0.0.1:3000
 ```
+
+Without a `config.json` the first line reads `config: defaults (no config.json)`. The `resuming save`
+line appears only when there is a save to load.
 
 Stop the server with `Ctrl+C`; it saves the game first.
 
@@ -43,10 +48,10 @@ Stop the server with `Ctrl+C`; it saves the game first.
 
 Pass options after `--`:
 
-| Option            | Meaning                                                                 |
-| ----------------- | ----------------------------------------------------------------------- |
-| `--config <path>` | Use this config file instead of `./config.json` (same as `TPP_CONFIG`). |
-| `--new`           | Start a new village instead of loading the saved one.                   |
+| Option            | Meaning                                                                          |
+| ----------------- | -------------------------------------------------------------------------------- |
+| `--config <path>` | Use this config file instead of `./config.json` (same as `TPP_CONFIG`).          |
+| `--new`           | Start a new village and ignore the saved one; the next save overwrites the slot. |
 
 ```sh
 npm start -- --config ./configs/openrouter.json

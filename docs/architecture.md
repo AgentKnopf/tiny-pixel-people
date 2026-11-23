@@ -179,7 +179,9 @@ One WebSocket at `/ws`, JSON text frames with a `type` field (`PROTOCOL_VERSION 
   a `requestId`, echoed in an `error` reply.
 
 HTTP endpoints: `GET /` (the built client), `GET /api/health`, `GET /api/state` (JSON snapshot),
-`GET /api/conversations?since=`, `GET /api/rumors`, `GET /api/replay` (download `replay.jsonl`).
+`GET /api/conversations?since=`, `GET /api/rumors`, `GET /api/catalog` (items and decorations for
+the UI), `GET /api/replay` (download `replay.jsonl`, 404 until the first save). Other `/api/*` paths
+return 404; every other path serves the client.
 
 ## Persistence
 

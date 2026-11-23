@@ -35,7 +35,9 @@ npm start
 
 On startup the server checks that Ollama answers and that the model is pulled. If it isn't, the log
 tells you which `ollama pull` to run. The game still starts: villagers follow simple default plans
-and the LLM card shows `OFFLINE` until the model is available.
+and the LLM card shows `⚠ MODEL UNREACHABLE`. Pull the model and restart the server. When
+everything works the card reads `✈ OFFLINE · RUNNING ON THIS MACHINE · QWEN2.5:7B VIA OLLAMA`:
+"offline" here means no internet is needed.
 
 ## Which model for which machine
 

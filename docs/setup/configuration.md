@@ -48,15 +48,15 @@ Invalid configuration in /path/config.json:
 
 ## `sim`: the simulation
 
-| Key                    | Default   | Meaning                                                             |
-| ---------------------- | --------- | ------------------------------------------------------------------- |
-| `villagers`            | `10`      | Number of villagers, 1–20 (the first N from `data/villagers.json`). |
-| `dayLengthMinutes`     | `15`      | Real minutes for one 24-hour game day at 1×.                        |
-| `startTime`            | `"06:00"` | Game clock at the start of a new village (`HH:MM`).                 |
-| `speed`                | `1`       | Starting speed. The UI offers 0 (pause), 1, 2, 4 and 8.             |
-| `nightSpeedMultiplier` | `6`       | Extra speed-up while every villager is asleep (at least 1).         |
-| `tickMs`               | `100`     | Real milliseconds between simulation steps (at least 10).           |
-| `seed`                 | `42`      | Random seed. The same seed and the mock provider give the same day. |
+| Key                    | Default   | Meaning                                                                                                                       |
+| ---------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `villagers`            | `10`      | Number of villagers, 1–20: the first N profiles in `data/villagers.json`, which ships 16. Strangers count toward a cap of 20. |
+| `dayLengthMinutes`     | `15`      | Real minutes for one 24-hour game day at 1×.                                                                                  |
+| `startTime`            | `"06:00"` | Game clock at the start of a new village (`HH:MM`).                                                                           |
+| `speed`                | `1`       | Starting speed. The UI offers 0 (pause), 1, 2, 4 and 8.                                                                       |
+| `nightSpeedMultiplier` | `6`       | Extra speed-up while every villager is asleep (at least 1).                                                                   |
+| `tickMs`               | `100`     | Real milliseconds between simulation steps (at least 10).                                                                     |
+| `seed`                 | `42`      | Random seed. The same seed and the mock provider give the same day.                                                           |
 
 ## `cognition`: how villagers think
 
@@ -86,12 +86,12 @@ Invalid configuration in /path/config.json:
 
 ## `persistence`: saving
 
-| Key                   | Default     | Meaning                                                                     |
-| --------------------- | ----------- | --------------------------------------------------------------------------- |
-| `dir`                 | `"./saves"` | Folder for save slots.                                                      |
-| `slot`                | `"default"` | Save slot name (letters, digits, `_` and `-`). Files go to `<dir>/<slot>/`. |
-| `loadOnStart`         | `true`      | Load the slot on startup if it exists. `npm start -- --new` skips it.       |
-| `autosaveGameMinutes` | `60`        | Autosave interval in game minutes. `0` turns autosave off.                  |
+| Key                   | Default     | Meaning                                                                                               |
+| --------------------- | ----------- | ----------------------------------------------------------------------------------------------------- |
+| `dir`                 | `"./saves"` | Folder for save slots.                                                                                |
+| `slot`                | `"default"` | Save slot name (letters, digits, `_` and `-`). Files go to `<dir>/<slot>/`.                           |
+| `loadOnStart`         | `true`      | Load the slot on startup if it exists. `npm start -- --new` ignores it (the next save overwrites it). |
+| `autosaveGameMinutes` | `60`        | Autosave interval in game minutes. `0` turns autosave off.                                            |
 
 ## `needs`
 

@@ -37,8 +37,9 @@ restarting the server.
 
 ## The model
 
-**The LLM card shows `OFFLINE`, or the log warns that the LLM health check failed.**
-The game runs, but villagers use simple default plans and don't talk. Check, depending on the
+**The LLM card shows `⚠ MODEL UNREACHABLE`, or the log warns that the LLM health check failed.**
+(`✈ OFFLINE` on its own is fine: it means the model runs locally and needs no internet.) The game
+runs, but villagers use simple default plans and don't talk. Check, depending on the
 provider:
 
 - Ollama: is it running? `curl http://127.0.0.1:11434/api/tags` must answer. Is the model pulled?
@@ -111,12 +112,14 @@ Check that `persistence.loadOnStart` is `true`, that you didn't pass `--new`, an
 minutes and on `Ctrl+C`; if the process was killed hard (`kill -9`, a crash), the last few game
 minutes are lost.
 
-**The server fails to start with an error about a save file.**
-A save file is damaged or from an incompatible version. Start fresh with `npm start -- --new`, or
-move the slot folder (`saves/default/`) somewhere else to keep it.
+**The log says `could not load save "default": …; starting a new world`.**
+A save file is damaged or from an incompatible version. The server starts a new village, and its
+next save **overwrites the old slot**. To keep the old save, stop the server right away and copy the
+slot folder (`saves/default/`) somewhere else.
 
 **I want to start over completely.**
-Run `npm start -- --new`, or delete the slot folder under `saves/`.
+Run `npm start -- --new` (the old save is overwritten at the next save, while `replay.jsonl` keeps
+growing), or delete the slot folder under `saves/` for a clean slate.
 
 ## Still stuck?
 

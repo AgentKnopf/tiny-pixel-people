@@ -1,6 +1,6 @@
 # Tiny Pixel People
 
-A tiny top-down pixel village whose 10–20 villagers are driven by LLMs, in the spirit of
+A tiny top-down pixel village whose villagers (10 by default, up to 16) are driven by LLMs, in the spirit of
 [Generative Agents](https://arxiv.org/abs/2304.03442) (Smallville). Each villager has a memory
 stream, reflects on what happened, plans its day, chats and gossips with its neighbours, organises
 small events, and answers the notes you pin to its door. You walk around the village as yourself,
@@ -10,7 +10,7 @@ It runs fully offline with a local [Ollama](https://ollama.com), or against any 
 server (LM Studio, vLLM, llama.cpp, OpenRouter, …), Anthropic or Gemini. The provider and model are
 chosen in a config file; no code changes needed.
 
-![The village by day](docs/art/map-day.png)
+![The village by day, with the HUD, stats card, LLM card, toolbar and dock](docs/images/screenshot.png)
 
 ## Quick start
 
