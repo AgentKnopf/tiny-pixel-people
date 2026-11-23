@@ -9,6 +9,12 @@ import {
   type GameMinutes,
   type GroundItem,
   type HotelState,
+  type HouseVisit,
+  type KeepEntry,
+  type Letter,
+  type LetterId,
+  type Notice,
+  type Provenance,
   type ItemId,
   type LocationId,
   type Memory,
@@ -29,6 +35,8 @@ import { DecorController } from './decor.ts';
 import { Economy } from './economy.ts';
 import { Farm, isOpen, nearLocation } from './farm-economy.ts';
 import { Hotel } from './hotel.ts';
+import { HouseVisits } from './house-visits.ts';
+import { PostOffice } from './post-office.ts';
 import { distance, isWalkable, stepAlong, tileOf, walkableNeighbours } from './geometry.ts';
 import type { PlayerHost } from './host.ts';
 import { addToBackpack, countOf, ItemField, removeFromBackpack } from './inventory.ts';
@@ -60,7 +68,14 @@ export interface PlayerWorldSave {
   /** null in a migrated v1 save: the hotel is built from config. */
   hotel: HotelState | null;
   visitors: VisitorInfo[];
+  houseVisits: HouseVisit[];
+  letters: Letter[];
+  notices: Notice[];
+  keep: KeepEntry[];
 }
+
+/** Snapshot part owned by WP8: the save minus transient profiles and the Keep (fetched with keep.open). */
+export type PlayerWorldSnapshot = Omit<PlayerWorldSave, 'strangers' | 'keep'> & { keepSize: number };
 
 export interface CreatePlayerWorldOptions {
   host: PlayerHost;
@@ -70,10 +85,19 @@ export interface CreatePlayerWorldOptions {
   restore?: Partial<PlayerWorldSave>;
 }
 
-type PlayerCommand = Exclude<
-  Extract<ClientMessage, { type: `player.${string}` | 'world.trigger' | 'decor.toggle' | 'pet.command' }>,
-  // v2 player commands (spec v2 §14): not handled yet.
-  { type: 'player.enter' | 'player.exit' }
+type PlayerCommand = Extract<
+  ClientMessage,
+  {
+    type:
+      | `player.${string}`
+      | 'world.trigger'
+      | 'decor.toggle'
+      | 'pet.command'
+      | 'letter.send'
+      | 'letter.read'
+      | 'notice.post'
+      | 'keep.open';
+  }
 >;
 
 const HANDLED = new Set<string>([
@@ -87,6 +111,12 @@ const HANDLED = new Set<string>([
   'pet.command',
   'player.buy',
   'player.ride',
+  'player.enter',
+  'player.exit',
+  'letter.send',
+  'letter.read',
+  'notice.post',
+  'keep.open',
 ]);
 
 /**
@@ -108,6 +138,8 @@ export class PlayerWorld implements PlayerService {
   readonly farm: Farm;
   readonly hotel: Hotel;
   readonly visitors: Visitors;
+  readonly houseVisits: HouseVisits;
+  readonly post: PostOffice;
   private readonly log: WorldEventLog;
   private readonly player: PlayerState;
 
@@ -116,7 +148,15 @@ export class PlayerWorld implements PlayerService {
     this.ctx = new Ctx(host, config, opts.catalogs ?? loadCatalogs());
     this.player = restore.player ? structuredClone(restore.player) : this.initialPlayer();
     this.log = new WorldEventLog(this.ctx, restore.worldEvents);
-    this.rumors = new Rumors(this.ctx, restore.rumors);
+    this.rumors = new Rumors(this.ctx, restore.rumors, (rumor, hop) =>
+      this.post.log(hop ? { kind: 'rumor', rumor, hop } : { kind: 'rumor', rumor }, this.ctx.host.now()),
+    );
+    this.post = new PostOffice(
+      this.ctx,
+      this.player,
+      { caw: () => this.ctx.host.caw?.('letter') },
+      { letters: restore.letters, notices: restore.notices, keep: restore.keep },
+    );
     this.weatherCtl = new WeatherController(this.ctx, this.log, restore.weather);
     this.items = new ItemField(this.ctx, restore.items);
     const transients = restore.strangers ?? [];
@@ -139,6 +179,23 @@ export class PlayerWorld implements PlayerService {
         },
       },
       { infos: restore.visitors, profiles: transients.filter((p) => p.visitor) },
+    );
+    this.houseVisits = new HouseVisits(
+      this.ctx,
+      this.player,
+      {
+        playerChanged: () => this.broadcastPlayer(),
+        greeted: (_visit, villagerId, text) =>
+          this.ctx.emit({
+            type: 'conversation.message',
+            conversationId: playerConversationId(villagerId),
+            speakerId: villagerId,
+            listenerId: PLAYER_ID,
+            text,
+            time: this.ctx.host.now(),
+          }),
+      },
+      restore.houseVisits,
     );
     this.decor = new DecorController(this.ctx, this.player, (d, why) => this.economy.addGold(d, why));
     this.pet = new PetController(this.ctx);
@@ -169,11 +226,15 @@ export class PlayerWorld implements PlayerService {
     const now = this.ctx.host.now();
     if (this.farm.update(now)) this.broadcastStock();
     this.visitors.update(now);
+    if (this.houseVisits.update(dt, now)) this.broadcastPlayer();
+    this.post.update(now);
+    for (const letter of this.post.readAtHome(now)) this.ctx.host.letterRead?.(letter.to, letter);
   }
 
   /** Handles player.*, world.trigger, decor.toggle and pet.command; null for anything else. */
   handleCommand(cmd: ClientMessage): ServerMessage[] | null {
     if (!HANDLED.has(cmd.type)) return null;
+    if (cmd.type === 'keep.open') return this.openKeep(cmd);
     let res: CommandResult;
     try {
       res = this.run(cmd as PlayerCommand);
@@ -206,7 +267,32 @@ export class PlayerWorld implements PlayerService {
         return this.buy(cmd.locationId, cmd.itemId);
       case 'player.ride':
         return this.ride(cmd.locationId);
+      case 'player.enter':
+        return this.houseVisits.enter(cmd.locationId, this.ctx.host.now());
+      case 'player.exit':
+        return this.houseVisits.exit(this.ctx.host.now());
+      case 'letter.send':
+        return this.post.playerSend(cmd.to, cmd.text, this.ctx.host.now());
+      case 'letter.read':
+        return this.post.playerRead(cmd.letterId, this.ctx.host.now());
+      case 'notice.post':
+        return this.post.playerNotice(cmd.text, this.ctx.host.now());
+      case 'keep.open':
+        return { ok: false, reason: 'unreachable' };
     }
+  }
+
+  private openKeep(cmd: Extract<ClientMessage, { type: 'keep.open' }>): ServerMessage[] {
+    const opts = {
+      ...(cmd.query !== undefined ? { query: cmd.query } : {}),
+      ...(cmd.kind !== undefined ? { kind: cmd.kind } : {}),
+      ...(cmd.offset !== undefined ? { offset: cmd.offset } : {}),
+      ...(cmd.limit !== undefined ? { limit: cmd.limit } : {}),
+    };
+    const res = this.post.open(opts);
+    const requestId = cmd.requestId ? { requestId: cmd.requestId } : {};
+    if (!res.ok) return [{ type: 'error', message: res.reason, ...requestId }];
+    return [{ type: 'keep.data', entries: res.entries, total: res.total, offset: res.offset, ...requestId }];
   }
 
   // ---------- cognition / engine hooks ----------
@@ -279,6 +365,29 @@ export class PlayerWorld implements PlayerService {
     return boarding;
   }
 
+  // ---------- v2 post office and house hooks (spec v2 §6, §8) ----------
+
+  /** `MindWorld.upsertNote`: every door note created, read or replied to goes into the Keep. */
+  onNoteChanged(note: DoorNote): KeepEntry {
+    return this.post.log({ kind: 'note', note }, this.ctx.host.now());
+  }
+
+  /** `MindWorld.sendLetter` (letter.reply / letter.write): posted now, delivered at the next round. */
+  postLetter(
+    from: VillagerId,
+    to: VillagerId,
+    text: string,
+    opts: { replyTo?: LetterId; source?: Provenance } = {},
+  ): Letter | null {
+    const res = this.post.sendLetter(from, to, text, this.ctx.host.now(), opts);
+    return 'id' in res ? res : null;
+  }
+
+  /** Optional engine call when an owner arrives home or wakes (the service also watches each step). */
+  onOwnerHome(villagerId: VillagerId): HouseVisit[] {
+    return this.houseVisits.onOwnerHome(villagerId, this.ctx.host.now());
+  }
+
   /** Mailbox placed: villagers may leave notes for the player (spec §7.16 stretch). */
   mailboxPlaced(): boolean {
     return this.player.placedDecorations.includes('mailbox');
@@ -286,7 +395,7 @@ export class PlayerWorld implements PlayerService {
 
   // ---------- snapshot / save ----------
 
-  snapshot(): Omit<PlayerWorldSave, 'strangers'> {
+  snapshot(): PlayerWorldSnapshot {
     const s = this.serialize();
     return {
       player: s.player,
@@ -297,6 +406,10 @@ export class PlayerWorld implements PlayerService {
       stock: s.stock,
       hotel: s.hotel,
       visitors: s.visitors,
+      houseVisits: s.houseVisits,
+      letters: s.letters,
+      notices: s.notices,
+      keepSize: s.keep.length,
     };
   }
 
@@ -311,6 +424,8 @@ export class PlayerWorld implements PlayerService {
       stock: this.farm.stock(),
       hotel: this.hotel.state(),
       visitors: [...this.visitors.visitors()],
+      houseVisits: [...this.houseVisits.visits()],
+      ...this.post.serialize(),
     });
   }
 
@@ -369,6 +484,7 @@ export class PlayerWorld implements PlayerService {
   // ---------- commands ----------
 
   private moveTo(to: Point): CommandResult {
+    if (this.player.inside) return this.houseVisits.moveInside(to);
     const map = this.ctx.host.map;
     if (!to || !Number.isFinite(to.x) || !Number.isFinite(to.y))
       return { ok: false, reason: 'Invalid target' };
