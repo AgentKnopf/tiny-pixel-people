@@ -45,15 +45,17 @@ This guide assumes the game is running. If it isn't, see the [README](../README.
 
 The village fills the window. A dark, see-through interface floats on top of it:
 
-| Where                                                                                       | What                                                                                                                                                                                                                                                                                        |
-| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Top left                                                                                    | The HUD: `TINY PIXEL PEOPLE`, a status badge (`LIVE`, `PAUSED`, or `CONNECTING` / `OFFLINE` when the browser lost the server), the weather, the day and the clock. The rumor tracker opens below it.                                                                                        |
-| Top right                                                                                   | The stats card: `REAL MODEL CALLS` (calls · total time · tokens), your gold and up to three item counts, how many players are online and villagers live here, the next train and the hotel (`🚂 Next train 16:00 · Hotel 3/6`), and, while calls are waiting,                               |
-| `N in queue · F failed`. See [Performance](setup/performance.md) for what the numbers mean. |
-| Bottom left                                                                                 | The LLM card: where the villagers think. `✈ OFFLINE` with `RUNNING ON THIS MACHINE · QWEN2.5:7B VIA OLLAMA` means a local model, no internet needed; `☁ ONLINE` means a hosted API. `⚠ MODEL UNREACHABLE` means the model doesn't answer. The last line shows how long the last reply took. |
-| Bottom                                                                                      | The toolbar: `PAUSE`, zoom (`−`, fit, `+`), the speed buttons `1× 2× 4× 8×`, and the world event buttons, including 🚂 Train. On narrower windows the event buttons show only their icons; hover for the name.                                                                              |
-| Bottom right                                                                                | The dock: `Backpack`, `Map`, `Pet`, `Decorate`, `Home`, `Letters` and `Gold`.                                                                                                                                                                                                               |
-| Right                                                                                       | The inspector, when you click a villager. Clicking an animal opens a small animal card.                                                                                                                                                                                                     |
+| Where                                                                                             | What                                                                                                                                                                                                                                                                                        |
+| ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Top left                                                                                          | The HUD: `TINY PIXEL PEOPLE`, a status badge (`LIVE`, `PAUSED`, or `CONNECTING` / `OFFLINE` when the browser lost the server), the weather, the day and the clock. The rumor tracker opens below it.                                                                                        |
+| Top right                                                                                         | The stats card: `REAL MODEL CALLS` (calls · total time · tokens), your gold and up to three item counts, how many players are online and villagers live here, the next train and the hotel (`🚂 Next train 16:00 · Hotel 3/6`), and, while calls are waiting,                               |
+| `N in queue · F failed`. See [Performance](setup/performance.md) for what the numbers mean.       |
+| Bottom left                                                                                       | The LLM card: where the villagers think. `✈ OFFLINE` with `RUNNING ON THIS MACHINE · QWEN2.5:7B VIA OLLAMA` means a local model, no internet needed; `☁ ONLINE` means a hosted API. `⚠ MODEL UNREACHABLE` means the model doesn't answer. The last line shows how long the last reply took. |
+| Bottom                                                                                            | The toolbar: `PAUSE`, zoom (`−`, fit, `+`), the speed buttons `1× 2× 4× 8×`, and the world event buttons, including 🚂 Train. On narrower windows the event buttons show only their icons; hover for the name.                                                                              |
+| Bottom right                                                                                      | The dock: `Backpack`, `Map`, `Pet`, `Decorate`, `Home`, `Letters` and `Gold`.                                                                                                                                                                                                               |
+| Right                                                                                             | The inspector, when you click a villager. Clicking an animal opens a small animal card: its name and species, and for farm and zoo animals                                                                                                                                                  |
+| also the stage (baby, adult, elder), male or female, its age in days and what it is doing. Forest |
+| animals and the crow show only their name and species.                                            |
 
 Short messages ("toasts") pop up at the bottom centre, for example `📮 Mailbox placed at your
 cottage ✓`. Your conversations with villagers appear in a small dialog there too.
@@ -371,7 +373,8 @@ Click a farm animal to see its name, whether it is young, grown up or old, and i
 A train stops at the station every day at **10:00** and **16:00** (`train.arrivals`). It pulls in a
 few minutes early, waits 20 minutes at the platform (`train.dwellMinutes`) and leaves. The **Train**
 button in the toolbar brings the next train right away. The stats card shows when the next train
-is due and how full the hotel is, for example `🚂 Next train 16:00 · Hotel 3/6`.
+is due and how full the hotel is, for example `🚂 Next train 16:00 · Hotel 3/6`. While a train is
+in, it says `🚂 Train arriving …`, `🚂 Train boarding · departs …` or `🚂 Train departing`.
 
 Trains bring **visitors**. Two to four of them are in town at any time (`visitors.min`,
 `visitors.max`); the first train of a new village brings two or three. Each one is invented by the
@@ -382,7 +385,7 @@ A visitor walks from the platform to the **hotel**, checks into one of its six r
 (`hotel.rooms`) and then lives in town like everyone else: plans a day, chats, gossips and may even
 go on a date. After one to three days (`visitors.stayDays`) the visitor takes a train home. The
 villagers keep their memories of them. The inspector shows a badge such as
-`Visitor · leaves Tue 16:00`.
+`🧳 Visitor · leaves tomorrow 16:00` (or `today`, or the weekday for later days).
 
 The 🕵 **Stranger** button still works as before; strangers have nothing to do with trains.
 
@@ -491,7 +494,8 @@ older) take part.
 5. **Breaking up** happens quietly, only if a couple stops liking each other for days.
 
 Visitors can have crushes and go on dates, but they don't become couples before their train leaves.
-The inspector shows `💕 Partner: …`, `💗 Crush on: …` and the last three dates.
+The inspector shows `💕 Partner: …`, `💞 Dating: …`, `💗 Crush on: …` (or `💗 Shy crush on: …`) and
+the last three dates.
 
 ## The forest
 
