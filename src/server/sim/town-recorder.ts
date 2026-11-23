@@ -358,7 +358,7 @@ export function recordTownLog(engine: Engine, log: TownLog): () => void {
         log.add(
           'letter_delivered',
           [l.to, l.from],
-          `The crow delivered ${nameOf(l.from)}'s ${what} to ${nameOf(l.to)}`,
+          `The post delivered ${nameOf(l.from)}'s ${what} to ${nameOf(l.to)}`,
           data,
         );
       else if (s === 'read')

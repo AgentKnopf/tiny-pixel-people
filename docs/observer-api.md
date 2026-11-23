@@ -97,12 +97,13 @@ The whole village at a glance.
 - `visitors`: `[{ id, name, status, room, origin, arrived, departs, departs_tick, day, time }]`;
   `status` is `arriving`, `checkedIn` or `leaving`, and `day`/`time` give the departure.
 - `farm`: farm animal counts per species, e.g. `{ "cow": 3, "chicken": 5 }`.
-- `stock`: item counts per venue, e.g. `{ "burger_joint": { "burger": 4 } }`.- `talking_to` / `talking_to_name`: only present while the agent is in a conversation.
+- `stock`: item counts per venue, e.g. `{ "burger_joint": { "burger": 4 } }`.
+- `talking_to` / `talking_to_name`: only present while the agent is in a conversation.
 - `needs`: the game's own needs, 0–100, 100 = fully satisfied. All four exist in the game; none are
   derived or `null`.
 - `mood`: one word derived from the needs: `asleep`, `tired`, `hungry`, `lonely` or `bored` (a need
   below 25), otherwise `happy` (average ≥ 75), `content` (≥ 50) or `meh`.
-- `x`, `y`: tile coordinates (the map is 48×30 tiles of 16 px).
+- `x`, `y`: tile coordinates (the map is 128×60 tiles of 16 px).
 
 ### `GET /api/agents/{id}`
 
@@ -227,41 +228,41 @@ The town log, one line per thing that happened:
 ]
 ```
 
-| `type`               | When                                                                   |
-| -------------------- | ---------------------------------------------------------------------- |
-| `move`               | An agent arrived at a different place.                                 |
-| `chat`               | A conversation ended (with its first line); `data.conversationId`.     |
-| `plan_change`        | A new day plan, or a change to today's plan (new block, event, task).  |
-| `reflection`         | A villager formed an insight.                                          |
-| `note_left`          | Someone left a door note.                                              |
-| `note_read`          | The owner read it (and the reply, if any).                             |
-| `gossip_spread`      | One agent told another something new; `data.originId` traces the fact. |
-| `event_start`        | A village event or world event (rain, party, birthday) started.        |
-| `visitor_arrived`    | A visitor or stranger arrived in town.                                 |
-| `visitor_checked_in` | A visitor checked in at the hotel; `data.room`.                        |
-| `visitor_left`       | A visitor or stranger left.                                            |
-| `train_arrived`      | The train stopped at the station; `agents` are the arriving visitors.  |
-| `train_departed`     | The train left; `agents` are the visitors on board.                    |
-| `romance`            | Any other romance change (catch-all), e.g. a pair starts dating.       |
-| `crush`              | Someone has a new crush; `data.shy` for the slow-burn pair.            |
-| `date_asked`         | Someone asked their crush on a date; `data.eventId`.                   |
-| `date`               | A pair went on a date.                                                 |
-| `date_missed`        | A planned date did not happen.                                         |
-| `couple`             | A pair became a couple.                                                |
-| `romance_ended`      | A romance ended.                                                       |
-| `letter_sent`        | A letter (or a reply, `data.replyTo`) was posted.                      |
-| `letter_delivered`   | The crow delivered it (`data.returned` when it came back undelivered). |
-| `letter_read`        | The recipient read it.                                                 |
-| `letter_replied`     | The recipient replied.                                                 |
-| `notice_posted`      | A notice went up on the board.                                         |
-| `keep_logged`        | Laude filed something in the Keep; `data.kind`.                        |
-| `animal_born`        | A farm animal was born; `agents` is the farmer.                        |
-| `animal_died`        | A farm animal died of old age.                                         |
-| `animal_butchered`   | A farm animal was butchered.                                           |
-| `house_visit`        | The player visited a house (owners home or asleep).                    |
-| `snooping`           | The player went into a house while the owners were out.                |
-| `ride`               | A villager boarded a zoo ride.                                         |
-| `purchase`           | A villager bought food (ice cream, a burger or a veggie burger).       |
+| `type`               | When                                                                       |
+| -------------------- | -------------------------------------------------------------------------- |
+| `move`               | An agent arrived at a different place.                                     |
+| `chat`               | A conversation ended (with its first line); `data.conversationId`.         |
+| `plan_change`        | A new day plan, or a change to today's plan (new block, event, task).      |
+| `reflection`         | A villager formed an insight.                                              |
+| `note_left`          | Someone left a door note.                                                  |
+| `note_read`          | The owner read it (and the reply, if any).                                 |
+| `gossip_spread`      | One agent told another something new; `data.originId` traces the fact.     |
+| `event_start`        | A village event or world event (rain, party, birthday) started.            |
+| `visitor_arrived`    | A visitor or stranger arrived in town.                                     |
+| `visitor_checked_in` | A visitor checked in at the hotel; `data.room`.                            |
+| `visitor_left`       | A visitor or stranger left.                                                |
+| `train_arrived`      | The train stopped at the station; `agents` are the arriving visitors.      |
+| `train_departed`     | The train left; `agents` are the visitors on board.                        |
+| `romance`            | Any other romance change (catch-all), e.g. a pair starts dating.           |
+| `crush`              | Someone has a new crush; `data.shy` for the slow-burn pair.                |
+| `date_asked`         | Someone asked their crush on a date; `data.eventId`.                       |
+| `date`               | A pair went on a date.                                                     |
+| `date_missed`        | A planned date did not happen.                                             |
+| `couple`             | A pair became a couple.                                                    |
+| `romance_ended`      | A romance ended.                                                           |
+| `letter_sent`        | A letter (or a reply, `data.replyTo`) was posted.                          |
+| `letter_delivered`   | A post round delivered it (`data.returned` when it came back undelivered). |
+| `letter_read`        | The recipient read it.                                                     |
+| `letter_replied`     | The recipient replied.                                                     |
+| `notice_posted`      | A notice went up on the board.                                             |
+| `keep_logged`        | Laude filed something in the Keep; `data.kind`.                            |
+| `animal_born`        | A farm animal was born; `agents` is the farmer.                            |
+| `animal_died`        | A farm animal died of old age.                                             |
+| `animal_butchered`   | A farm animal was butchered.                                               |
+| `house_visit`        | The player visited a house (owners home or asleep).                        |
+| `snooping`           | The player went into a house while the owners were out.                    |
+| `ride`               | A villager boarded a zoo ride.                                             |
+| `purchase`           | A villager bought food (ice cream, a burger or a veggie burger).           |
 
 `type` and `agent` filter (`type` takes a comma-separated list; an unknown type is a `400`, a known
 type with no entries is `200 []`). `limit` max 1000. `seq` increases by one per entry. The log keeps
@@ -316,7 +317,7 @@ waiting.
 
 ### `GET /api/screenshot?scale=1`
 
-A PNG of the whole map (768×480 px at `scale=1`; `scale` 1–4 enlarges it without smoothing) with
+A PNG of the whole map (2048×960 px at `scale=1`; `scale` 1–4 enlarges it without smoothing) with
 every villager, visitor and the player in place. It has no day/night lighting, bubbles or UI.
 `501` if the art files in `assets/` are missing.
 
