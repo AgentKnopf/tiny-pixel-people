@@ -8,7 +8,18 @@ import type {
 } from '../../shared/protocol.ts';
 import {
   PLAYER_ID,
+  type AnimalId,
+  type AnimalState,
   type DoorNote,
+  type FoodStock,
+  type HotelState,
+  type KeepEntry,
+  type Letter,
+  type Notice,
+  type RideState,
+  type Romance,
+  type TrainState,
+  type VisitorInfo,
   type GameMinutes,
   type Location,
   type LocationId,
@@ -41,7 +52,24 @@ export type Topic =
   | 'scene'
   | 'catalog'
   | 'chat'
-  | 'sim';
+  | 'sim'
+  // v2
+  | 'animals'
+  | 'animalSelection'
+  | 'rides'
+  | 'train'
+  | 'visitors'
+  | 'romance'
+  | 'stock'
+  | 'letters'
+  | 'notices'
+  | 'keep';
+
+export interface KeepPage {
+  entries: KeepEntry[];
+  total: number;
+  offset: number;
+}
 
 export interface ToastItem {
   icon: string;
@@ -94,6 +122,20 @@ export class UiStore {
   chat: ChatLine[] = [];
   chatWith: VillagerId | null = null;
   simStatus: SimStatusMsg | null = null;
+  // v2 (spec v2 §14)
+  animals = new Map<AnimalId, AnimalState>();
+  selectedAnimalId: AnimalId | null = null;
+  rides = new Map<LocationId, RideState>();
+  train: TrainState | null = null;
+  hotel: HotelState | null = null;
+  visitors = new Map<VillagerId, VisitorInfo>();
+  romances = new Map<string, Romance>();
+  stock: FoodStock = {};
+  letters = new Map<string, Letter>();
+  notices = new Map<string, Notice>();
+  keepSize = 0;
+  /** Last keep.data page (the Keep is fetched on demand). */
+  keep: KeepPage | null = null;
 
   private listeners = new Map<Topic, Set<() => void>>();
   private toastListeners = new Set<(t: ToastItem) => void>();
@@ -158,6 +200,17 @@ export class UiStore {
         this.events = new Map(s.events.map((e) => [e.id, e]));
         this.worldEvents = new Map(s.worldEvents.map((e) => [e.id, e]));
         this.weather = s.weather;
+        this.animals = new Map((s.animals ?? []).map((a) => [a.id, a]));
+        this.rides = new Map((s.rides ?? []).map((r) => [r.locationId, r]));
+        this.train = s.train ?? null;
+        this.hotel = s.hotel ?? null;
+        this.visitors = new Map((s.visitors ?? []).map((v) => [v.villagerId, v]));
+        this.romances = new Map((s.romances ?? []).map((r) => [r.id, r]));
+        this.stock = s.stock ?? {};
+        this.letters = new Map((s.letters ?? []).map((l) => [l.id, l]));
+        this.notices = new Map((s.notices ?? []).map((n) => [n.id, n]));
+        this.keepSize = s.keepSize ?? 0;
+        if (this.selectedAnimalId && !this.animals.has(this.selectedAnimalId)) this.selectedAnimalId = null;
         this.emit(
           'hello',
           'time',
@@ -169,6 +222,16 @@ export class UiStore {
           'events',
           'weather',
           'scene',
+          'animals',
+          'animalSelection',
+          'rides',
+          'train',
+          'visitors',
+          'romance',
+          'stock',
+          'letters',
+          'notices',
+          'keep',
         );
         break;
       }
@@ -179,7 +242,14 @@ export class UiStore {
           this.setSpeed(msg.speed);
           this.emit('speed');
         }
-        this.emit('time', 'villagers');
+        if (msg.animals?.length) {
+          for (const f of msg.animals) {
+            const a = this.animals.get(f.id);
+            if (a)
+              this.animals.set(f.id, { ...a, pos: { x: f.x, y: f.y }, facing: f.facing, status: f.status });
+          }
+          this.emit('time', 'villagers', 'animals');
+        } else this.emit('time', 'villagers');
         break;
       case 'stats':
         this.queue = msg.queue;
@@ -226,6 +296,7 @@ export class UiStore {
           this.profiles.delete(id);
           this.frames.delete(id);
           this.villagerStates.delete(id);
+          this.visitors.delete(id);
         }
         this.emit('villagers');
         if (this.selectedId && msg.removed.includes(this.selectedId)) this.select(null);
@@ -240,6 +311,54 @@ export class UiStore {
       case 'sim.status':
         this.simStatus = msg;
         this.emit('sim');
+        break;
+      case 'animals.changed':
+        for (const a of [...msg.added, ...msg.updated]) this.animals.set(a.id, a);
+        for (const r of msg.removed) this.animals.delete(r.id);
+        this.emit('animals');
+        if (this.selectedAnimalId && !this.animals.has(this.selectedAnimalId)) this.selectAnimal(null);
+        break;
+      case 'ride.updated':
+        this.rides.set(msg.ride.locationId, msg.ride);
+        this.emit('rides');
+        break;
+      case 'train.updated':
+        this.train = msg.train;
+        this.emit('train');
+        break;
+      case 'hotel.updated':
+        this.hotel = msg.hotel;
+        this.emit('train');
+        break;
+      case 'visitor.updated':
+        this.visitors.set(msg.visitor.villagerId, msg.visitor);
+        this.emit('visitors');
+        break;
+      case 'romance.updated':
+        this.romances.set(msg.romance.id, msg.romance);
+        this.emit('romance');
+        break;
+      case 'stock.updated':
+        this.stock = msg.stock;
+        this.emit('stock');
+        break;
+      case 'letter.updated':
+        this.letters.set(msg.letter.id, msg.letter);
+        this.emit('letters');
+        break;
+      case 'notice.updated':
+        if (msg.removed) this.notices.delete(msg.notice.id);
+        else this.notices.set(msg.notice.id, msg.notice);
+        this.emit('notices');
+        break;
+      case 'keep.added':
+        this.keepSize++;
+        this.emit('keep');
+        break;
+      case 'keep.data':
+        this.keep = { entries: msg.entries, total: msg.total, offset: msg.offset };
+        this.keepSize = Math.max(this.keepSize, msg.total);
+        this.emit('keep');
         break;
       case 'toast':
         this.toast(msg.icon, msg.text);
@@ -302,6 +421,46 @@ export class UiStore {
   private setSpeed(s: number): void {
     this.speed = s;
     if (s > 0) this.lastSpeed = s;
+  }
+
+  selectAnimal(id: AnimalId | null): void {
+    if (id === this.selectedAnimalId) return;
+    this.selectedAnimalId = id;
+    this.emit('animalSelection');
+  }
+
+  /** The active (not ended) romance a villager is part of, if any. */
+  romanceOf(id: VillagerId): Romance | null {
+    let best: Romance | null = null;
+    for (const r of this.romances.values()) {
+      if (r.stage === 'ended' || !r.pair.includes(id)) continue;
+      if (!best || r.updatedAt > best.updatedAt) best = r;
+    }
+    return best;
+  }
+
+  /** Where the player stands in world tiles (live tick frame, else the last PlayerState). */
+  playerTile(): { x: number; y: number } | null {
+    const f = this.frames.get(PLAYER_ID);
+    if (f) return { x: Math.round(f.x), y: Math.round(f.y) };
+    return this.player ? this.player.pos : null;
+  }
+
+  /** Letters to or from the player, newest first. */
+  playerLetters(): Letter[] {
+    return [...this.letters.values()]
+      .filter((l) => l.from === PLAYER_ID || l.to === PLAYER_ID)
+      .sort((a, b) => b.postedAt - a.postedAt);
+  }
+
+  /** Letters delivered to the player that they have not read. */
+  unreadLetters(): number {
+    return [...this.letters.values()].filter((l) => l.to === PLAYER_ID && l.status === 'delivered').length;
+  }
+
+  /** Active notices, newest first. */
+  sortedNotices(): Notice[] {
+    return [...this.notices.values()].sort((a, b) => b.postedAt - a.postedAt);
   }
 
   // ---------- derived helpers ----------

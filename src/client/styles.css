@@ -565,7 +565,7 @@ select:focus {
 /* ---------- Inspector ---------- */
 .inspector {
   position: absolute;
-  top: 112px;
+  top: calc(var(--top-right-bottom, 106px) + 6px);
   right: 6px;
   bottom: 70px;
   width: 270px;
@@ -953,6 +953,10 @@ select:focus {
   grid-template-columns: 1fr 1fr;
 }
 
+.grid-3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
 .grid-4 {
   grid-template-columns: repeat(4, 1fr);
 }
@@ -1099,6 +1103,76 @@ select:focus {
 }
 
 /* ---------- Small screens ---------- */
+/* ---------- v2: inspector badge + romance, animal card, stats train line ---------- */
+.insp-badge {
+  display: inline-block;
+  margin-top: 4px;
+  background: var(--occupation);
+  font-family: var(--font-body);
+  font-size: 11px;
+  letter-spacing: 0;
+}
+
+.insp-romance {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12px;
+}
+
+.romance-line {
+  color: var(--social);
+  font-weight: bold;
+}
+
+.romance-date {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.animal-card {
+  position: absolute;
+  top: calc(var(--top-right-bottom, 106px) + 6px);
+  right: 6px;
+  width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  pointer-events: auto;
+}
+
+.animal-card header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-right: 24px;
+}
+
+.animal-emoji {
+  font-size: 28px;
+  line-height: 1;
+}
+
+.animal-name {
+  margin: 0;
+  font-size: 16px;
+}
+
+.animal-species {
+  color: var(--occupation);
+  font-size: 12px;
+}
+
+.animal-details {
+  font-size: 12px;
+}
+
+.stats-train {
+  font-size: 11px;
+  margin-top: 2px;
+}
+
 @media (max-width: 900px) {
   .toolbar .btn-label {
     display: none;
