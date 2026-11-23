@@ -172,6 +172,7 @@ describe('door modal: Go inside', () => {
     at(9, 0);
     ui.openDoorNote('house_01');
     byTestId('door-enter').click();
+    setPlayer({ path: [{ x: 1, y: 3 }] });
     setPlayer({
       path: [
         { x: 9, y: 1 },
@@ -494,5 +495,118 @@ describe('walking up to a venue first', () => {
     expect(q('postbox-letter')).toBeNull();
     at(5, 8, 10 * 60);
     expect(q('postbox-letter')).not.toBeNull();
+  });
+});
+
+describe('pending walk-ins under overlapping input', () => {
+  const toEntry = [
+    { x: 5, y: 1 },
+    { x: 1, y: 3 },
+  ];
+  const elsewhere = [
+    { x: 9, y: 1 },
+    { x: 9, y: 9 },
+  ];
+  const goInside = () => {
+    ui.openDoorNote('house_01');
+    byTestId('door-enter').click();
+  };
+  const wheel = () => {
+    hello.map.locations.push({
+      id: 'ferris_wheel',
+      name: 'Ferris wheel',
+      kind: 'ride',
+      area: { x: 10, y: 10, w: 8, h: 8 },
+      entry: { x: 10, y: 9 },
+      hours: { open: '08:00', close: '21:00' },
+      ride: { capacity: 6, durationMin: 10, playerCost: 4, funGain: 30 },
+    });
+    hello.snapshot.player.gold = 10;
+    ui.handleMessage(hello);
+  };
+
+  it('ignores the stale path still in flight, then enters on arrival', () => {
+    at(9, 0);
+    setPlayer({ path: elsewhere });
+    goInside();
+    setPlayer({ path: elsewhere });
+    at(8, 1);
+    setPlayer({ path: toEntry });
+    at(1, 4);
+    expect(sentOf('player.enter')).toEqual([{ type: 'player.enter', locationId: 'house_01' }]);
+  });
+
+  it('a manual move after the walk started cancels, and a later arrival fires nothing', () => {
+    at(9, 0);
+    goInside();
+    setPlayer({ path: toEntry });
+    setPlayer({ path: elsewhere });
+    at(1, 4);
+    expect(sentOf('player.enter')).toHaveLength(0);
+  });
+
+  it('a new target replaces the old one', () => {
+    wheel();
+    at(9, 0);
+    goInside();
+    setPlayer({ path: toEntry, gold: 10 });
+    at(18, 17);
+    byTestId('ride-ferris_wheel').click();
+    setPlayer({ path: [{ x: 10, y: 9 }], gold: 10 });
+    at(1, 4);
+    expect(sentOf('player.enter')).toHaveLength(0);
+    at(10, 10);
+    expect(sentOf('player.ride')).toEqual([{ type: 'player.ride', locationId: 'ferris_wheel' }]);
+  });
+
+  it('repeated clicks send the action once', () => {
+    at(9, 0);
+    goInside();
+    goInside();
+    expect(sentOf('player.move')).toHaveLength(2);
+    setPlayer({ path: toEntry });
+    at(1, 4);
+    at(1, 3);
+    expect(sentOf('player.enter')).toHaveLength(1);
+  });
+
+  it('going inside (or Exit later) leaves nothing pending', () => {
+    at(9, 0);
+    goInside();
+    setPlayer({ path: toEntry });
+    setPlayer({ path: [], inside: { locationId: 'house_02', pos: { x: 1, y: 1 } } });
+    setPlayer({ path: [], inside: null });
+    at(1, 4);
+    expect(sentOf('player.enter')).toHaveLength(0);
+  });
+
+  it('does not ride on arrival when the gold ran out on the way', () => {
+    wheel();
+    at(18, 17);
+    byTestId('ride-ferris_wheel').click();
+    setPlayer({ path: [{ x: 10, y: 9 }], gold: 2 });
+    at(10, 10);
+    expect(sentOf('player.ride')).toHaveLength(0);
+    expect(root.querySelector('#toasts')!.textContent).toContain("Can't do that at Ferris wheel");
+  });
+
+  it('a reconnect (new hello) cancels', () => {
+    at(9, 0);
+    goInside();
+    setPlayer({ path: toEntry });
+    ui.handleMessage(hello);
+    at(1, 4);
+    expect(sentOf('player.enter')).toHaveLength(0);
+  });
+
+  it('gives up after 90 s without arriving', () => {
+    vi.useFakeTimers();
+    at(9, 0);
+    goInside();
+    setPlayer({ path: toEntry });
+    vi.advanceTimersByTime(91_000);
+    at(5, 1);
+    at(1, 4);
+    expect(sentOf('player.enter')).toHaveLength(0);
   });
 });

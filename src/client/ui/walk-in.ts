@@ -29,14 +29,24 @@ interface Pending {
   loc: Location;
   near: (p: Point) => boolean;
   action: ClientMessage;
+  /** Re-checked on arrival: gold, stock or opening hours may have changed on the way. */
+  stillValid: () => boolean;
   since: number;
+  /** Set once a player.updated shows the server walking us to the entry. */
+  acked: boolean;
   unsub: () => void;
 }
 
+const endsAt = (path: Point[], p: Point) => {
+  const goal = path.at(-1);
+  return !!goal && goal.x === p.x && goal.y === p.y;
+};
+
 /**
  * The server only accepts "Go inside", buy and ride next to the place, so walk to its entry
- * first and send the action on arrival. A new path that no longer ends at the entry (the
- * player clicked somewhere else) cancels it.
+ * first and send the action on arrival. Any later path that does not end at the entry (the
+ * player clicked somewhere else), stopping short, going inside, a new hello or a new walk-in
+ * cancels it, so a stale arrival never fires the action.
  */
 export class WalkIn {
   private pending: Pending | null = null;
@@ -52,12 +62,17 @@ export class WalkIn {
   }
 
   enter(loc: Location): void {
-    this.go(loc, (p) => nearDoor(loc, p), { type: 'player.enter', locationId: loc.id });
+    this.go(
+      loc,
+      (p) => nearDoor(loc, p),
+      { type: 'player.enter', locationId: loc.id },
+      () => true,
+    );
   }
 
-  /** Buy or ride at a venue. */
-  use(loc: Location, action: ClientMessage): void {
-    this.go(loc, (p) => nearVenue(loc, p), action);
+  /** Buy or ride at a venue; `stillValid` is checked again before sending on arrival. */
+  use(loc: Location, action: ClientMessage, stillValid: () => boolean = () => true): void {
+    this.go(loc, (p) => nearVenue(loc, p), action, stillValid);
   }
 
   cancel(): void {
@@ -65,33 +80,54 @@ export class WalkIn {
     this.pending = null;
   }
 
-  private go(loc: Location, near: (p: Point) => boolean, action: ClientMessage): void {
+  private go(
+    loc: Location,
+    near: (p: Point) => boolean,
+    action: ClientMessage,
+    stillValid: () => boolean,
+  ): void {
     this.cancel();
     const player = this.store.player;
-    if (!player || player.inside) return;
+    if (!player || player.inside || !stillValid()) return;
     if (near(this.store.playerTile() ?? player.pos)) {
       this.send(action);
       return;
     }
     this.send({ type: 'player.move', to: loc.entry });
     this.store.toast('🚶', `Walking to ${loc.name}…`);
-    // Positions arrive in tick frames ('villagers'); new paths arrive in player.updated.
-    const unsub = this.store.subscribe(['player', 'villagers'], () => this.check());
-    this.pending = { loc, near, action, since: this.now(), unsub };
+    const unsubPlayer = this.store.subscribe(['player'], () => this.onPlayer());
+    // Positions arrive in tick frames ('villagers').
+    const unsubTick = this.store.subscribe(['villagers'], () => this.onTick());
+    const unsubHello = this.store.subscribe(['hello'], () => this.cancel());
+    const unsub = () => {
+      unsubPlayer();
+      unsubTick();
+      unsubHello();
+    };
+    this.pending = { loc, near, action, stillValid, since: this.now(), acked: false, unsub };
   }
 
-  private check(): void {
+  private onPlayer(): void {
     const p = this.pending;
     const player = this.store.player;
     if (!p || !player) return;
     if (player.inside) return this.cancel();
-    if (p.near(this.store.playerTile() ?? player.pos)) {
-      this.cancel();
-      this.send(p.action);
+    if (endsAt(player.path, p.loc.entry)) {
+      p.acked = true;
       return;
     }
-    const goal = player.path.at(-1);
-    const redirected = !!goal && (goal.x !== p.loc.entry.x || goal.y !== p.loc.entry.y);
-    if (redirected || this.now() - p.since > GIVE_UP_MS) this.cancel();
+    // Updates sent before the server took our move still carry the old path; ignore those.
+    if (p.acked && player.path.length > 0) this.cancel();
+  }
+
+  private onTick(): void {
+    const p = this.pending;
+    const player = this.store.player;
+    if (!p || !player) return;
+    if (player.inside || this.now() - p.since > GIVE_UP_MS) return this.cancel();
+    if (!p.near(this.store.playerTile() ?? player.pos)) return;
+    this.cancel();
+    if (p.stillValid()) this.send(p.action);
+    else this.store.toast('⚠️', `Can't do that at ${p.loc.name} any more`);
   }
 }

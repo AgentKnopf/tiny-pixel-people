@@ -51,12 +51,26 @@ export function createPlaceBar(ctx: UiContext): HTMLElement {
       label,
     );
 
+  const rideClosed = (loc: Location) =>
+    !isOpen(loc, store.time) || store.rides.get(loc.id)?.status === 'closed';
+  const onRide = (loc: Location) => {
+    const ride = store.rides.get(loc.id);
+    const id = store.player?.id;
+    return !!id && !!ride && (ride.queue.includes(id) || ride.riders.includes(id));
+  };
+  const canRide = (loc: Location) =>
+    !!loc.ride && !rideClosed(loc) && !onRide(loc) && (store.player?.gold ?? 0) >= loc.ride.playerCost;
+  const canBuy = (loc: Location, itemId: string) =>
+    isOpen(loc, store.time) &&
+    stockOf(store, loc, itemId) > 0 &&
+    (store.player?.gold ?? 0) >= (FOOD_PRICES[itemId] ?? 0);
+
   const venueRow = (loc: Location): HTMLElement | null => {
     const gold = store.player?.gold ?? 0;
     const open = isOpen(loc, store.time);
     if (loc.kind === 'ride' && loc.ride) {
       const ride = store.rides.get(loc.id);
-      const closed = !open || ride?.status === 'closed';
+      const closed = rideClosed(loc);
       const cost = loc.ride.playerCost;
       const queued = store.player ? (ride?.queue.includes(store.player.id) ?? false) : false;
       const riding = store.player ? (ride?.riders.includes(store.player.id) ?? false) : false;
@@ -77,7 +91,7 @@ export function createPlaceBar(ctx: UiContext): HTMLElement {
             : btn(
                 `Ride (${cost} gold)`,
                 `ride-${loc.id}`,
-                () => ctx.walkIn.use(loc, { type: 'player.ride', locationId: loc.id }),
+                () => ctx.walkIn.use(loc, { type: 'player.ride', locationId: loc.id }, () => canRide(loc)),
                 {
                   disabled: closed || gold < cost,
                   title: closed ? 'The rides are closed now' : gold < cost ? 'Not enough gold' : undefined,
@@ -111,7 +125,10 @@ export function createPlaceBar(ctx: UiContext): HTMLElement {
                 : gold < price
                   ? 'Not enough gold'
                   : `Buy ${def.name}`,
-            onclick: () => ctx.walkIn.use(loc, { type: 'player.buy', locationId: loc.id, itemId }),
+            onclick: () =>
+              ctx.walkIn.use(loc, { type: 'player.buy', locationId: loc.id, itemId }, () =>
+                canBuy(loc, itemId),
+              ),
           },
           spriteIcon(def.sprite, def.emoji),
           ` ${def.name} · ${price}🪙`,
