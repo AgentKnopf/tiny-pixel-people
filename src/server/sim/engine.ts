@@ -2,6 +2,7 @@ import {
   NOTE_MAX_LENGTH,
   type ClientMessage,
   type ServerMessage,
+  type SimStatusMsg,
   type VillagerFrame,
   type VillagerProfilePublic,
 } from '../../shared/protocol.ts';
@@ -83,19 +84,11 @@ export const BUBBLE_MS = 5000;
 const STATS_INTERVAL_MS = 2000;
 /** The clock waits here each morning until the villagers' plans for the day are settled. */
 export const WAKE_UP_MINUTE = 6 * 60;
-export const DEFAULT_WAKE_UP_TIMEOUT_SEC = 300;
 /** Virtual-clock mode gives up waiting after this many drain rounds. */
 const WAKE_UP_MAX_ROUNDS = 5;
 /** Real-time grace before an idle LLM queue counts as "every plan request has finished". */
 const WAKE_UP_IDLE_GRACE_MS = 1500;
 
-/** Broadcast while the morning wake-up hold is active and once when it ends. */
-export interface SimStatusMsg {
-  type: 'sim.status';
-  phase: 'wakingUp' | 'running';
-  plansReady: number;
-  villagers: number;
-}
 const FULL_FRAME_EVERY_TICKS = 50;
 
 export type CommandHandler = (cmd: ClientMessage, host: SimHost) => ServerMessage[] | void;
@@ -796,14 +789,8 @@ export class Engine implements SimEngine, SimHost {
     }
   }
 
-  private get wakeUpTimeoutSec(): number {
-    const v = (this.config.sim as { wakeUpTimeoutSec?: number }).wakeUpTimeoutSec;
-    return typeof v === 'number' && v >= 0 ? v : DEFAULT_WAKE_UP_TIMEOUT_SEC;
-  }
-
   private planSettled(rt: Runtime, day: number): boolean {
-    const mind = rt.mind as VillagerMind & { isPlanSettled?: (day: number) => boolean };
-    if (typeof mind.isPlanSettled === 'function') return mind.isPlanSettled(day);
+    if (rt.mind.isPlanSettled) return rt.mind.isPlanSettled(day);
     // Minds without an LLM plan (stubs, tests) never keep the village waiting.
     if (!(rt.mind instanceof Mind)) return true;
     const plan = rt.state.plan;
@@ -822,7 +809,7 @@ export class Engine implements SimEngine, SimHost {
   private holdForWakeUp(target: GameMinutes): boolean {
     const day = dayOf(target);
     if (day <= this.wokeDay || minuteOfDay(target) < WAKE_UP_MINUTE) return false;
-    const timeout = this.wakeUpTimeoutSec;
+    const timeout = this.config.sim.wakeUpTimeoutSec;
     if (timeout <= 0 || this.queue.isOnline() === false) {
       this.endWakeUp(day, false);
       return false;
@@ -882,7 +869,7 @@ export class Engine implements SimEngine, SimHost {
       plansReady: Math.max(0, plansReady),
       villagers: villagers ?? [...this.runtimes.values()].filter((rt) => !rt.profile.transient).length,
     };
-    this.broadcast(msg as unknown as ServerMessage);
+    this.broadcast(msg);
   }
 
   private everyoneAsleep(): boolean {
