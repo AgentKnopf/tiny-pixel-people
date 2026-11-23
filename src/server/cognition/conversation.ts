@@ -3,11 +3,17 @@
  * that stores conversation + heard memories for both villagers and propagates gossip origin ids.
  * The runner only appends to `conversation.messages`; the engine broadcasts them.
  */
-import type { Conversation, ConversationMessage, Memory, VillagerId } from '../../shared/types.ts';
+import type {
+  Conversation,
+  ConversationMessage,
+  Memory,
+  Provenance,
+  VillagerId,
+} from '../../shared/types.ts';
 import { asArray, asBool, asNumber, asRecord, asString, clamp, pick } from './json.ts';
 import { extractKeywords, keywordOverlap } from './keywords.ts';
 import { ask, loadTracker, type LoadLevel } from './llm.ts';
-import { Mind, cleanLine } from './mind.ts';
+import { Mind, PRIORITY, cleanLine } from './mind.ts';
 import { bestSentence, findMention, newsText } from './gossip.ts';
 import { convoSummarizePrompt, convoTurnPrompt } from './prompts/social.ts';
 import { settingsFromConfig } from './settings.ts';
@@ -87,7 +93,12 @@ export class LlmConversationRunner implements ConversationRunner {
         endBy,
       );
       if (conversation.status !== 'active') break;
-      const msg: ConversationMessage = { speakerId: speaker.id, text: res.say, at: this.deps.now() };
+      const msg: ConversationMessage = {
+        speakerId: speaker.id,
+        text: res.say,
+        at: this.deps.now(),
+        source: res.source,
+      };
       conversation.messages.push(msg);
       if (res.end && turn >= 1) break;
     }
@@ -111,13 +122,15 @@ export class LlmConversationRunner implements ConversationRunner {
     turn: number,
     maxTurns: number,
     endBy: number,
-  ): Promise<{ say: string; end: boolean }> {
+  ): Promise<{ say: string; end: boolean; source: Provenance }> {
     const view = speaker.lastView;
     const now = this.deps.now();
     const load = this.load();
     const fallback = () => fallbackTurn(speaker, listener, offered, heard, conv.messages, turn, maxTurns);
-    // Overloaded: canned lines carry the news without waiting for the model.
-    if (load === 'overloaded') return fallback();
+    // The speaker's first line with news always gets a real model attempt (the canned line is
+    // only the safety net); other lines are canned when the model is overloaded.
+    const firstNews = offered.length > 0 && !conv.messages.some((m) => m.speakerId === speaker.id);
+    if (load === 'overloaded' && !firstNews) return { ...fallback(), source: 'fallback' };
     const last = conv.messages.at(-1);
     const justHeard =
       last?.speakerId === listener.id
@@ -172,19 +185,29 @@ export class LlmConversationRunner implements ConversationRunner {
       shape: '{"say":"...","end":false}',
       now: () => this.deps.now(),
       // A line that comes too late is replaced by a canned one so the chat keeps moving.
-      deadline: Math.min(endBy, now + (load === 'normal' ? 45 : 20)),
+      deadline: Math.max(now + 20, Math.min(endBy, now + (load === 'normal' || firstNews ? 45 : 20))),
       noRepair: load !== 'normal',
+      ...(firstNews ? { priority: PRIORITY.convoFirstNews } : {}),
       temperature: this.settings.temperature,
       maxTokens: 70,
     });
-    const out = res.value;
+    const out = { ...res.value, source: res.source };
+    // Short chats under load may not get another chance: news the model left out is appended.
+    const carried = offered.find((o) =>
+      findMention(o.text, [{ speakerId: speaker.id, text: out.say, at: now }], speaker.id, 0.3),
+    );
+    if (firstNews && load !== 'normal' && !carried) {
+      const item = offered.find((o) => o.memory.kind !== 'reflection') ?? offered[0]!;
+      return { say: `${out.say} Did you hear? ${item.text}`.slice(0, 300), end: false, source: 'fallback' };
+    }
     // News that is not acknowledged does not stick: a reply that ignores it gets a short echo.
+    // The patched line is partly canned, so it counts as a fallback.
     if (
       justHeard &&
       res.source === 'llm' &&
       !findMention(justHeard.text, [{ ...last!, speakerId: speaker.id, text: out.say }], speaker.id, 0.3)
     )
-      return { ...out, say: `${echoLine(justHeard.text)} ${out.say}`.slice(0, 300) };
+      return { ...out, say: `${echoLine(justHeard.text)} ${out.say}`.slice(0, 300), source: 'fallback' };
     return out;
   }
 

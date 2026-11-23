@@ -4,7 +4,9 @@ import type { Conversation } from '../../../src/shared/types.ts';
 import { MockChatProvider } from '../../../src/server/llm/providers/mock.ts';
 import {
   ask,
+  fallbackStats,
   LoadTracker,
+  statsLine,
   loadTracker,
   LAG_BUSY,
   LAG_OVERLOADED,
@@ -127,6 +129,7 @@ describe('under load', () => {
 
   it('opens with the news holder, keeps turns short and echoes news with canned lines when overloaded', async () => {
     const p = new MockChatProvider();
+    p.setScript('convo.turn', () => '{"say":"Hello there!","end":false}');
     const v = createTestVillage({ start: at(0, '08:00'), provider: p });
     await v.advanceTo(at(0, '08:01'));
     tell(v, 'ben', "The mayor's cat is named Biscuit.");
@@ -144,7 +147,12 @@ describe('under load', () => {
     expect(c.messages[1]).toMatchObject({ speakerId: 'mia' });
     expect(c.messages[1]!.text).toContain('Biscuit');
     expect(c.messages.length).toBeLessThanOrEqual(3);
-    expect(v.queue.requests.length).toBe(before);
+    // One real attempt for the news line (it ignored the news, so the news was appended); the rest is canned.
+    const turns = v.queue.requests.slice(before);
+    expect(turns.map((r) => [r.task, r.meta?.villagerId])).toEqual([['convo.turn', 'ben']]);
+    expect(v.queue.priorities.get(turns[0]!)).toBe(PRIORITY.convoFirstNews);
+    expect(c.messages[0]!.text).toMatch(/^Hello there! Did you hear\?/);
+    expect(c.messages.map((m) => m.source)).toEqual(c.messages.map(() => 'fallback'));
     expect(
       v.minds
         .get('mia')!
@@ -173,6 +181,32 @@ describe('under load', () => {
     expect(c.messages[1]!.text).toMatch(/^Really\? The mayor's cat is named Biscuit\? Nice weather/);
     const turnReq = v.queue.requests.find((r) => r.task === 'convo.turn')!;
     expect(turnReq.maxTokens).toBeLessThanOrEqual(80);
+  });
+
+  it('marks model lines as llm and patched or canned lines as fallback', async () => {
+    const p = new MockChatProvider();
+    p.setScript('convo.turn', (req) =>
+      req.meta?.villagerId === 'ben'
+        ? `{"say":"Guess what, the mayor's cat is named Biscuit!","end":false}`
+        : '{"say":"Nice weather today!","end":true}',
+    );
+    const v = createTestVillage({ start: at(0, '08:00'), provider: p });
+    await v.advanceTo(at(0, '08:01'));
+    tell(v, 'ben', "The mayor's cat is named Biscuit.");
+    loadTracker(v.queue).seed(LAG_OVERLOADED + 10, v.time.now);
+    const run = createConversationRunner({
+      config: testConfig(),
+      queue: v.queue,
+      now: () => v.time.now,
+      emit: () => {},
+    });
+    const c = await run.run(convo(v, 'mia', 'ben', 'c3'), [v.minds.get('mia')!, v.minds.get('ben')!]);
+    expect(c.messages[0]).toMatchObject({ speakerId: 'ben', source: 'llm' });
+    expect(c.messages[0]!.text).toBe("Guess what, the mayor's cat is named Biscuit!");
+    expect(c.messages[1]).toMatchObject({ speakerId: 'mia', source: 'fallback' });
+    const stats = fallbackStats(v.queue)['convo.turn']!;
+    expect(stats.llm).toBeGreaterThanOrEqual(1);
+    expect(statsLine(fallbackStats(v.queue))).toMatch(/convo\.turn \d+\/\d+/);
   });
 
   it('only wants to talk when there is news while overloaded', async () => {

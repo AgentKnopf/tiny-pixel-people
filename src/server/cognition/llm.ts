@@ -1,4 +1,5 @@
 import { createLogger } from '../log.ts';
+import type { Provenance } from '../../shared/types.ts';
 import { TASK_PRIORITY, type ChatMessage, type LlmQueue, type LlmTask } from '../llm/types.ts';
 import { parseJsonLoose } from './json.ts';
 
@@ -35,10 +36,38 @@ export interface AskSpec<T> {
 
 export interface AskResult<T> {
   value: T;
-  source: 'llm' | 'fallback';
+  source: Provenance;
 }
 
 export type LoadLevel = 'normal' | 'busy' | 'overloaded';
+
+/** Per task: answers that came from the model vs. from the deterministic fallback. */
+export type FallbackStats = Record<string, { llm: number; fallback: number }>;
+
+/** Offline (shed) answers and unparseable model output both count as fallback. */
+const stats = new WeakMap<LlmQueue, FallbackStats>();
+
+export function fallbackStats(queue: LlmQueue): FallbackStats {
+  let s = stats.get(queue);
+  if (!s) {
+    s = {};
+    stats.set(queue, s);
+  }
+  return s;
+}
+
+function record(queue: LlmQueue, task: LlmTask, source: Provenance): void {
+  const s = fallbackStats(queue);
+  const entry = (s[task] ??= { llm: 0, fallback: 0 });
+  entry[source]++;
+}
+
+export function statsLine(s: FallbackStats): string {
+  const parts = Object.keys(s)
+    .sort()
+    .map((task) => `${task} ${s[task]!.llm}/${s[task]!.fallback}`);
+  return parts.length ? parts.join(', ') : 'none';
+}
 
 /**
  * How far behind the model is, in game minutes, per queue. Measured in game time so a fast model,
@@ -110,11 +139,16 @@ export function loadTracker(queue: LlmQueue): LoadTracker {
  * Never throws.
  */
 export async function ask<T>(queue: LlmQueue, spec: AskSpec<T>): Promise<AskResult<T>> {
-  if (spec.offline) return { value: spec.fallback(), source: 'fallback' };
+  if (spec.offline) {
+    record(queue, spec.task, 'fallback');
+    return { value: spec.fallback(), source: 'fallback' };
+  }
   const tracker = spec.now ? loadTracker(queue) : null;
   const id = tracker && spec.now ? tracker.start(spec.now()) : 0;
   try {
-    return await askInner(queue, spec);
+    const res = await askInner(queue, spec);
+    record(queue, spec.task, res.source);
+    return res;
   } finally {
     if (tracker && spec.now) tracker.finish(id, spec.now());
   }
