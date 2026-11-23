@@ -1,0 +1,8 @@
+[
+  {
+    "pair": ["franzi", "laude"],
+    "stage": "crush",
+    "crushFrom": ["laude", "franzi"],
+    "shy": true
+  }
+]

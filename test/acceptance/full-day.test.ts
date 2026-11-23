@@ -40,7 +40,8 @@ describe.skipIf(!ready(...SIM_FEATURES))(`AC2 + AC6: a full game day${waitingFor
   it('runs 10 villagers through a whole day without errors', () => {
     expect(w.now()).toBe(at(1, '08:00'));
     expect(dayOf(w.now())).toBe(1);
-    expect(w.state().villagers).toHaveLength(10);
+    // Residents only: v2 train visitors come and go and are covered by the v2 suites.
+    expect(w.state().villagers.filter((v) => !w.profile(v.id).visitor)).toHaveLength(10);
     expect(w.errors()).toEqual([]);
     expect(w.ticks).toBeGreaterThan(0);
   });

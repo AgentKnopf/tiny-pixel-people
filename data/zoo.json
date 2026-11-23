@@ -1,0 +1,18 @@
+{
+  "defaultCount": [1, 2],
+  "counts": { "penguin": 3, "flamingo": 3 },
+  "names": {
+    "lion": ["Leo", "Nala"],
+    "elephant": ["Ellie", "Jumbo"],
+    "giraffe": ["Gigi", "Stretch"],
+    "zebra": ["Ziggy", "Stripes"],
+    "penguin": ["Pingu", "Waddles", "Flipper"],
+    "monkey": ["Momo", "Coco"],
+    "panda": ["Bao", "Mei"],
+    "flamingo": ["Rosa", "Flo", "Pinky"],
+    "kangaroo": ["Joey", "Skip"],
+    "polar_bear": ["Frost", "Nanook"],
+    "hippo": ["Gloria", "Hugo"],
+    "crocodile": ["Snappy", "Chomp"]
+  }
+}
