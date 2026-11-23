@@ -9,7 +9,6 @@ import {
   type FarmState,
   type FoodStock,
   type GameMinutes,
-  type VillagerProfile,
   type WorldMap,
 } from '../../../src/shared/types.ts';
 import { at, dayOf, minuteOfDay, parseClock } from '../../../src/shared/time.ts';
@@ -24,18 +23,15 @@ import { createTestWorld, testConfig, type TestWorld } from '../../helpers/world
 
 const F: Feature[] = [...V2.farm];
 
-/** Options passed to the AnimalSim factory of src/server/sim/animals.ts (see animalSimFactory). */
+/** `AnimalSimOptions` of src/server/sim/animals.ts; the RNG seed comes from `config.sim.seed`. */
 interface AnimalSimOptions {
   map: WorldMap;
   config: AppConfig;
-  /** Seeds the animal RNG. */
-  seed: number;
   /** Seeding time when not restoring. */
   now: GameMinutes;
   restore?: { animals: AnimalState[]; farm: FarmState };
   /** Burger stock at burger_joint, for the butcher rule (spec v2 §3.3). */
   burgerStock?: () => number;
-  profiles?: readonly VillagerProfile[];
 }
 
 const DAYS = 60;
@@ -75,7 +71,6 @@ async function runUnit(): Promise<UnitLog> {
   const sim = createAnimalSim({
     map,
     config,
-    seed: SEED,
     now: start,
     burgerStock: () => burgers(pw.farm.stock()),
   });

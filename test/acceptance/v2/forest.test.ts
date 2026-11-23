@@ -10,7 +10,6 @@ import {
   type Memory,
   type Point,
   type Rect,
-  type VillagerProfile,
   type WorldMap,
   type WorldSnapshot,
 } from '../../../src/shared/types.ts';
@@ -23,15 +22,13 @@ import { createTestWorld, testConfig, type TestWorld } from '../../helpers/world
 
 const F: Feature[] = [...V2.animals];
 
-/** Options passed to the AnimalSim factory of src/server/sim/animals.ts (see animalSimFactory). */
+/** `AnimalSimOptions` of src/server/sim/animals.ts; the RNG seed comes from `config.sim.seed`. */
 interface AnimalSimOptions {
   map: WorldMap;
   config: AppConfig;
-  seed: number;
   now: GameMinutes;
   restore?: { animals: AnimalState[]; farm: FarmState };
   burgerStock?: () => number;
-  profiles?: readonly VillagerProfile[];
 }
 
 const SEED = 17;
@@ -200,7 +197,7 @@ describe.skipIf(!readyV2(...F))(`AC26: the forest${waitingForV2(...F)}`, () => {
       const noon = at(0, '12:00');
       let tested = 0;
       for (const species of ['deer', 'rabbit', 'squirrel'] as const) {
-        const sim = createAnimalSim({ map, config, seed: SEED, now: noon });
+        const sim = createAnimalSim({ map, config, now: noon });
         sim.step(noon + 1, []);
         const a = sim.all().find((x) => x.species === species && x.status !== 'sleeping');
         if (!a) continue;

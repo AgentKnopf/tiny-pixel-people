@@ -23,15 +23,26 @@ interface V1Fixture {
   height: number;
   locations: { id: string; kind: LocationKind; area: Rect; entry: Point; door?: Point }[];
   scenes: { id: string; rect: Rect }[];
-  buildings: {
-    id: string;
-    area: Rect;
-    ground: number[][];
-    decor: number[][];
-    overhead: number[][];
-    collision: number[][];
-  }[];
+  /** Every layer of the v1 map (e769b2b), one array per tile row. */
+  layers: Record<'ground' | 'decor' | 'overhead' | 'collision', number[][]>;
 }
+
+/** Spec v2 §2.1: the only town tiles that may differ from v1 (house_laude; the main road's south edge). */
+const TOWN_EXCEPTIONS: Rect[] = [
+  { x: 44, y: 0, w: 4, h: 6 },
+  { x: 43, y: 27, w: 4, h: 3 },
+];
+
+/** Spec v2 §2.1 district rects. */
+const DISTRICT_RECTS: Record<DistrictId, Rect> = {
+  town: { x: 0, y: 0, w: 48, h: 30 },
+  post_row: { x: 44, y: 0, w: 20, h: 9 },
+  zoo: { x: 48, y: 0, w: 48, h: 34 },
+  forest: { x: 96, y: 0, w: 32, h: 60 },
+  farmstead: { x: 0, y: 30, w: 36, h: 30 },
+  market: { x: 36, y: 30, w: 12, h: 30 },
+  station: { x: 48, y: 34, w: 48, h: 26 },
+};
 
 const readJson = (rel: string): unknown => JSON.parse(readFileSync(repoPath(rel), 'utf8'));
 
@@ -135,6 +146,7 @@ describe.skipIf(!readyV2(...F))(`AC8: the v2 map${waitingForV2(...F)}`, () => {
     const m = map();
     const ids = (m.districts ?? []).map((d) => d.id);
     expect([...ids].sort()).toEqual([...DISTRICTS].sort());
+    for (const d of m.districts ?? []) expect(d.rect, d.id).toEqual(DISTRICT_RECTS[d.id]);
     for (const d of m.districts ?? [])
       expect(inside(d.rect, { x: 0, y: 0, w: m.width, h: m.height }), `${d.id} inside the map`).toBe(true);
     const uncovered: string[] = [];
@@ -250,24 +262,20 @@ describe.skipIf(!readyV2(...F))(`AC8: the v2 map${waitingForV2(...F)}`, () => {
     }
   });
 
-  it('keeps the v1 building tiles unchanged', () => {
+  it('keeps every v1 town tile in every layer, except the two §2.1 exceptions', () => {
     const m = map();
+    const fx = v1();
+    const layers = { ...m.layers, collision: m.collision };
     const changed: string[] = [];
-    for (const b of v1().buildings) {
-      const layers = { ...m.layers, collision: m.collision };
-      for (const key of ['ground', 'decor', 'overhead', 'collision'] as const) {
-        const rows = b[key];
-        for (let dy = 0; dy < b.area.h; dy++)
-          for (let dx = 0; dx < b.area.w; dx++) {
-            const x = b.area.x + dx;
-            const y = b.area.y + dy;
-            const now = layers[key][y * m.width + x];
-            const was = rows[dy]![dx];
-            if (now !== was) changed.push(`${b.id} ${key} (${x}, ${y}): ${was} -> ${now}`);
-          }
-      }
-    }
-    expect(changed.slice(0, 20), `${changed.length} changed building tiles`).toEqual([]);
+    for (const key of ['ground', 'decor', 'overhead', 'collision'] as const)
+      for (let y = 0; y < fx.height; y++)
+        for (let x = 0; x < fx.width; x++) {
+          if (TOWN_EXCEPTIONS.some((r) => contains(r, { x, y }))) continue;
+          const was = fx.layers[key][y]![x];
+          const now = layers[key][y * m.width + x];
+          if (now !== was) changed.push(`${key} (${x}, ${y}): ${was} -> ${now}`);
+        }
+    expect(changed.slice(0, 20), `${changed.length} changed v1 town tiles`).toEqual([]);
   });
 
   it('keeps the v1 scenes and adds the 8 new ones, all inside the map', () => {
