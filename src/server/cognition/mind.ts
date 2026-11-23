@@ -15,6 +15,7 @@ import {
   type Needs,
   type NoteId,
   type PlanBlock,
+  type Provenance,
   type VillageEvent,
   type VillagerId,
   type VillagerProfile,
@@ -37,7 +38,15 @@ import type {
 import { isTrivialObservation } from './importance.ts';
 import { asArray, asBool, asNumber, asRecord, asString, clamp, parseClockLoose, pick } from './json.ts';
 import { extractKeywords, keywordOverlap } from './keywords.ts';
-import { ask, loadTracker, type AskResult, type AskSpec, type LoadLevel } from './llm.ts';
+import {
+  ask,
+  fallbackStats,
+  loadTracker,
+  statsLine,
+  type AskResult,
+  type AskSpec,
+  type LoadLevel,
+} from './llm.ts';
 import { MemoryStore } from './memory.ts';
 import {
   blockAt,
@@ -89,7 +98,9 @@ const SUMMARY_RE = /^Summary of day (\d+):/;
  */
 export const PRIORITY = {
   planToday: 105,
-  eventPropose: 95,
+  // Above convo.turn (100): one call a day that must not starve behind chatter.
+  eventPropose: 101,
+  convoFirstNews: 104,
   eventDecide: 92,
   noteReply: 108,
   planRetry: 90,
@@ -121,6 +132,7 @@ export class Mind implements VillagerMind {
   private readonly summarizedDays = new Set<number>();
   private readonly prepared = new Map<number, DayPlan>();
   private readonly planAttempts = new Map<number, number>();
+  private readonly planSettled = new Set<number>();
   private readonly needFixedAt: Partial<Record<keyof Needs, GameMinutes>> = {};
   private readonly lastTalkedAt = new Map<VillagerId, GameMinutes>();
   private lastArchiveDay = -1;
@@ -396,6 +408,15 @@ export class Mind implements VillagerMind {
       .finally(() => this.pending.delete(key));
   }
 
+  /**
+   * True once a plan.day request for `day` has finished (model plan or fallback) with no retry
+   * pending, or a model plan for it is already in hand. The engine holds the dawn clock on this.
+   */
+  isPlanSettled(day: number): boolean {
+    if (this.planSettled.has(day) || this.prepared.get(day)?.source === 'llm') return true;
+    return this.plan?.day === day && this.plan.source === 'llm';
+  }
+
   isBusy(key: string): boolean {
     return this.pending.has(key);
   }
@@ -516,95 +537,118 @@ export class Mind implements VillagerMind {
   private requestDayPlan(view: WorldView, day: number): void {
     this.planAttempts.set(day, (this.planAttempts.get(day) ?? 0) + 1);
     this.job(`plan.day:${day}`, async () => {
-      const now = view.now;
-      const memories = await this.memory.retrieve(
-        `my plans for today ${this.profile.occupation} ${this.profile.name}`,
-        now,
-        { k: 8 },
-      );
-      const yesterday =
-        [...this.memory.all()]
-          .reverse()
-          .find((m) => m.kind === 'summary')
-          ?.text.replace(SUMMARY_RE, '')
-          .trim() ?? '';
-      const acceptedEvents = view.events.filter(
-        (e) =>
-          dayOf(e.start) === day &&
-          e.status !== 'cancelled' &&
-          (e.hostId === this.id || e.accepted.includes(this.id)),
-      );
-      const allowProposal =
-        this.village.proposalsOn(day) < this.settings.maxProposalsPerDay && this.deps.random() < 0.2;
-      const p = planDayPrompt({
-        profile: this.profile,
-        day,
-        window: this.window,
-        yesterday,
-        memories,
-        events: acceptedEvents,
-        locations: view.locations,
-        needs: view.self.needs,
-        ...(view.weather ? { weather: view.weather } : {}),
-        allowProposal,
-      });
-      const res = await this.ask({
-        task: 'plan.day',
-        ...p,
-        meta: { ...this.baseMeta(view), day, acceptedEvents },
-        parse: (raw) => parsePlan(raw, view.locations, this.profile.homeId),
-        fallback: () => null,
-        shape:
-          '{"summary":"...","blocks":[{"start":"07:00","end":"09:00","location":"<id>","activity":"...","emoji":"🙂"}]}',
-        dedupeKey: `plan:${this.id}:day${day}`,
-        // Today's plan is late already (the villager runs on the fallback): ahead of everything.
-        priority:
-          day > dayOf(this.deps.now())
-            ? PRIORITY.planTomorrow
-            : (this.planAttempts.get(day) ?? 0) > 1
-              ? PRIORITY.planRetry
-              : PRIORITY.planToday,
-        temperature: this.settings.temperature,
-        maxTokens: 320,
-      });
-      const parsed = res.value;
-      if (!parsed) return;
-      const latest = this.lastView ?? view;
-      const blocks = withEvents(parsed.blocks, this.world.events(), this.id, day);
-      const summary = parsed.summary || `My plan for day ${day + 1}.`;
-      if (this.plan?.day === day) {
-        const mod = minuteOfDay(this.deps.now());
-        const merged = mergeFrom(this.plan.blocks, blocks, dayOf(this.deps.now()) === day ? mod : 0);
-        this.setPlan({
-          ...this.plan,
-          summary,
-          blocks: normalizeBlocks(merged, this.window, this.profile.homeId),
-          revision: this.plan.revision + 1,
-          source: 'llm',
-          createdAt: this.deps.now(),
-        });
-      } else if (!this.plan || day > this.plan.day) {
-        this.prepared.set(
-          day,
-          makePlan(
-            day,
-            summary,
-            normalizeBlocks(blocks, this.window, this.profile.homeId),
-            'llm',
-            this.deps.now(),
-          ),
-        );
+      let retrying = false;
+      try {
+        retrying = await this.dayPlanJob(view, day);
+      } finally {
+        if (!retrying) this.planSettled.add(day);
       }
-      this.addMemory({
-        kind: 'plan',
-        at: this.deps.now(),
-        text: `My plan for day ${day + 1}: ${summary}`,
-        importance: 3,
-      });
-      this.world.setThought(summary);
-      if (parsed.proposeEvent && this.village.proposalsOn(day) < this.settings.maxProposalsPerDay)
-        this.createEvent(parsed.proposeEvent, latest);
     });
+  }
+
+  /** Returns true when an immediate retry was scheduled. */
+  private async dayPlanJob(view: WorldView, day: number): Promise<boolean> {
+    const now = view.now;
+    const memories = await this.memory.retrieve(
+      `my plans for today ${this.profile.occupation} ${this.profile.name}`,
+      now,
+      { k: 5 },
+    );
+    const yesterday =
+      [...this.memory.all()]
+        .reverse()
+        .find((m) => m.kind === 'summary')
+        ?.text.replace(SUMMARY_RE, '')
+        .trim() ?? '';
+    const acceptedEvents = view.events.filter(
+      (e) =>
+        dayOf(e.start) === day &&
+        e.status !== 'cancelled' &&
+        (e.hostId === this.id || e.accepted.includes(this.id)),
+    );
+    const allowProposal =
+      this.village.proposalsOn(day) < this.settings.maxProposalsPerDay && this.deps.random() < 0.2;
+    const p = planDayPrompt({
+      profile: this.profile,
+      day,
+      window: this.window,
+      yesterday,
+      memories,
+      events: acceptedEvents,
+      locations: view.locations,
+      needs: view.self.needs,
+      ...(view.weather ? { weather: view.weather } : {}),
+      allowProposal,
+    });
+    const res = await this.ask({
+      task: 'plan.day',
+      ...p,
+      meta: { ...this.baseMeta(view), day, acceptedEvents },
+      parse: (raw) => parsePlan(raw, view.locations, this.profile.homeId),
+      fallback: () => null,
+      shape:
+        '{"summary":"...","blocks":[{"start":"07:00","end":"09:00","location":"<id>","activity":"...","emoji":"🙂"}]}',
+      dedupeKey: `plan:${this.id}:day${day}`,
+      // Today's plan is late already (the villager runs on the fallback): ahead of everything.
+      priority:
+        day > dayOf(this.deps.now())
+          ? PRIORITY.planTomorrow
+          : (this.planAttempts.get(day) ?? 0) > 1
+            ? PRIORITY.planRetry
+            : PRIORITY.planToday,
+      temperature: this.settings.temperature,
+      maxTokens: 320,
+    });
+    const parsed = res.value;
+    if (!parsed) {
+      // Retry once right away: while the engine holds the clock for the morning plans, waiting
+      // for a game-time retry would never happen.
+      if (
+        (this.planAttempts.get(day) ?? 0) === 1 &&
+        !(this.plan?.day === day && this.plan.source === 'llm')
+      ) {
+        setTimeout(() => this.requestDayPlan(this.lastView ?? view, day), 0);
+        return true;
+      }
+      return false;
+    }
+    const latest = this.lastView ?? view;
+    const blocks = withEvents(parsed.blocks, this.world.events(), this.id, day);
+    const summary = parsed.summary || `My plan for day ${day + 1}.`;
+    if (this.plan?.day === day) {
+      const mod = minuteOfDay(this.deps.now());
+      const merged = mergeFrom(this.plan.blocks, blocks, dayOf(this.deps.now()) === day ? mod : 0);
+      this.setPlan({
+        ...this.plan,
+        summary,
+        blocks: normalizeBlocks(merged, this.window, this.profile.homeId),
+        revision: this.plan.revision + 1,
+        source: 'llm',
+        createdAt: this.deps.now(),
+      });
+    } else if (!this.plan || day > this.plan.day) {
+      this.prepared.set(
+        day,
+        makePlan(
+          day,
+          summary,
+          normalizeBlocks(blocks, this.window, this.profile.homeId),
+          'llm',
+          this.deps.now(),
+        ),
+      );
+      if (!isAwake(this.window, minuteOfDay(this.deps.now()))) this.publishPrepared(day);
+    }
+    this.addMemory({
+      kind: 'plan',
+      at: this.deps.now(),
+      text: `My plan for day ${day + 1}: ${summary}`,
+      importance: 3,
+    });
+    this.world.setThought(summary);
+    if (parsed.proposeEvent && this.village.proposalsOn(day) < this.settings.maxProposalsPerDay)
+      this.createEvent(parsed.proposeEvent, latest, 'llm');
+    return false;
   }
 
   private maybeReplan(view: WorldView, day: number, mod: number): void {
@@ -988,15 +1032,18 @@ export class Mind implements VillagerMind {
         shape:
           '{"title":"...","description":"...","location":"<id>","start":"15:00","durationMinutes":120,"invitees":["Name"]}',
         priority: PRIORITY.eventPropose,
-        deadline: view.now + (this.load() === 'normal' ? 120 : 45),
+        // Never expires in the queue, so the model gets at least one try; the fallback event is
+        // used only if nothing came back by early afternoon.
+        expiresAt: Number.MAX_SAFE_INTEGER,
+        deadline: Math.max(view.now + 60, dayOf(view.now) * MINUTES_PER_DAY + 13 * 60),
         temperature: this.settings.temperature,
         maxTokens: 200,
       });
-      this.createEvent(res.value, this.lastView ?? view);
+      this.createEvent(res.value, this.lastView ?? view, res.source);
     });
   }
 
-  private createEvent(raw: RawEventProposal, view: WorldView): VillageEvent | null {
+  private createEvent(raw: RawEventProposal, view: WorldView, source: Provenance): VillageEvent | null {
     const now = this.deps.now();
     const end = planEnd(this.window);
     let day = dayOf(now);
@@ -1034,6 +1081,7 @@ export class Mind implements VillagerMind {
       );
     while (invitees.size < 5 && others.length) invitees.add(others.shift()!);
     const event: VillageEvent = {
+      source,
       id: `ev-${this.id}-${Math.round(now)}`,
       title: raw.title,
       description: raw.description,
@@ -1135,13 +1183,22 @@ export class Mind implements VillagerMind {
         maxTokens: 200,
       });
       const reply = ensureReference(res.value, note.text);
+      // A reply we had to patch to reference the note counts as a fallback.
+      const replySource: Provenance = res.source === 'llm' && reply === res.value ? 'llm' : 'fallback';
       const at = this.deps.now();
       const latest = this.world.notes().find((n) => n.id === note.id) ?? {
         ...note,
         status: 'read' as const,
         readAt: view.now,
       };
-      this.world.upsertNote({ ...latest, status: 'replied', reply, repliedAt: at });
+      const replied: DoorNote = {
+        ...latest,
+        status: 'replied',
+        reply,
+        repliedAt: at,
+        replySource,
+      };
+      this.world.upsertNote(replied);
       this.addMemory({
         kind: 'note',
         at,
@@ -1249,6 +1306,29 @@ export class Mind implements VillagerMind {
       this.memory.archiveOld(now);
     }
     this.prepareDay(view, nextDay);
+    this.publishPrepared(nextDay);
+    if (this.village.claimStatsLog(ended)) {
+      const line = statsLine(fallbackStats(this.deps.queue));
+      if (line) this.emit('info', `LLM use so far (model / fallback): ${line}`);
+    }
+  }
+
+  /**
+   * While asleep, a plan prepared for the coming day goes to the engine at once, so the world shows
+   * whether everyone's morning plan came from the model (the engine can wait for it at dawn).
+   */
+  private publishPrepared(day: number): void {
+    const p = this.prepared.get(day);
+    if (!p || this.plan?.day === day) return;
+    this.prepared.delete(day);
+    this.setPlan({
+      ...p,
+      blocks: normalizeBlocks(
+        withEvents(p.blocks, this.world.events(), this.id, day),
+        this.window,
+        this.profile.homeId,
+      ),
+    });
   }
 
   private prepareDay(view: WorldView, day: number): void {

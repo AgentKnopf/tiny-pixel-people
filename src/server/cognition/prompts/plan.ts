@@ -33,8 +33,8 @@ export function planDayPrompt(i: PlanPromptInput): { system: string; user: strin
   );
   const user = lines(
     `Plan your day ${i.day + 1}. You wake at ${formatClock(i.window.wake)} and go to bed at ${formatClock(i.window.sleep)}.`,
-    `Yesterday: ${i.yesterday || 'a normal day.'}`,
-    `On your mind:\n${memoryLines(i.memories, false, 8)}`,
+    i.yesterday && `Yesterday: ${i.yesterday.slice(0, 200)}`,
+    `On your mind:\n${memoryLines(i.memories, false, 5)}`,
     ev.length > 0 && `Events you will attend (keep them in the plan):\n${ev.join('\n')}`,
     needsLine(i.needs),
     weatherLine(i.weather),

@@ -25,6 +25,7 @@ export class Village<M extends MindLike = MindLike> {
   readonly embedder: QueueEmbedder;
   private proposals = new Map<number, number>();
   private claims = new Map<number, VillagerId>();
+  private statsLogged = new Set<number>();
 
   constructor(queue: LlmQueue) {
     this.embedder = new QueueEmbedder(queue);
@@ -52,6 +53,13 @@ export class Village<M extends MindLike = MindLike> {
   countProposal(t: GameMinutes): void {
     const d = dayOf(t);
     this.proposals.set(d, this.proposalsOn(d) + 1);
+  }
+
+  /** One "LLM vs fallback" log line per day across the village. */
+  claimStatsLog(day: number): boolean {
+    if (this.statsLogged.has(day)) return false;
+    this.statsLogged.add(day);
+    return true;
   }
 
   /** One ensure-daily proposal per day across the village. */
