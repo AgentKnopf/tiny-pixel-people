@@ -86,6 +86,8 @@ export const WAKE_UP_MINUTE = 6 * 60;
 export const DEFAULT_WAKE_UP_TIMEOUT_SEC = 300;
 /** Virtual-clock mode gives up waiting after this many drain rounds. */
 const WAKE_UP_MAX_ROUNDS = 5;
+/** Real-time grace before an idle LLM queue counts as "every plan request has finished". */
+const WAKE_UP_IDLE_GRACE_MS = 1500;
 
 /** Broadcast while the morning wake-up hold is active and once when it ends. */
 export interface SimStatusMsg {
@@ -842,8 +844,14 @@ export class Engine implements SimEngine, SimHost {
         return false;
       }
     }
-    if (nowMs - this.wakeHold.startedMs >= timeout * 1000) {
+    const waited = nowMs - this.wakeHold.startedMs;
+    if (waited >= timeout * 1000) {
       this.endWakeUp(day, true);
+      return false;
+    }
+    // Nothing left in flight: the remaining villagers keep their fallback plans.
+    if ((this.wakeHold.rounds > 0 || waited >= WAKE_UP_IDLE_GRACE_MS) && this.llmIdle()) {
+      this.endWakeUp(day, false);
       return false;
     }
     if (ready !== this.wakeHold.ready) {
@@ -851,6 +859,11 @@ export class Engine implements SimEngine, SimHost {
       this.broadcastSimStatus('wakingUp', ready, total);
     }
     return true;
+  }
+
+  private llmIdle(): boolean {
+    const q = this.queue.stats();
+    return q.queued === 0 && q.running === 0 && this.pending.size === 0;
   }
 
   private endWakeUp(day: number, timedOut: boolean): void {
