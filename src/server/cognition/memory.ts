@@ -26,6 +26,7 @@ export class MemoryStore implements MemoryStream {
   private memories: Memory[] = [];
   private byId = new Map<MemoryId, Memory>();
   private seq = 0;
+  private deferred: Memory[] = [];
 
   constructor(
     readonly villagerId: VillagerId,
@@ -47,7 +48,8 @@ export class MemoryStore implements MemoryStream {
     return `${this.villagerId}-m${++this.seq}`;
   }
 
-  add(obs: Observation): Memory {
+  /** `deferEmbedding`: hold the embedding request until `flushEmbeddings` (batched log memories). */
+  add(obs: Observation, opts: { deferEmbedding?: boolean } = {}): Memory {
     const id = this.nextId();
     const text = obs.text.trim();
     const memory: Memory = {
@@ -66,9 +68,22 @@ export class MemoryStore implements MemoryStream {
     };
     this.memories.push(memory);
     this.byId.set(id, memory);
-    this.opts.embedder?.request(memory);
+    if (opts.deferEmbedding) this.deferred.push(memory);
+    else this.opts.embedder?.request(memory);
     this.opts.onAdded?.(memory);
     return memory;
+  }
+
+  /** Request the deferred embeddings at once (the queue batches requests made in one tick). */
+  flushEmbeddings(): number {
+    const n = this.deferred.length;
+    for (const m of this.deferred) this.opts.embedder?.request(m);
+    this.deferred = [];
+    return n;
+  }
+
+  get deferredEmbeddings(): number {
+    return this.deferred.length;
   }
 
   get(id: MemoryId): Memory | undefined {
@@ -132,6 +147,17 @@ export class MemoryStore implements MemoryStream {
    * Nightly pruning (spec §7.9): observations older than 2 days with importance <= 3 are archived
    * (kept in the save, excluded from retrieval). Returns the number archived.
    */
+  /** Archive post office log memories (`meta.keepId`) older than `maxAge` game minutes. */
+  archiveLog(now: GameMinutes, maxAge: number): number {
+    let n = 0;
+    for (const m of this.memories) {
+      if (m.meta.archived || !m.meta.keepId || now - m.createdAt < maxAge) continue;
+      m.meta.archived = true;
+      n++;
+    }
+    return n;
+  }
+
   archiveOld(now: GameMinutes): number {
     let n = 0;
     for (const m of this.memories) {
