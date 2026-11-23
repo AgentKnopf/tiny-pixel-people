@@ -42,6 +42,8 @@ export interface SimEvents {
   'animals.step': { time: GameMinutes; change: AnimalStepResult };
   train: TrainEvent;
   ride: RideEvent;
+  /** A villager ate at a food venue; `veggie_burger` when the burgers were sold out. */
+  'food.eaten': { villagerId: VillagerId; venueId: LocationId; itemId: string };
 }
 
 export type SimEventName = keyof SimEvents;

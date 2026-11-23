@@ -22,6 +22,7 @@ import {
   type VillagerId,
   type VillagerProfile,
   type VillagerState,
+  type VisitorInfo,
   type WorldMap,
   type WorldSnapshot,
 } from '../../shared/types.ts';
@@ -36,6 +37,7 @@ import type {
   WorldView,
 } from '../cognition/types.ts';
 import { createConversationRunner } from '../cognition/conversation.ts';
+import { loadTracker } from '../cognition/llm.ts';
 import { createMind, Mind } from '../cognition/mind.ts';
 import type { AppConfig } from '../config.ts';
 import { createLlmQueue, type PriorityLlmQueue } from '../llm/queue.ts';
@@ -54,7 +56,7 @@ import { SimBus } from './bus.ts';
 import { SimClock } from './clock.ts';
 import { advanceAlongPath, distance, facingFor, tileOf } from './movement.ts';
 import { CONVERSATION_SOCIAL_BONUS, initialNeeds, updateNeeds } from './needs.ts';
-import { PathFinder } from './pathfinding.ts';
+import { isWalkable, PathFinder } from './pathfinding.ts';
 import { isAwakeAt } from './plan.ts';
 import { Rng } from './rng.ts';
 import { createStubConversationRunner } from './stub-mind.ts';
@@ -178,6 +180,10 @@ export interface SimHost {
 
 const clampAffinity = (v: number) => Math.max(-10, Math.min(10, v));
 
+function visitorField(info: VisitorInfo | null): { visitor?: VisitorInfo } {
+  return info ? { visitor: structuredClone(info) } : {};
+}
+
 export function toPublicProfile(p: VillagerProfile): VillagerProfilePublic {
   const out: VillagerProfilePublic = {
     id: p.id,
@@ -298,7 +304,18 @@ export class Engine implements SimEngine, SimHost {
     this.onMessage(createReplayRecorder(this.store, () => this.now()));
     this.playerWorld = createPlayerWorld({
       host: this.createPlayerHost(),
-      config: { player: cfg.player, economy: cfg.economy, world: cfg.world, maxVillagers: MAX_VILLAGERS },
+      config: {
+        player: cfg.player,
+        economy: cfg.economy,
+        world: cfg.world,
+        maxVillagers: MAX_VILLAGERS,
+        zoo: cfg.zoo,
+        train: cfg.train,
+        visitors: cfg.visitors,
+        hotel: cfg.hotel,
+        interiors: cfg.interiors,
+        post: cfg.post,
+      },
       ...(restore ? { restore } : {}),
     });
     if (restore) {
@@ -327,6 +344,7 @@ export class Engine implements SimEngine, SimHost {
       ...(restore ? { restore: { animals: restore.animals, farm: restore.farm } } : {}),
       ...(farmer ? { farmerName: farmer.profile.name.split(' ')[0]! } : {}),
       findPath: (from, to) => this.paths.find(from, to),
+      burgerStock: () => this.playerWorld.farm.stock()['burger_joint']?.['burger'] ?? 0,
     });
     const hasStation = this.map.locations.some((l) => l.kind === 'station');
     this.train = cfg.train.enabled && hasStation ? new Train(cfg.train, startAt, restore?.train) : null;
@@ -825,6 +843,15 @@ export class Engine implements SimEngine, SimHost {
       },
       removeVillager: (id) => this.removeVillager(id),
       llm: queue,
+      loadLevel: () => loadTracker(queue).level(this.now()),
+      joinRide: (rideId) =>
+        this.rides.join(PLAYER_ID, rideId) ? { ok: true } : { ok: false, reason: 'That ride is closed right now' },
+      triggerTrain: () => {
+        if (!this.train) return { ok: false, reason: 'There is no train service' };
+        if (this.train.state(this.now()).status !== 'away') return { ok: false, reason: 'The train is already here' };
+        this.train.triggerNow(this.now());
+        return { ok: true };
+      },
     };
   }
 
@@ -1063,14 +1090,67 @@ export class Engine implements SimEngine, SimHost {
         if (farmer) this.observe(farmer.profile.id, { at: now, kind: 'observation', text, importance: 4 });
       }
     }
+    try {
+      this.playerWorld.onAnimalChange(change);
+    } catch (err) {
+      log.error('onAnimalChange failed', err);
+    }
     this.bus.emit('animals.step', { time: now, change });
   }
 
   private stepTrain(): void {
     if (!this.train) return;
-    const changed = this.train.step(this.clock.time);
-    for (const event of this.train.takeEvents()) this.bus.emit('train', event);
+    const now = this.clock.time;
+    this.train.step(now);
+    for (const event of this.train.takeEvents()) {
+      try {
+        if (event.kind === 'arrived') this.trainArrived(now);
+        else if (event.kind === 'departing') this.trainDeparting(now);
+      } catch (err) {
+        log.error(`train ${event.kind} failed`, err);
+      }
+      this.bus.emit('train', event);
+    }
+    const changed = this.train.step(now);
     if (changed) this.broadcast({ type: 'train.updated', train: changed });
+  }
+
+  private platformTiles(): Point[] {
+    const rect =
+      this.map.railway?.platform ?? this.map.locations.find((l) => l.kind === 'station')?.area ?? null;
+    if (!rect) return [];
+    const out: Point[] = [];
+    for (let y = rect.y; y < rect.y + rect.h; y++)
+      for (let x = rect.x; x < rect.x + rect.w; x++) if (isWalkable(this.map, x, y)) out.push({ x, y });
+    return out;
+  }
+
+  private onPlatform(pos: Point): boolean {
+    const rect = this.map.railway?.platform ?? this.map.locations.find((l) => l.kind === 'station')?.area;
+    if (!rect) return false;
+    const t = tileOf(pos);
+    return t.x >= rect.x && t.x < rect.x + rect.w && t.y >= rect.y && t.y < rect.y + rect.h;
+  }
+
+  private trainArrived(now: GameMinutes): void {
+    const profiles = this.playerWorld.onTrainArrived(now);
+    const tiles = this.platformTiles();
+    const added: VillagerId[] = [];
+    profiles.forEach((p, i) => {
+      const at = tiles.length > 0 ? tiles[Math.floor(((i + 0.5) * tiles.length) / profiles.length)]! : undefined;
+      if (this.addVillager(p, at)) added.push(p.id);
+      else log.warn(`could not add visitor ${p.id}: village full or duplicate`);
+    });
+    this.train!.setPassengers({ arriving: added });
+  }
+
+  private trainDeparting(now: GameMinutes): void {
+    const onPlatform = [...this.runtimes.values()]
+      .filter((r) => r.profile.visitor && this.onPlatform(r.state.pos))
+      .map((r) => r.profile.id);
+    const leaving = this.playerWorld.onTrainDeparting(now, onPlatform);
+    for (const id of leaving) this.removeVillager(id);
+    this.train!.setPassengers({ departing: leaving });
   }
 
   private stepRides(): void {
@@ -1102,6 +1182,25 @@ export class Engine implements SimEngine, SimHost {
       if (d <= ANIMALS_NEARBY_RADIUS) out.push({ id: a.id, species: a.species, distance: d });
     }
     return out.sort((a, b) => a.distance - b.distance);
+  }
+
+  /** Eating at the burger joint or an ice cream truck (spec v2 §3.4); never waits for stock. */
+  private eatAt(rt: Runtime, loc: Location): void {
+    const needs = rt.state.needs;
+    if (loc.id.startsWith('ice_cream_truck')) {
+      this.playerWorld.consumeFood(loc.id, 'ice_cream');
+      needs.hunger = Math.min(100, needs.hunger + 10);
+      needs.fun = Math.min(100, needs.fun + 10);
+      this.bus.emit('food.eaten', { villagerId: rt.profile.id, venueId: loc.id, itemId: 'ice_cream' });
+    } else if (loc.id === 'burger_joint') {
+      const fromStock = this.playerWorld.consumeFood(loc.id, 'burger');
+      needs.hunger = Math.min(100, needs.hunger + 50);
+      this.bus.emit('food.eaten', {
+        villagerId: rt.profile.id,
+        venueId: loc.id,
+        itemId: fromStock ? 'burger' : 'veggie_burger',
+      });
+    }
   }
 
   /** Residents in the profile list but not in the save (Laude and Franzi for a v1 save) move in at home. */
@@ -1253,6 +1352,7 @@ export class Engine implements SimEngine, SimHost {
       this.setActivity(rt, RIDE_FALLBACK_ACTIVITY, '👀', 'acting');
     } else {
       this.setActivity(rt, t.activity, t.emoji, this.arrivedStatus(rt, loc));
+      if (loc?.kind === 'food' && !t.sleep) this.eatAt(rt, loc);
     }
     if (t.locationId && !t.sleep) {
       try {
@@ -1669,6 +1769,7 @@ export class Engine implements SimEngine, SimHost {
       villagerNames: names,
       weather: { ...this.playerWorld.weather },
       animalsNearby: this.animalsNear(rt.state.pos),
+      ...(rt.profile.visitor ? visitorField(this.playerWorld.visitors.info(rt.profile.id)) : {}),
     };
   }
 
