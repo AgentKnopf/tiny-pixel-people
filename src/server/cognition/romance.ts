@@ -35,6 +35,8 @@ const SHY_DATE_AFFINITY = 8;
 const SHY_DATE_TALKS = 6;
 const POST_OFFICE = 'post_office';
 const FALLBACK_DATE_AT = 17 * 60;
+/** A transient villager whose mind has not been stepped for this long has left town. */
+const DEPARTED_AFTER = 60;
 
 export const DATE_VENUE_RE = /^(zoo_gate|burger_joint|park|forest_grove|forest_lake|ice_cream_truck_\w+)$/;
 
@@ -217,6 +219,7 @@ export class RomanceAgent {
   update(view: WorldView): void {
     if (!this.enabled) return;
     const recs = this.records(view);
+    this.dropDeparted(view, recs);
     this.noteCouples(view, recs);
     this.settleDates(view);
     this.witness(view);
@@ -227,6 +230,7 @@ export class RomanceAgent {
   night(view: WorldView): void {
     if (!this.enabled) return;
     const recs = this.records(view);
+    this.dropDeparted(view, recs);
     this.noteCouples(view, recs);
     this.settleDates(view);
     const mod = minuteOfDay(view.now);
@@ -323,6 +327,24 @@ export class RomanceAgent {
       if (this.coupleNoted.has(text)) continue;
       this.coupleNoted.add(text);
       this.mind.addMemory({ kind: 'event', at: view.now, text, importance: 8 });
+    }
+  }
+
+  /**
+   * A visitor who left town ends any romance with them; otherwise the resident's open crush would
+   * block every later crush.
+   */
+  private dropDeparted(view: WorldView, recs: readonly Romance[]): void {
+    for (const r of recs) {
+      if (!isActive(r)) continue;
+      const other = partnerOf(r, this.mind.id);
+      const mind = this.mind.town.minds.get(other);
+      if (mind && !mind.profile.transient) continue;
+      const gone =
+        !mind ||
+        !(other in view.villagerNames) ||
+        (mind.lastView !== null && view.now - mind.lastView.now > DEPARTED_AFTER);
+      if (gone) this.write({ ...r, stage: 'ended' });
     }
   }
 

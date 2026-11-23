@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { at } from '../../../src/shared/time.ts';
 import type { Conversation, Romance, VillageEvent, VillagerProfile } from '../../../src/shared/types.ts';
 import { createConversationRunner } from '../../../src/server/cognition/conversation.ts';
+import { LAG_OVERLOADED, loadTracker } from '../../../src/server/cognition/llm.ts';
 import type { Mind } from '../../../src/server/cognition/mind.ts';
 import { RomanceAgent, romanceId } from '../../../src/server/cognition/romance.ts';
 import { createTestVillage, PROFILES, testConfig, V2_LOCATIONS, type TestVillage } from './helpers.ts';
@@ -403,5 +404,85 @@ describe('fallback date time', () => {
   it('is the next 17:00 at least two hours away', () => {
     expect(RomanceAgent.fallbackStart(at(1, '10:00'))).toBe(at(1, '17:00'));
     expect(RomanceAgent.fallbackStart(at(1, '15:30'))).toBe(at(2, '17:00'));
+  });
+});
+
+describe('visitors and romance', () => {
+  it("ends a romance with a visitor who left, so the resident's next crush can form", async () => {
+    const vera: VillagerProfile = {
+      ...person('vera', 'Vera', 'Tourist'),
+      homeId: 'hotel',
+      transient: true,
+      visitor: true,
+    };
+    const v = createTestVillage({
+      start: at(1, '10:00'),
+      profiles: [vera, ...PROFILES],
+      locations: V2_LOCATIONS,
+    });
+    await v.advanceTo(at(1, '10:01'));
+    const mia = v.minds.get('mia')!;
+    mia.town.romances.put(romance('mia', 'vera'));
+    // Vera boards the train: her mind is no longer stepped.
+    v.minds.delete('vera');
+    v.time.now = at(1, '10:30');
+    mia.update(v.view('mia'));
+    expect(mia.town.romances.get(romanceId('mia', 'vera'))!.stage).toBe('crush');
+    v.time.now = at(1, '11:30');
+    mia.update(v.view('mia'));
+    expect(mia.town.romances.get(romanceId('mia', 'vera'))!.stage).toBe('ended');
+
+    mutual(v, 'mia', 'ben', 7);
+    talked(mia, 'Ben', 2, at(1, '11:00'));
+    forceRandom(mia, 0);
+    for (const id of ['ben', 'cleo', 'dan']) forceRandom(v.minds.get(id)!, 0.99);
+    v.time.now = at(2, '01:58');
+    await v.advanceTo(at(2, '02:03'));
+    expect(mia.town.romances.get(romanceId('mia', 'ben'))?.stage).toBe('crush');
+  });
+});
+
+describe('romance under a slow model (AC16, cognition side)', () => {
+  it('skips date.ask and answers date.decide offline when overloaded; greetings and letter replies still ask', async () => {
+    const v = createTestVillage({ start: at(1, '10:00'), locations: V2_LOCATIONS });
+    mutual(v, 'mia', 'ben', 7);
+    await v.advanceTo(at(1, '10:01'));
+    const [mia, ben] = [v.minds.get('mia')!, v.minds.get('ben')!];
+    mia.town.romances.put(romance('mia', 'ben'));
+    loadTracker(v.queue).seed(LAG_OVERLOADED * 20, v.time.now);
+    expect(mia.load()).toBe('overloaded');
+
+    await runner(v).run(conv('mia', 'ben', v.time.now), [mia, ben]);
+    await v.queue.drain();
+    expect(v.queue.count('date.ask')).toBe(0);
+
+    const park = V2_LOCATIONS.find((l) => l.id === 'park')!;
+    const answer = await ben.romance.decide('mia', 'Park with me?', park, at(1, '17:00'));
+    expect(answer).toMatchObject({ accept: true, source: 'fallback' });
+    expect(v.queue.count('date.decide')).toBe(0);
+
+    const greet = await mia.greetVisitor(v.view('mia'), {
+      id: 'v1',
+      houseId: 'house_mia',
+      ownerIds: ['mia'],
+      at: v.time.now,
+      kind: 'visit',
+      witnesses: [],
+    });
+    expect(greet.source).toBe('llm');
+    expect(v.queue.count('visit.greet')).toBe(1);
+
+    mia.onLetterRead(v.view('mia'), {
+      id: 'L1',
+      from: 'player',
+      to: 'mia',
+      text: 'Thank you for the rye bread',
+      postedAt: v.time.now,
+      deliveredAt: v.time.now,
+      readAt: v.time.now,
+      status: 'read',
+    });
+    await v.queue.drain();
+    expect(v.queue.count('letter.reply')).toBe(1);
   });
 });
