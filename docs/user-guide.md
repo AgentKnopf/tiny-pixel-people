@@ -108,7 +108,8 @@ From top to bottom it shows:
   the right activity: eating at the café or at home, sleeping, chatting, parties, the park and
   hobbies. When a need drops very low, the villager squeezes in a short break to fix it, for example
   "grab a bite at the café".
-- **Today's plan**: the day's blocks as a checklist (`☐ 07:00 🍞 bake bread at Bakery & Café`). Done
+- **Today's plan**: the day's blocks as a checklist (`☐ 07:00 🍞 bake bread at Bakery & Café`),
+  always with at least two different places. Done
   blocks are ticked and the current one is highlighted. `· fallback` next to the title means the
   model hasn't delivered a usable plan (yet) and the villager follows a simple default. Blocks you asked for
   carry a `your request` tag.
