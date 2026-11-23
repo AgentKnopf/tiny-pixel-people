@@ -54,9 +54,10 @@ export interface CreatePlayerWorldOptions {
   restore?: Partial<PlayerWorldSave>;
 }
 
-type PlayerCommand = Extract<
-  ClientMessage,
-  { type: `player.${string}` | 'world.trigger' | 'decor.toggle' | 'pet.command' }
+type PlayerCommand = Exclude<
+  Extract<ClientMessage, { type: `player.${string}` | 'world.trigger' | 'decor.toggle' | 'pet.command' }>,
+  // v2 player commands (spec v2 §14): not handled yet.
+  { type: 'player.enter' | 'player.exit' | 'player.ride' | 'player.buy' }
 >;
 
 const HANDLED = new Set<string>([

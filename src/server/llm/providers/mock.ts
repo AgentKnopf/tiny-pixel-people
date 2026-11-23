@@ -162,6 +162,32 @@ export function mockAnswer(req: ChatRequest): string {
       return json(taskDecide(meta));
     case 'stranger.create':
       return json(STRANGER);
+    case 'visit.greet':
+      return json({
+        reply: `Oh, hello ${str(meta.playerName, 'there')}! Come on in, make yourself at home.`,
+      });
+    case 'letter.reply':
+      return json({
+        reply: `Thank you for your letter about '${str(meta.letterText).split(/\s+/).slice(0, 6).join(' ')}'. It made my day.`,
+      });
+    case 'letter.write':
+      return json({
+        text: `Dear ${str(meta.toName, 'friend')}, I was thinking of you today. Warmly, ${str(meta.villagerId)}`,
+      });
+    case 'visitor.create':
+      return json(mockVisitor(meta));
+    case 'date.ask': {
+      const venue = objs(meta.venues)[0];
+      return json({
+        text: `Would you like to go to the ${str(venue?.name, 'zoo')} with me?`,
+        locationId: str(venue?.id, 'zoo_gate'),
+        start: '17:00',
+      });
+    }
+    case 'date.decide': {
+      const accept = num(meta.affinity, 0) >= 4;
+      return json({ accept, reply: accept ? 'I would love to!' : 'Maybe another time.' });
+    }
     case 'health':
       return json({ ok: true });
   }
@@ -564,4 +590,24 @@ export function hashEmbed(text: string, dims: number): number[] {
   }
   const norm = Math.hypot(...v) || 1;
   return v.map((x) => x / norm);
+}
+
+function mockVisitor(meta: Obj): Record<string, unknown> {
+  const taken = new Set(arr(meta.existingNames).map((n) => str(n)));
+  let n = 1;
+  while (taken.has(`Visitor ${n}`)) n += 1;
+  const sprites = arr(meta.sprites)
+    .map((s) => str(s))
+    .filter(Boolean);
+  return {
+    name: `Visitor ${n}`,
+    age: 35,
+    occupation: 'Traveller',
+    bio: 'A friendly traveller who came by train to see the zoo and the forest.',
+    traits: ['curious', 'friendly'],
+    sprite: sprites[0] ?? 'characters/stranger.png',
+    origin: 'the city',
+    reason: 'a short holiday',
+    likes: ['ice_cream'],
+  };
 }

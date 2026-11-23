@@ -49,73 +49,133 @@ const embeddingsSchema = z.object({
   concurrency: z.number().int().min(1).max(16),
 });
 
-export const configSchema = z.object({
-  llm: llmSchema,
-  embeddings: embeddingsSchema,
-  sim: z.object({
-    villagers: z.number().int().min(1).max(20),
-    dayLengthMinutes: z.number().positive(),
-    startTime: hhmm,
-    speed: z.number().min(0),
-    nightSpeedMultiplier: z.number().min(1),
-    tickMs: z.number().int().min(10),
-    seed: z.number().int(),
-    /** Real seconds the clock holds at day start until plans settle; 0 disables the hold. */
-    wakeUpTimeoutSec: z.number().min(0),
-  }),
-  cognition: z.object({
-    retrievalK: z.number().int().min(1),
-    retrievalWeights: z.object({
-      recency: z.number().min(0),
-      importance: z.number().min(0),
-      relevance: z.number().min(0),
+export const configSchema = z
+  .object({
+    llm: llmSchema,
+    embeddings: embeddingsSchema,
+    sim: z.object({
+      villagers: z.number().int().min(1).max(20),
+      dayLengthMinutes: z.number().positive(),
+      startTime: hhmm,
+      speed: z.number().min(0),
+      nightSpeedMultiplier: z.number().min(1),
+      tickMs: z.number().int().min(10),
+      seed: z.number().int(),
+      /** Real seconds the clock holds at day start until plans settle; 0 disables the hold. */
+      wakeUpTimeoutSec: z.number().min(0),
     }),
-    importanceMode: z.enum(['llm', 'heuristic']),
-    reflectionThreshold: z.number().positive(),
-    reflectionMode: z.enum(['single', 'two-step']),
-    maxConversationTurns: z.number().int().min(2).max(20),
-    pairCooldownMinutes: z.number().min(0),
-  }),
-  events: z.object({
-    ensureDaily: z.boolean(),
-    maxProposalsPerDay: z.number().int().min(0),
-  }),
-  server: z.object({
-    host: z.string(),
-    port: z.number().int().min(0).max(65535),
-  }),
-  persistence: z.object({
-    dir: z.string(),
-    slot: z.string().regex(/^[\w-]+$/, 'slot may only contain letters, digits, _ and -'),
-    loadOnStart: z.boolean(),
-    autosaveGameMinutes: z.number().min(0),
-  }),
-  needs: z.object({
-    enabled: z.boolean(),
-    decayPerHour: z.object({
-      hunger: z.number().min(0),
-      energy: z.number().min(0),
-      social: z.number().min(0),
-      fun: z.number().min(0),
+    cognition: z.object({
+      retrievalK: z.number().int().min(1),
+      retrievalWeights: z.object({
+        recency: z.number().min(0),
+        importance: z.number().min(0),
+        relevance: z.number().min(0),
+      }),
+      importanceMode: z.enum(['llm', 'heuristic']),
+      reflectionThreshold: z.number().positive(),
+      reflectionMode: z.enum(['single', 'two-step']),
+      maxConversationTurns: z.number().int().min(2).max(20),
+      pairCooldownMinutes: z.number().min(0),
     }),
-  }),
-  player: z.object({
-    name: z.string().min(1).max(24),
-    petName: z.string().min(1).max(24),
-    petSpecies: z.string().min(1),
-  }),
-  economy: z.object({
-    startGold: z.number().int().min(0),
-    eventReward: z.number().int().min(0),
-    taskReward: z.number().int().min(0),
-    itemRespawnGameMinutes: z.number().positive(),
-  }),
-  world: z.object({
-    randomWeather: z.boolean(),
-    llmStrangers: z.boolean(),
-  }),
-  debug: z.boolean(),
-});
+    events: z.object({
+      ensureDaily: z.boolean(),
+      maxProposalsPerDay: z.number().int().min(0),
+    }),
+    server: z.object({
+      host: z.string(),
+      port: z.number().int().min(0).max(65535),
+    }),
+    persistence: z.object({
+      dir: z.string(),
+      slot: z.string().regex(/^[\w-]+$/, 'slot may only contain letters, digits, _ and -'),
+      loadOnStart: z.boolean(),
+      autosaveGameMinutes: z.number().min(0),
+    }),
+    needs: z.object({
+      enabled: z.boolean(),
+      decayPerHour: z.object({
+        hunger: z.number().min(0),
+        energy: z.number().min(0),
+        social: z.number().min(0),
+        fun: z.number().min(0),
+      }),
+    }),
+    player: z.object({
+      name: z.string().min(1).max(24),
+      petName: z.string().min(1).max(24),
+      petSpecies: z.string().min(1),
+    }),
+    economy: z.object({
+      startGold: z.number().int().min(0),
+      eventReward: z.number().int().min(0),
+      taskReward: z.number().int().min(0),
+      itemRespawnGameMinutes: z.number().positive(),
+    }),
+    world: z.object({
+      randomWeather: z.boolean(),
+      llmStrangers: z.boolean(),
+      /** v2: generate train visitors with the LLM (fallback: data/visitors.json). */
+      llmVisitors: z.boolean(),
+    }),
+    // ---------- v2 (spec v2 §12) ----------
+    zoo: z.object({ openTime: hhmm, closeTime: hhmm }),
+    farm: z.object({
+      enabled: z.boolean(),
+      /** Hard cap: config can lower it, never raise it above 10. */
+      capPerSpecies: z.number().int().min(1).max(10),
+      breedChance: z.number().min(0).max(1),
+      butcherTime: hhmm,
+      butcherAtCount: z.number().int().min(1).max(10),
+    }),
+    train: z.object({
+      enabled: z.boolean(),
+      arrivals: z.array(hhmm).min(1),
+      dwellMinutes: z.number().int().min(1).max(120),
+    }),
+    visitors: z.object({
+      enabled: z.boolean(),
+      min: z.number().int().min(0).max(10),
+      max: z.number().int().min(0).max(10),
+      stayDays: z.tuple([z.number().int().min(1), z.number().int().min(1)]),
+    }),
+    hotel: z.object({ rooms: z.number().int().min(1).max(20) }),
+    romance: z.object({
+      enabled: z.boolean(),
+      minAge: z.number().int().min(18),
+      crushAffinity: z.number().min(-10).max(10),
+      coupleAffinity: z.number().min(-10).max(10),
+      datesForCouple: z.number().int().min(1),
+      shyMinDays: z.number().int().min(0),
+      shyVisitChance: z.number().min(0).max(1),
+      shyMaxTurns: z.number().int().min(2).max(20),
+    }),
+    interiors: z.object({
+      visitAffinity: z.number().min(-10).max(10),
+      snoopAffinity: z.number().min(-10).max(10),
+    }),
+    post: z.object({
+      enabled: z.boolean(),
+      deliveryTimes: z.array(hhmm).min(1),
+      maxVillagerLettersPerDay: z.number().int().min(0),
+      noticeTtlDays: z.number().min(0),
+      maxNotices: z.number().int().min(1),
+      keepMax: z.number().int().min(1).max(5000),
+    }),
+    forest: z.object({ enabled: z.boolean() }),
+    debug: z.boolean(),
+  })
+  .superRefine((cfg, ctx) => {
+    if (cfg.visitors.min > cfg.visitors.max)
+      ctx.addIssue({ code: 'custom', path: ['visitors', 'min'], message: 'must be <= visitors.max' });
+    if (cfg.visitors.max > cfg.hotel.rooms)
+      ctx.addIssue({ code: 'custom', path: ['visitors', 'max'], message: 'must be <= hotel.rooms' });
+    if (cfg.visitors.stayDays[0] > cfg.visitors.stayDays[1])
+      ctx.addIssue({
+        code: 'custom',
+        path: ['visitors', 'stayDays'],
+        message: 'expected [min, max] with min <= max',
+      });
+  });
 
 export type AppConfig = z.infer<typeof configSchema>;
 
@@ -167,7 +227,32 @@ export const DEFAULT_CONFIG: AppConfig = {
   needs: { enabled: true, decayPerHour: { hunger: 6, energy: 4, social: 5, fun: 4 } },
   player: { name: 'You', petName: 'Pip', petSpecies: 'cat' },
   economy: { startGold: 50, eventReward: 10, taskReward: 12, itemRespawnGameMinutes: 180 },
-  world: { randomWeather: false, llmStrangers: false },
+  world: { randomWeather: false, llmStrangers: false, llmVisitors: true },
+  zoo: { openTime: '08:00', closeTime: '21:00' },
+  farm: { enabled: true, capPerSpecies: 10, breedChance: 0.5, butcherTime: '16:00', butcherAtCount: 8 },
+  train: { enabled: true, arrivals: ['10:00', '16:00'], dwellMinutes: 20 },
+  visitors: { enabled: true, min: 2, max: 4, stayDays: [1, 3] },
+  hotel: { rooms: 6 },
+  romance: {
+    enabled: true,
+    minAge: 18,
+    crushAffinity: 6,
+    coupleAffinity: 7,
+    datesForCouple: 2,
+    shyMinDays: 5,
+    shyVisitChance: 0.7,
+    shyMaxTurns: 3,
+  },
+  interiors: { visitAffinity: 1, snoopAffinity: -2 },
+  post: {
+    enabled: true,
+    deliveryTimes: ['11:00', '17:00'],
+    maxVillagerLettersPerDay: 3,
+    noticeTtlDays: 3,
+    maxNotices: 12,
+    keepMax: 2000,
+  },
+  forest: { enabled: true },
   debug: false,
 };
 
