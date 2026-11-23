@@ -10,12 +10,14 @@ import {
   type DoorNote,
   type EventId,
   type GameMinutes,
+  type Location,
   type LocationId,
   type Memory,
   type Needs,
   type NoteId,
   type PlanBlock,
   type Provenance,
+  type Romance,
   type VillageEvent,
   type VillagerId,
   type VillagerProfile,
@@ -70,6 +72,7 @@ import {
   socialPlace,
   wakeWindow,
   withEvents,
+  workLocation,
   fallbackBlocks,
   type RawEventProposal,
   type WakeWindow,
@@ -89,10 +92,18 @@ import {
 } from './prompts/misc.ts';
 import { settingsFromConfig, type CognitionSettings } from './settings.ts';
 import { villageFor, type Village } from './village.ts';
+import { addVisit, hashUnit, isForest, sanitizeBlocks, type Hours } from './sanitize.ts';
 
 const log = createLogger('mind');
 
 const SUMMARY_RE = /^Summary of day (\d+):/;
+const POST_OFFICE = 'post_office';
+const STATION = 'station';
+/** Visitors are on the platform this many game minutes before their train leaves (spec v2 §5.2). */
+const TRAIN_BUFFER = 30;
+/** Laude never misses a bake-off (spec v2 §9). */
+const BAKE_FAN = 'laude';
+const BAKE_RE = /bak(e|ing)/i;
 
 /**
  * Queue priorities set by cognition (TASK_PRIORITY has the defaults). On a slow model the order
@@ -152,6 +163,9 @@ export class Mind implements VillagerMind {
   private lastRevisionAt = -Infinity;
   private readonly decidedEvents = new Set<EventId>();
   private readonly processedNotes = new Set<NoteId>();
+  private readonly readNoticeIds = new Set<string>();
+  /** Forest location of the current visit, once an animal was seen there. */
+  private animalSeenAt: LocationId | null = null;
   private readonly repliedNotes = new Set<NoteId>();
   private readonly summarizedDays = new Set<number>();
   private readonly prepared = new Map<number, DayPlan>();
@@ -191,6 +205,7 @@ export class Mind implements VillagerMind {
         const d = SUMMARY_RE.exec(m.text);
         if (m.kind === 'summary' && d) this.summarizedDays.add(Number(d[1]) - 1);
         if (m.meta.noteId && m.kind === 'note') this.processedNotes.add(m.meta.noteId);
+        if (m.meta.noticeId) this.readNoticeIds.add(m.meta.noticeId);
       }
     } else {
       const at = deps.now();
@@ -235,6 +250,8 @@ export class Mind implements VillagerMind {
     this.syncEvents(view, day);
     this.markDone(mod);
     if (view.self.locationId === this.profile.homeId) this.readNotes(view);
+    this.readNotices(view);
+    this.noticeAnimals(view);
     this.maybeReflect(view);
     this.maybeDecideEvents(view);
     this.maybeProposeEvent(view, day, mod);
@@ -634,7 +651,7 @@ export class Mind implements VillagerMind {
     const locations = this.lastView?.locations ?? [];
     const now = this.deps.now();
     const from = input.day === dayOf(now) ? minuteOfDay(now) : 0;
-    const blocks = ensureVariety(input.blocks, this.window, locations, from);
+    const blocks = this.shapeBlocks(input, locations, from);
     const plan =
       blocks.length === input.blocks.length && blocks.every((b, i) => b === input.blocks[i])
         ? input
@@ -643,6 +660,77 @@ export class Mind implements VillagerMind {
     this.lastPlanJson = JSON.stringify(plan);
     this.bookkeeping.lastPlanAt = this.deps.now();
     this.world.setPlan(plan);
+  }
+
+  /**
+   * v2 plan rules on every plan this villager adopts: at least two places, opening hours and the
+   * forest at night, and the shy pair's post office visit.
+   */
+  private shapeBlocks(plan: DayPlan, locations: readonly Location[], from: number): PlanBlock[] {
+    if (locations.length === 0) return plan.blocks;
+    const ctx = { locations, homeId: this.profile.homeId, window: this.window, zoo: this.zooHours() };
+    let blocks = sanitizeBlocks(ensureVariety(plan.blocks, this.window, locations, from), ctx);
+    const leave = this.leavingAt(plan.day);
+    if (leave !== null) blocks = cutForTrain(blocks, leave, locations);
+    const post = this.shyVisitPlace(plan.day, locations);
+    if (post)
+      blocks = addVisit(blocks, post, ctx, {
+        key: `${this.settings.seed}:${this.id}:${plan.day}`,
+        activity: 'drop by the post office',
+        emoji: '✉️',
+        from,
+      });
+    return blocks.length === plan.blocks.length && blocks.every((b, i) => b === plan.blocks[i])
+      ? plan.blocks
+      : blocks;
+  }
+
+  /** Minute of day this visitor's train leaves on `day`, or null when they do not leave that day. */
+  private leavingAt(day: number): number | null {
+    const v = this.lastView?.visitor;
+    if (!v || dayOf(v.departsAt) !== day) return null;
+    return minuteOfDay(v.departsAt);
+  }
+
+  /** v2 prompt lines: a visitor's stay, the zoo's hours, the forest. */
+  private planContext(view: WorldView, day: number): string[] {
+    const out: string[] = [];
+    const v = view.visitor;
+    if (v) {
+      out.push(
+        `You are visiting the village by train from ${v.origin}${v.reason ? ` for ${v.reason}` : ''} and stay at the hotel (your home here).`,
+      );
+      if (dayOf(v.departsAt) === day)
+        out.push(`Today you leave: be at the station by ${formatClock(v.departsAt - TRAIN_BUFFER)}.`);
+    }
+    if (view.locations.some((l) => l.kind === 'zoo' || l.kind === 'ride')) {
+      const z = this.zooHours();
+      out.push(
+        `The zoo and its rides are open ${formatClock(z.open)}-${formatClock(z.close)}. The forest is nice for walks and picnics.`,
+      );
+    }
+    return out;
+  }
+
+  zooHours(): Hours {
+    const zoo = this.deps.config.zoo;
+    const t = (s: string | undefined, d: number) => (s ? (parseClockLoose(s) ?? d) : d);
+    return { open: t(zoo?.openTime, 8 * 60), close: t(zoo?.closeTime, 21 * 60) };
+  }
+
+  romances(view: WorldView | null = this.lastView): readonly Romance[] {
+    return view?.romances ?? this.world.romances?.() ?? [];
+  }
+
+  /** The post office, on the days a shy villager (not working there) visits it (spec v2 §7.1). */
+  private shyVisitPlace(day: number, locations: readonly Location[]): Location | null {
+    const cfg = this.deps.config.romance;
+    if (!cfg?.enabled) return null;
+    const post = locations.find((l) => l.id === POST_OFFICE);
+    if (!post || workLocation(this.profile, locations) === POST_OFFICE) return null;
+    const shy = this.romances().some((r) => r.shy && r.stage !== 'ended' && r.pair.includes(this.id));
+    if (!shy) return null;
+    return hashUnit(`${this.settings.seed}:${this.id}:visit:${day}`) < cfg.shyVisitChance ? post : null;
   }
 
   /** Minute of the plan window (game time) after which a fallback plan for `day` is kept. */
@@ -717,6 +805,7 @@ export class Mind implements VillagerMind {
       needs: view.self.needs,
       ...(view.weather ? { weather: view.weather } : {}),
       allowProposal,
+      context: this.planContext(view, day),
     });
     const res = await this.ask({
       task: 'plan.day',
@@ -885,6 +974,9 @@ export class Mind implements VillagerMind {
   }
 
   private effectiveBlock(view: WorldView, mod: number): PlanBlock {
+    const leave = this.leavingAt(dayOf(view.now));
+    if (leave !== null && mod >= leave - TRAIN_BUFFER && mod < leave + 120)
+      return { start: mod, end: leave, locationId: STATION, activity: 'wait for the train', emoji: '🚂' };
     let block = blockAt(this.plan, mod) ?? {
       start: mod,
       end: Math.min(MINUTES_PER_DAY, mod + 30),
@@ -1030,10 +1122,55 @@ export class Mind implements VillagerMind {
       if (e.hostId === this.id || this.decidedEvents.has(e.id)) continue;
       if (e.status !== 'proposed' && e.status !== 'scheduled') continue;
       if (e.end <= view.now || e.accepted.includes(this.id) || e.declined.includes(this.id)) continue;
+      if (this.id === BAKE_FAN && isBakeOff(e)) {
+        this.decidedEvents.add(e.id);
+        this.joinBakeOff(view, e);
+        continue;
+      }
       if (!e.invitees.includes(this.id) && !this.heardAbout(e)) continue;
       this.decidedEvents.add(e.id);
       this.decideEvent(view, e);
     }
+  }
+
+  /** Deterministic: Laude goes to every bake-off unless a date of his overlaps it. */
+  private joinBakeOff(view: WorldView, e: VillageEvent): void {
+    const date = this.allEvents(view).find(
+      (d) =>
+        d.kind === 'date' &&
+        d.status !== 'cancelled' &&
+        (d.hostId === this.id || d.accepted.includes(this.id)) &&
+        d.start < e.end &&
+        d.end > e.start,
+    );
+    const latest = this.world.events().find((x) => x.id === e.id) ?? e;
+    const invitees = [...new Set([...latest.invitees, this.id])];
+    const hostName = this.nameOf(e.hostId, view);
+    if (date) {
+      this.world.upsertEvent({ ...latest, invitees, declined: [...new Set([...latest.declined, this.id])] });
+      this.addMemory({
+        kind: 'event',
+        at: view.now,
+        text: `I have to miss ${latest.title} by ${hostName}: I already have a date then.`,
+        importance: 4,
+        meta: { eventId: latest.id },
+      });
+      return;
+    }
+    this.world.upsertEvent({
+      ...latest,
+      invitees,
+      accepted: [...new Set([...latest.accepted, this.id])],
+      declined: latest.declined.filter((x) => x !== this.id),
+    });
+    this.addMemory({
+      kind: 'event',
+      at: view.now,
+      text: `I will go to ${latest.title} by ${hostName} at ${formatClock(latest.start)}. I never miss a bake-off!`,
+      importance: 5,
+      meta: { eventId: latest.id },
+    });
+    this.world.setThought(`A bake-off! I'll bring my best loaf.`);
   }
 
   private heardAbout(e: VillageEvent): boolean {
@@ -1201,6 +1338,7 @@ export class Mind implements VillagerMind {
       nameToId.set(id.toLowerCase(), id);
     }
     const invitees = new Set<VillagerId>();
+    if (isBakeOff(raw) && this.id !== BAKE_FAN && this.village.minds.has(BAKE_FAN)) invitees.add(BAKE_FAN);
     for (const n of raw.invitees) {
       const id = nameToId.get(n.toLowerCase().trim()) ?? nameToId.get(n.toLowerCase().split(/\s+/)[0] ?? '');
       if (id && id !== this.id && id !== PLAYER_ID) invitees.add(id);
@@ -1264,6 +1402,56 @@ export class Mind implements VillagerMind {
   locName(view: WorldView | null, id: LocationId): string {
     if (id === this.profile.homeId) return 'my home';
     return view?.locations.find((l) => l.id === id)?.name ?? id;
+  }
+
+  // ---------- forest ----------
+
+  /** One sighting per forest visit, importance set explicitly (no importance.rate call). */
+  private noticeAnimals(view: WorldView): void {
+    const loc = view.location;
+    if (!loc || !isForest(loc)) {
+      this.animalSeenAt = null;
+      return;
+    }
+    if (this.animalSeenAt === loc.id) return;
+    const seen = (view.animalsNearby ?? [])
+      .filter((a) => a.distance <= 4 && a.species !== 'crow')
+      .sort((a, b) => a.distance - b.distance || a.id.localeCompare(b.id))[0];
+    if (!seen) return;
+    this.animalSeenAt = loc.id;
+    const where = /lake/.test(loc.id)
+      ? 'near the lake'
+      : /grove/.test(loc.id)
+        ? 'in the grove'
+        : 'in the forest';
+    this.addMemory({
+      kind: 'observation',
+      at: view.now,
+      text: `I saw a ${seen.species.replace(/_/g, ' ')} ${where}.`,
+      importance: 2,
+    });
+  }
+
+  // ---------- notice board ----------
+
+  /** Each notice in reach is read once; the memory carries the notice's origin for gossip tracing. */
+  private readNotices(view: WorldView): void {
+    for (const n of view.noticesInReach ?? []) {
+      if (this.readNoticeIds.has(n.id) || n.expiresAt <= view.now) continue;
+      this.readNoticeIds.add(n.id);
+      // Not observe(): its per-subject cooldown would drop every notice after the first.
+      this.addMemory({
+        kind: 'observation',
+        at: view.now,
+        text: `The notice board says: ${n.text}`.slice(0, 300),
+        importance: n.authorId === PLAYER_ID ? 5 : 4,
+        meta: {
+          noticeId: n.id,
+          originId: n.originId ?? n.id,
+          ...(n.eventId ? { eventId: n.eventId } : {}),
+        },
+      });
+    }
   }
 
   // ---------- door notes ----------
@@ -1611,6 +1799,34 @@ export function parseInsights(
     out.push({ text: text.slice(0, 240), sourceIds: [...new Set(sourceIds)] });
   }
   return out.length ? out : null;
+}
+
+function isBakeOff(e: { title: string; description: string; kind?: VillageEvent['kind'] }): boolean {
+  return e.kind !== 'date' && BAKE_RE.test(`${e.title} ${e.description}`);
+}
+
+/**
+ * Leaving day of a visitor: the plan ends at the station TRAIN_BUFFER minutes before the train
+ * (a 30-minute walk-and-wait block there), and nothing is planned after it.
+ */
+function cutForTrain(
+  blocks: readonly PlanBlock[],
+  departure: number,
+  locations: readonly Location[],
+): PlanBlock[] {
+  if (!locations.some((l) => l.id === STATION)) return [...blocks];
+  const end = departure - TRAIN_BUFFER;
+  const start = Math.max(blocks[0]?.start ?? 0, end - 30);
+  if (end <= start) return [...blocks];
+  const kept = blocks.filter((b) => b.start < start).map((b) => (b.end > start ? { ...b, end: start } : b));
+  const station: PlanBlock = {
+    start,
+    end,
+    locationId: STATION,
+    activity: 'head to the station for the train home',
+    emoji: '🚂',
+  };
+  return [...kept, station];
 }
 
 export function cleanLine(s: string | undefined, max = 300): string | null {

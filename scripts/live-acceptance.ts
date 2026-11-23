@@ -25,7 +25,7 @@ import type {
   ServerMessage,
   StatsMsg,
 } from '../src/shared/protocol.ts';
-import type { Conversation, DoorNote, WorldSnapshot } from '../src/shared/types.ts';
+import type { DoorNote, WorldSnapshot } from '../src/shared/types.ts';
 import { at, formatClock } from '../src/shared/time.ts';
 import {
   checkEvents,
@@ -235,7 +235,7 @@ async function main(): Promise<void> {
 
   while (Date.now() < deadline && last.time < end && child.exitCode === null) {
     await sleep(2000);
-    const s = await getJson<WorldSnapshot>(`${base}/api/state`);
+    const s = await getJson<WorldSnapshot>(`${base}/api/snapshot`);
     if (!s) continue;
     last = s;
     samples.push({ time: s.time, villagers: s.villagers });
@@ -301,25 +301,14 @@ async function main(): Promise<void> {
     }
   }
 
+  // The WebSocket is connected before 06:00, so its conversation.message stream has every line of the day.
   const wsLines = messages.filter((m): m is ConversationMessageMsg => m.type === 'conversation.message');
-  const apiConvos = (await getJson<Conversation[]>(`${base}/api/conversations`)) ?? [];
-  const apiLines: ConversationMessageMsg[] = apiConvos.flatMap((c) =>
-    c.messages.map((m) => ({
-      type: 'conversation.message' as const,
-      conversationId: c.id,
-      speakerId: m.speakerId,
-      listenerId: c.participants.find((p) => p !== m.speakerId) ?? '',
-      text: m.text,
-      time: m.at,
-      ...(m.source ? { source: m.source } : {}),
-    })),
-  );
   const gossipHits = factSource
-    ? gossipMentions([...wsLines, ...apiLines], FACT_KEYWORD, factSource, t('08:00'), t('20:00'))
+    ? gossipMentions(wsLines, FACT_KEYWORD, factSource, t('08:00'), t('20:00'))
     : [];
   results.push(
     factSource
-      ? checkGossip([...wsLines, ...apiLines], FACT_KEYWORD, factSource, t('08:00'), t('20:00'))
+      ? checkGossip(wsLines, FACT_KEYWORD, factSource, t('08:00'), t('20:00'))
       : { id: 'AC3', title: 'gossip', pass: false, detail: 'never reached 08:00' },
   );
 

@@ -146,6 +146,41 @@ export const LOCATIONS: Location[] = [
   },
 ];
 
+const at = (id: string, x: number, y: number, extra: Partial<Location> = {}): Location => ({
+  id,
+  name: id.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase()),
+  kind: 'public',
+  area: { x, y, w: 4, h: 4 },
+  entry: { x: x + 2, y: y + 4 },
+  ...extra,
+});
+
+/** The v1 test places plus the v2 places cognition cares about (spec v2 §2.1). */
+export const V2_LOCATIONS: Location[] = [
+  ...LOCATIONS,
+  at('square', 20, 20),
+  at('market', 40, 30),
+  at('post_office', 50, 2, { name: 'Post Office', kind: 'post', hours: { open: '08:00', close: '18:00' } }),
+  at('notice_board', 56, 6),
+  at('zoo_gate', 64, 7, { name: 'Zoo gate', kind: 'zoo', district: 'zoo' }),
+  at('zoo_lion', 66, 0, { name: 'Lions', kind: 'zoo', district: 'zoo', species: 'lion' }),
+  at('zoo_penguin', 72, 0, { name: 'Penguins', kind: 'zoo', district: 'zoo', species: 'penguin' }),
+  at('rollercoaster', 70, 20, { name: 'Rollercoaster', kind: 'ride', district: 'zoo' }),
+  at('burger_joint', 80, 26, {
+    name: 'Burger Joint',
+    kind: 'food',
+    hours: { open: '11:00', close: '21:00' },
+  }),
+  at('forest', 100, 10, { name: 'Forest', kind: 'nature', district: 'forest' }),
+  at('forest_grove', 110, 20, { name: 'Grove', kind: 'nature', district: 'forest' }),
+  at('forest_lake', 112, 30, { name: 'Lake', kind: 'nature', district: 'forest' }),
+  at('station', 70, 50, { name: 'Station', kind: 'station', district: 'station' }),
+  at('hotel', 80, 40, { name: 'Hotel', kind: 'hotel', district: 'station' }),
+  at('butcher', 30, 31, { name: 'Butcher', kind: 'farm', district: 'farmstead' }),
+  at('house_laude', 44, 2, { name: "Laude's house", kind: 'house', ownerIds: ['laude'] }),
+  at('house_franzi', 58, 2, { name: "Franzi's house", kind: 'house', ownerIds: ['franzi'] }),
+];
+
 function profile(
   id: string,
   name: string,
@@ -185,8 +220,12 @@ export function testConfig(overrides: Partial<AppConfig['cognition']> = {}): App
   };
 }
 
-export function makeState(p: VillagerProfile, now: GameMinutes): VillagerState {
-  const home = LOCATIONS.find((l) => l.id === p.homeId)!;
+export function makeState(
+  p: VillagerProfile,
+  now: GameMinutes,
+  locations: readonly Location[] = LOCATIONS,
+): VillagerState {
+  const home = locations.find((l) => l.id === p.homeId) ?? locations[0]!;
   return {
     id: p.id,
     pos: { ...home.entry },
@@ -226,7 +265,12 @@ export function createTestVillage(opts: {
   embeddings?: EmbeddingProvider | null;
   snapshots?: Record<string, MindSnapshot>;
   seed?: number;
+  /** Map for the views (default: the v1 test places). */
+  locations?: Location[];
+  /** Extra WorldView fields per villager (v2: romances, notices, visitor, animals...). */
+  extraView?: (id: string) => Partial<WorldView>;
 }): TestVillage {
+  const locations = opts.locations ?? LOCATIONS;
   const provider = opts.provider ?? new MockChatProvider();
   const queue = new DirectQueue(provider, opts.embeddings ?? null);
   const config = opts.config ?? testConfig();
@@ -265,12 +309,13 @@ export function createTestVillage(opts: {
         self,
         profile: p,
         nearby: [],
-        location: LOCATIONS.find((l) => l.id === self.locationId) ?? null,
-        locations: LOCATIONS,
+        location: locations.find((l) => l.id === self.locationId) ?? null,
+        locations,
         notesAtHome: notes.filter((n) => n.houseId === p.homeId),
         events,
         villagerNames: names,
         ...(village.weather ? { weather: village.weather } : {}),
+        ...opts.extraView?.(id),
       };
     },
     async advanceTo(t, step = 1) {
@@ -307,7 +352,7 @@ export function createTestVillage(opts: {
   for (const p of profiles) {
     const world = createMemoryWorld({ events, notes });
     worlds.set(p.id, world);
-    states.set(p.id, makeState(p, opts.start));
+    states.set(p.id, makeState(p, opts.start, locations));
     const snapshot = opts.snapshots?.[p.id];
     minds.set(
       p.id,
