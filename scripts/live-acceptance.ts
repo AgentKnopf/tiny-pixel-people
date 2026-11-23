@@ -198,6 +198,10 @@ async function main(): Promise<void> {
       if (msg.type === 'hello') res(msg);
       else if (msg.type === 'stats') lastStats = msg;
       else if (msg.type !== 'tick') messages.push(msg);
+      if (msg.type === 'sim.status')
+        log(`sim ${msg.phase}: ${msg.plansReady}/${msg.villagers} plans ready (real ${new Date().toISOString().slice(11, 19)})`);
+      else if (msg.type === 'log' && msg.text.startsWith('LLM use so far'))
+        log(`server at ${formatClock(msg.time)}: ${msg.text}`);
     });
     ws.once('error', rej);
   });
