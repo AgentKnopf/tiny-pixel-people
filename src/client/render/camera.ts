@@ -103,7 +103,10 @@ export class Camera {
   zoomBy(delta: number, anchor?: Point): void {
     // From a fractional overview zoom, step to the neighbouring integer zoom first.
     const base = delta > 0 ? Math.floor(this.zoom) : Math.ceil(this.zoom);
-    this.zoomTo(base + delta, anchor);
+    const next = clampZoom(base + delta);
+    // Below 1× (a big map's overview) zooming out further does nothing rather than jump to 1×.
+    if ((delta < 0 && next >= this.zoom) || (delta > 0 && next <= this.zoom)) return;
+    this.zoomTo(next, anchor);
   }
 
   /** Set an integer zoom, keeping the art point under `anchor` (device px) in place. */
