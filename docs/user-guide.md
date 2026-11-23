@@ -58,15 +58,16 @@ cottage ✓`. Your conversations with villagers appear in a small dialog there t
   so the day starts with real plans. A small banner at the top centre shows
   `🌅 Villagers are waking up… (n/m plans ready)` with a progress bar. The banner doesn't block
   the screen: you can still open the inspector and send messages, but nobody moves until the clock
-  runs again. The clock goes on when all plans are in, when the model has nothing
-  left to do or is unreachable, or after 5 real minutes at most (`sim.wakeUpTimeoutSec`; `0` turns
-  the wait off). Villagers still without a plan then start the day on a default plan.
+  runs again. The clock goes on once every villager's plan request has finished (with a
+  plan from the model, or a default plan if the model's answer couldn't be used), when the model is
+  unreachable, or after 5 real minutes at most (`sim.wakeUpTimeoutSec`; `0` turns the wait off).
+  Villagers still without a plan then start the day on a default plan.
 - The town darkens in the evening, lamps and windows glow at night, and it gets light again in the
   morning.
 
 At higher speeds the language model has less real time per game hour, so villagers "think slower" in
 game time: a conversation takes longer, or a villager follows a simple default plan until its real
-plan arrives. That's expected; apart from the short wait at 06:00, the town never waits for the
+plan arrives (it keeps asking until noon). That's expected; apart from the short wait at 06:00, the town never waits for the
 model.
 
 ## Moving around and the camera
@@ -146,6 +147,10 @@ Every house has a door. Click a door (or use **Visit their home**) to open the n
   because of it, may tell others about it, and writes a reply that refers to what you wrote.
 - When the reply is ready, the door shows a reply marker. Click the door: the window lists your
   notes with their status (`pinned, not read yet`, `read`, `replied`) and the owner's reply.
+- If the model takes more than about 3 game hours to write the reply, the owner posts a simple
+  reply of its own that still mentions your note. A note that was read but not answered yet (for
+  example because the server was restarted in between) gets its reply the next time the owner
+  comes home.
 - You can pin several notes on the same door. The owner reads them oldest first.
 
 A note is also a rumor: the rumor tracker follows it once the owner has read it.
@@ -155,6 +160,12 @@ A note is also a rumor: the rumor tracker follows it once the owner has read it.
 Villagers pass on news when they talk. Whatever you tell a villager with **Tell as rumor**, and every
 door note once it is read, is tracked as a rumor. Villagers can start rumors too, when they hear
 something they find very important.
+
+Villagers don't just wait to bump into someone. A villager with fresh, important news (heard in
+the last 12 game hours and told to fewer than two people so far) walks up to an awake villager who
+hasn't heard it yet and starts a chat, at most every 30 game minutes. It doesn't do this during an
+event, while doing something you asked for, or in the last hour before bed. If a chat ends right
+after the news is told, the listener still reacts (`Really? …? I had no idea!`), so the news sticks.
 
 The **rumor tracker** panel (top left, yellow border) opens with the first rumor and shows the newest
 one:
@@ -287,12 +298,15 @@ measures how long answers take in game time and works in one of three modes:
   revisions (instead, a villager with news spends 45 minutes at a meeting place to pass it on), no
   reflections, and memories, conversations and the day are summarised by simple rules.
 - **Overloaded** (about 35 game minutes or more): only villagers with news start conversations,
-  at most 3 lines, and the lines are canned (`Did you hear? …`, `Really? …? I had no idea!`), so
-  gossip still spreads. Invitees decide about events by a simple rule (how much they like the host
+  at most 3 lines. The first line with news still goes to the model; the rest are canned
+  (`Did you hear? …`, `Really? …? I had no idea!`), so gossip still spreads. Invitees decide about events by a simple rule (how much they like the host
   and whether they're free).
 
-In every mode your chats and door-note replies come first, followed by today's plans for villagers
-still on a default plan. Each
+In every mode your chats and the villagers' morning plans come first, followed by door-note
+replies, news being passed on, new tries for villagers still on a default plan, and the day's
+event. Until every villager has its morning plan (for up to 2 game hours after it wakes), conversations use the canned lines described
+under Overloaded. A villager on a default plan keeps asking the model until 12:00 (at most 8
+tries) and switches to the real plan for the rest of the day when it arrives. Each
 villager plans tomorrow in the evening, about 90 minutes before bedtime, while the model is less
 busy (except when overloaded). The mode recovers as soon as answers come back faster. For how to
 make a slow machine keep up, see [Performance and slow hardware](setup/performance.md).
