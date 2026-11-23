@@ -371,8 +371,11 @@ export class Engine implements SimEngine, SimHost {
         this.emitTick(false);
         const hold = this.wakeHold;
         if (hold && ++hold.rounds > WAKE_UP_MAX_ROUNDS) this.endWakeUp(hold.day, true);
-        await this.queue.drain();
-        if (this.pending.size > 0) await Promise.race([Promise.allSettled([...this.pending]), settle()]);
+        // Without drainLlm a hung provider must not block advance(); the hold then ends by rounds or timeout.
+        if (opts.drainLlm) {
+          await this.queue.drain();
+          if (this.pending.size > 0) await Promise.race([Promise.allSettled([...this.pending]), settle()]);
+        }
         await settle();
         continue;
       }
