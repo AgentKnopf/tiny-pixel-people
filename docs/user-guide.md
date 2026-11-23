@@ -402,7 +402,7 @@ The 🕵 **Stranger** button still works as before; strangers have nothing to do
 
 You can walk into any villager's house, the hotel lobby and the post office. Click the door and
 press **🚪 Go inside**. Inside, the house opens as its own small room on top of the dimmed village:
-you can walk around, and whoever is at home is there too. The place bar shows `🏠 Inside …`; press
+click the floor to walk around, and whoever is at home is there too. The place bar shows `🏠 Inside …`; press
 **🚪 Exit** there to step back out onto the doorstep.
 
 Nothing is locked, but the owner notices:
@@ -440,7 +440,8 @@ included, up to 500 characters. Letters you receive also show in your **Mail** a
   to you.
 - A letter to a visitor who has already left comes back to you marked "moved away".
 
-Letters show on doors like notes do, until they're read.
+A bouncing mail icon over a door means a letter has been delivered there and not read yet. A
+letter icon over the post office means letters are waiting for the next round.
 
 The **Mail** tile in the dock opens your mailbox, and so does clicking your own door. Letters
 delivered to you appear there (marked `new` until you read them), with **✉️ Open Letters** to
@@ -449,8 +450,8 @@ decoration.
 
 ### The notice board
 
-The notice board stands in front of the post office. Open it with **📌 Notice board** in the place
-bar when you are near it, or from the post office door. It lists each notice with who posted it
+The notice board stands in front of the post office. Click it to read the notices, or use
+**📌 Notice board** in the place bar when you are near it, or at the post office door. It lists each notice with who posted it
 and until when it hangs. Next to the board you can **📌 Post a notice** (up to 200 characters).
 
 - Every village event puts up its own notice: `📌 Bake-off at the Town square, 15:00. All welcome!
@@ -463,7 +464,8 @@ and until when it hangs. Next to the board you can **📌 Post a notice** (up to
 ### The Keep
 
 Inside the post office stands the **Keep**, a cupboard where every door note, letter, notice and
-rumor in the village is written down. Inside, press **📒 Open the Keep** in the place bar: search
+rumor in the village is written down. Inside, click the cupboard (a marker bounces over it) or press **📒 Open the Keep** in the place
+bar: search
 for a word, filter by kind (notes, letters, notices, rumors, replies, or everything) and page back
 through the entries with **‹ Newer** and **Older ›**, newest first. New entries appear while it is open. Outside
 the post office the Keep stays closed. Reading
