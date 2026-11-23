@@ -107,6 +107,7 @@ const OCCUPATION_PLACES: [RegExp, RegExp][] = [
   [/farm|garden|grow/i, /farm|field|garden|orchard/i],
   [/shop|store|merchant|grocer|seller|tailor|smith|florist|book/i, /shop|store|market|street|flor|book/i],
   [/teach|school/i, /school/i],
+  [/postm|postal|post office|mail ?carrier/i, /^post/i],
   [/librar/i, /librar/i],
   [/fish/i, /pond|lake|dock|river/i],
   [/doctor|nurse|clinic/i, /clinic|doctor/i],
@@ -153,7 +154,8 @@ export function workLocation(profile: VillagerProfile, locations: readonly Locat
   const kw = extractKeywords(`${profile.occupation} ${profile.bio}`);
   let best: { id: LocationId; s: number } | null = null;
   for (const l of locations) {
-    if (l.kind === 'house') continue;
+    // Only an explicit postal occupation works at the post office (a postcard illustrator does not).
+    if (l.kind === 'house' || l.kind === 'post') continue;
     const s = keywordOverlap(
       extractKeywords(`${l.id.replace(/_/g, ' ')} ${l.name} ${l.description ?? ''}`),
       kw,
