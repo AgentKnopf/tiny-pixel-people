@@ -134,7 +134,8 @@ Decorations cost gold. Attend events (+10) or ask villagers for favours (+12 whe
 **Laude and Franzi are missing.**
 They are villagers 11 and 12. With `sim.villagers` below 12 (or `TPP_VILLAGERS`), one or both stay
 away. The post office, letters, the notice board and the Keep still work without them. If you load
-an old save with 12 villagers, they move in and a toast says so.
+an old save with 12 villagers, they move in and a toast says
+`🏡 Laude and Franzi moved in near the bakery!`.
 
 **No visitors arrive.**
 Visitors come by train, first at 10:00, and only while `visitors.enabled` and `train.enabled` are
