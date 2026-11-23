@@ -73,7 +73,8 @@ export function keepModal(ctx: UiContext): ModalView {
       clearTimeout(debounce);
       load(0);
     }
-    ev.stopPropagation();
+    // Escape still has to reach the window handler that closes the modal.
+    if (ev.key !== 'Escape') ev.stopPropagation();
   });
   kind.addEventListener('change', () => load(0));
   store.keep = null;

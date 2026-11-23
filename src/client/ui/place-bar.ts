@@ -77,7 +77,7 @@ export function createPlaceBar(ctx: UiContext): HTMLElement {
             : btn(
                 `Ride (${cost} gold)`,
                 `ride-${loc.id}`,
-                () => host.send({ type: 'player.ride', locationId: loc.id }),
+                () => ctx.walkIn.use(loc, { type: 'player.ride', locationId: loc.id }),
                 {
                   disabled: closed || gold < cost,
                   title: closed ? 'The rides are closed now' : gold < cost ? 'Not enough gold' : undefined,
@@ -111,7 +111,7 @@ export function createPlaceBar(ctx: UiContext): HTMLElement {
                 : gold < price
                   ? 'Not enough gold'
                   : `Buy ${def.name}`,
-            onclick: () => host.send({ type: 'player.buy', locationId: loc.id, itemId }),
+            onclick: () => ctx.walkIn.use(loc, { type: 'player.buy', locationId: loc.id, itemId }),
           },
           spriteIcon(def.sprite, def.emoji),
           ` ${def.name} · ${price}🪙`,
