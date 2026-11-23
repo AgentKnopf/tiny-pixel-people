@@ -58,6 +58,9 @@ describe.skipIf(!ready(...FEATURES))(`hunger override near food${waitingFor(...F
     /** Villagers whose hunger kept falling while they ate (eating must restore at least the decay). */
     const starving = new Set<string>();
     let lastTime = 0;
+    const gotHungry = new Set<string>();
+    /** Longest stretch of eating while still critical, per villager (a renewed override runs past 45 min). */
+    const criticalMeal = new Map<string, number>();
     await w.advanceTo('15:00', {
       chunk: 2,
       onStep: ({ time, snapshot }) => {
@@ -65,6 +68,7 @@ describe.skipIf(!ready(...FEATURES))(`hunger override near food${waitingFor(...F
         for (const v of snapshot().villagers) {
           if (v.status === 'sleeping') continue;
           const eating = v.status !== 'walking' && FOOD.test(v.activity.text);
+          if (v.needs.hunger < 20) gotHungry.add(v.id);
           if (!eating) {
             meal.delete(v.id);
             if (v.needs.hunger < 20 && !hungrySince.has(v.id)) hungrySince.set(v.id, time);
@@ -80,16 +84,21 @@ describe.skipIf(!ready(...FEATURES))(`hunger override near food${waitingFor(...F
           const m = meal.get(v.id) ?? { at: time, hunger: v.needs.hunger };
           meal.set(v.id, m);
           if (time - m.at <= 20 && v.needs.hunger < m.hunger - 1) starving.add(v.id);
+          if (m.hunger < 20 && v.needs.hunger < 20)
+            criticalMeal.set(v.id, Math.max(criticalMeal.get(v.id) ?? 0, time - m.at));
         }
       },
     });
     w.dispose();
     for (const [id, from] of hungrySince)
       if (lastTime - from > 60) late.push({ id, from, to: null });
-    expect(stretches.some((s) => s.id === 'guest')).toBe(true);
-    // The renewal boundary: hunger stays critical through a meal at this decay, so the villager is
-    // hungry again the moment the override block ends.
-    expect(stretches.some((s) => s.repeat)).toBe(true);
+    expect(gotHungry.has('guest')).toBe(true);
+    // The renewal boundary: hunger stays critical through a 45-minute meal at this decay, so the
+    // villager must either eat on past the block's end or be hungry again the moment it ends.
+    expect(
+      [...criticalMeal.values()].some((d) => d > 45) || stretches.some((s) => s.repeat),
+      JSON.stringify([...criticalMeal]),
+    ).toBe(true);
     expect(late, JSON.stringify(late)).toEqual([]);
     expect([...starving]).toEqual([]);
   }, 180_000);
