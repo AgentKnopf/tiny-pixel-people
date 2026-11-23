@@ -3,7 +3,8 @@
  * `readyV2(...)` and names what it waits for with `waitingForV2(...)`.
  */
 import type { Feature } from './features.ts';
-import { SIM_FEATURES } from './features.ts';
+import { featurePath, repoPath, SIM_FEATURES } from './features.ts';
+import type { AnimalSim } from '../../src/server/sim/types.ts';
 import type { Location, LocationKind, Point, WorldMap, WorldSnapshot } from '../../src/shared/types.ts';
 import type { TestWorld } from './world.ts';
 
@@ -66,4 +67,17 @@ export const GRAPHIC_WORDS = [
 export function graphicWords(text: string): string[] {
   const t = text.toLowerCase();
   return GRAPHIC_WORDS.filter((w) => new RegExp(`\\b${w}\\b`).test(t));
+}
+
+/**
+ * The AnimalSim factory exported by src/server/sim/animals.ts. Spec v2 names the interface only, so
+ * a missing `createAnimalSim` export fails with the module's real export list instead of a TypeError.
+ */
+export async function animalSimFactory<O>(): Promise<(opts: O) => AnimalSim> {
+  const rel = featurePath('animals');
+  const mod = (await import(/* @vite-ignore */ repoPath(rel))) as Record<string, unknown>;
+  const make = mod.createAnimalSim;
+  if (typeof make !== 'function')
+    throw new Error(`${rel} does not export createAnimalSim(opts); its exports: ${Object.keys(mod).join(', ') || 'none'}`);
+  return make as (opts: O) => AnimalSim;
 }

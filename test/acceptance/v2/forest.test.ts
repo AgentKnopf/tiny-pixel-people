@@ -16,15 +16,14 @@ import {
 } from '../../../src/shared/types.ts';
 import { at, minuteOfDay, parseClock } from '../../../src/shared/time.ts';
 import type { AppConfig } from '../../../src/server/config.ts';
-import type { AnimalSim } from '../../../src/server/sim/types.ts';
 import { featurePath, readyV2, repoPath, waitingForV2, type Feature } from '../../helpers/features.ts';
 import { animalPenProblems, walkable } from '../../helpers/invariants.ts';
-import { dist, loc, V2 } from '../../helpers/v2.ts';
-import { createTestWorld, importRepo, testConfig, type TestWorld } from '../../helpers/world.ts';
+import { animalSimFactory, dist, loc, V2 } from '../../helpers/v2.ts';
+import { createTestWorld, testConfig, type TestWorld } from '../../helpers/world.ts';
 
 const F: Feature[] = [...V2.animals];
 
-/** Factory contract assumed for src/server/sim/animals.ts (same as farm.test.ts). */
+/** Options passed to the AnimalSim factory of src/server/sim/animals.ts (see animalSimFactory). */
 interface AnimalSimOptions {
   map: WorldMap;
   config: AppConfig;
@@ -34,7 +33,6 @@ interface AnimalSimOptions {
   burgerStock?: () => number;
   profiles?: readonly VillagerProfile[];
 }
-type AnimalsModule = { createAnimalSim: (opts: AnimalSimOptions) => AnimalSim };
 
 const SEED = 17;
 const COUNTS: Record<ForestSpecies, number> = {
@@ -196,7 +194,7 @@ describe.skipIf(!readyV2(...F))(`AC26: the forest${waitingForV2(...F)}`, () => {
 
   describe('AnimalSim unit: shy animals', () => {
     it('moves an animal away from someone within 3 tiles, at most 4 steps, inside its pen', async () => {
-      const { createAnimalSim } = await importRepo<AnimalsModule>(featurePath('animals'));
+      const createAnimalSim = await animalSimFactory<AnimalSimOptions>();
       const config = testConfig({ villagers: 12, seed: SEED });
       const map = readJson(featurePath('villageMap')) as WorldMap;
       const noon = at(0, '12:00');

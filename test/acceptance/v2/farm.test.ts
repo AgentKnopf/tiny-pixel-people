@@ -9,25 +9,22 @@ import {
   type FarmState,
   type FoodStock,
   type GameMinutes,
-  type ItemDef,
   type VillagerProfile,
   type WorldMap,
 } from '../../../src/shared/types.ts';
 import { at, dayOf, minuteOfDay, parseClock } from '../../../src/shared/time.ts';
 import type { AppConfig } from '../../../src/server/config.ts';
-import type { AnimalChange, AnimalSim } from '../../../src/server/sim/types.ts';
-import type { FarmEconomy } from '../../../src/server/player/types.ts';
+import type { AnimalChange } from '../../../src/server/sim/types.ts';
 import { featurePath, readyV2, repoPath, waitingForV2, type Feature } from '../../helpers/features.ts';
 import { animalCapProblems, farmCounts, hourlyInvariants } from '../../helpers/invariants.ts';
-import { graphicWords, V2 } from '../../helpers/v2.ts';
-import { createTestWorld, importRepo, testConfig, type TestWorld } from '../../helpers/world.ts';
+import { animalSimFactory, graphicWords, V2 } from '../../helpers/v2.ts';
+import { setup } from '../../unit/player/fake-host.ts';
+import { addV2Locations } from '../../unit/player/v2-fixtures.ts';
+import { createTestWorld, testConfig, type TestWorld } from '../../helpers/world.ts';
 
 const F: Feature[] = [...V2.farm];
 
-/**
- * Factory contract assumed for src/server/sim/animals.ts and src/server/player/farm-economy.ts
- * (the spec names the interfaces, not the factories).
- */
+/** Options passed to the AnimalSim factory of src/server/sim/animals.ts (see animalSimFactory). */
 interface AnimalSimOptions {
   map: WorldMap;
   config: AppConfig;
@@ -40,14 +37,6 @@ interface AnimalSimOptions {
   burgerStock?: () => number;
   profiles?: readonly VillagerProfile[];
 }
-type AnimalsModule = { createAnimalSim: (opts: AnimalSimOptions) => AnimalSim };
-interface FarmEconomyOptions {
-  config: AppConfig;
-  items?: readonly ItemDef[];
-  stock?: FoodStock;
-  profiles?: readonly VillagerProfile[];
-}
-type FarmEconomyModule = { createFarmEconomy: (opts: FarmEconomyOptions) => FarmEconomy };
 
 const DAYS = 60;
 const SEED = 7;
@@ -74,21 +63,23 @@ interface UnitLog {
 const zero = (): Record<FarmSpecies, number> => ({ cow: 0, sheep: 0, chicken: 0 });
 
 async function runUnit(): Promise<UnitLog> {
-  const { createAnimalSim } = await importRepo<AnimalsModule>(featurePath('animals'));
-  const { createFarmEconomy } = await importRepo<FarmEconomyModule>(featurePath('farmEconomy'));
+  const createAnimalSim = await animalSimFactory<AnimalSimOptions>();
   const config = testConfig({ villagers: 12, seed: SEED });
   const map = readJson(featurePath('villageMap')) as WorldMap;
-  const items = readJson(featurePath('items')) as ItemDef[] | { items: ItemDef[] };
-  const economy = createFarmEconomy({ config, items: Array.isArray(items) ? items : items.items });
+  // The engine feeds AnimalSim changes to PlayerWorld.onAnimalChange and villager meals to
+  // PlayerWorld.consumeFood; drive the same public entry points with WP8's in-memory host.
+  const { host, pw } = setup();
+  addV2Locations(host);
   const start = at(0, '06:00');
+  host.time = start;
   const sim = createAnimalSim({
     map,
     config,
     seed: SEED,
     now: start,
-    burgerStock: () => burgers(economy.stock()),
+    burgerStock: () => burgers(pw.farm.stock()),
   });
-  const log: UnitLog = {
+  let seenToasts = host.of('toast').length;  const log: UnitLog = {
     capProblems: [],
     births: zero(),
     oldAge: zero(),
@@ -105,10 +96,14 @@ async function runUnit(): Promise<UnitLog> {
     const change: AnimalChange = sim.step(t, []);
     // Villagers eat at the burger joint twice a day, so the low-stock butcher rule also fires.
     const mod = minuteOfDay(t);
-    if (mod === parseClock('12:30') || mod === parseClock('18:30')) economy.consume('burger_joint', 'burger');
-    const before = burgers(economy.stock());
-    const { toasts } = economy.onAnimalChange(change, t);
-    const after = burgers(economy.stock());
+    if (mod === parseClock('12:30') || mod === parseClock('18:30')) pw.consumeFood('burger_joint', 'burger');
+    const before = burgers(pw.farm.stock());
+    host.time = t;
+    pw.onAnimalChange(change);
+    const after = burgers(pw.farm.stock());
+    const all = host.of('toast');
+    const toasts = all.slice(seenToasts).map((m) => m.text);
+    seenToasts = all.length;
     log.toasts.push(...toasts);
     for (const a of change.added) if (a.group === 'farm' && isFarm(a.species)) log.births[a.species]++;
     let expectedBurgers = 0;

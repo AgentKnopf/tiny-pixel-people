@@ -6,7 +6,6 @@ import {
   type GameMinutes,
   type Letter,
   type LetterStatus,
-  type Memory,
   type VillagerId,
 } from '../../../src/shared/types.ts';
 import { at, dayOf } from '../../../src/shared/time.ts';
@@ -19,7 +18,6 @@ const F: Feature[] = [...V2.post];
 const LETTER = 'The old lighthouse lantern glows purple at midnight now. Have you seen the purple lantern?';
 const FAR_LETTER = 'This letter was written far away from the post office.';
 
-const metaValue = (m: Memory, key: string): unknown => (m.meta as Record<string, unknown>)[key];
 const isError = (replies: readonly ServerMessage[]) => replies.some((m) => m.type === 'error');
 
 /** The first delivery round strictly after `t`. */
@@ -133,7 +131,7 @@ describe.skipIf(!readyV2(...F))(`AC20: letters${waitingForV2(...F)}`, () => {
       expect(l.readAt).toBeDefined();
       expect(l.readAt!).toBeGreaterThanOrEqual(l.deliveredAt!);
       expect(homeAtRead).toBe(true);
-      const m = w.memories(recipient).find((x) => metaValue(x, 'letterId') === letterId);
+      const m = w.memories(recipient).find((x) => x.meta.letterId === letterId);
       expect(m, 'memory with meta.letterId').toBeDefined();
       expect(m!.kind).toBe('note');
       expect(m!.importance).toBe(6);

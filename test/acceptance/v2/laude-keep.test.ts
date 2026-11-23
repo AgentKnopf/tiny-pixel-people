@@ -23,11 +23,7 @@ const LETTER = 'Please keep a jar of quince jam for me at the market on Friday.'
 const NOTICE = 'Choir practice moves to the old mill this week. Bring a lantern!';
 const RUMOR = 'Somebody hid a silver trumpet under the bandstand floorboards.';
 
-const metaValue = (m: Memory, key: string): unknown => (m.meta as Record<string, unknown>)[key];
-const keepIdOf = (m: Memory) => {
-  const v = metaValue(m, 'keepId');
-  return typeof v === 'string' ? v : undefined;
-};
+const keepIdOf = (m: Memory) => m.meta.keepId;
 const isError = (replies: readonly ServerMessage[]) => replies.some((m) => m.type === 'error');
 const keepData = (replies: readonly ServerMessage[]) =>
   replies.find((m): m is KeepDataMsg => m.type === 'keep.data');
