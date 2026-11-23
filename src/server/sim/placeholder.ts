@@ -81,7 +81,7 @@ export function createPlaceholderSnapshot(
       inventory: [],
       ownedDecorations: [],
       placedDecorations: [],
-      pet: { name: 'Pip', species: 'dog', pos: { x: 5, y: 27 }, facing: 'down', mode: 'follow' },
+      pet: { name: 'Pip', species: 'cat', pos: { x: 5, y: 27 }, facing: 'down', mode: 'follow' },
     },
     rumors: [],
     weather: { state: 'clear', since: time, until: null },

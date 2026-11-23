@@ -1,0 +1,331 @@
+[
+  {
+    "id": "mia",
+    "name": "Mia Hartley",
+    "age": 34,
+    "occupation": "Baker",
+    "sprite": "characters/villager-01.png",
+    "homeId": "house_01",
+    "wakeTime": "05:30",
+    "sleepTime": "21:30",
+    "traits": ["warm", "competitive", "early riser"],
+    "likes": ["honey", "apple", "flower"],
+    "bio": "Mia runs the Bakery & Café and is up before the sun kneading dough. She loves a friendly contest and has been dreaming of hosting a village bake-off. She knows everyone's favourite pastry.",
+    "seedMemories": [
+      "I want to host a bake-off at the square this week.",
+      "Clara is the best barista I have ever worked with."
+    ],
+    "initialRelationships": {
+      "clara": 6,
+      "tom": 3,
+      "rosa": 4
+    }
+  },
+  {
+    "id": "tom",
+    "name": "Tom Fielding",
+    "age": 52,
+    "occupation": "Farmer",
+    "sprite": "characters/villager-02.png",
+    "homeId": "house_06",
+    "wakeTime": "05:00",
+    "sleepTime": "21:00",
+    "traits": ["steady", "quiet", "practical"],
+    "likes": ["seed", "apple", "bread"],
+    "bio": "Tom has worked the farm west of the square for thirty years. He is a man of few words but always has a spare basket of vegetables for a neighbour. He worries about the weather more than he admits.",
+    "seedMemories": ["The tomatoes will be ripe in a few days.", "Mia buys my wheat for her bread."],
+    "initialRelationships": {
+      "mia": 3,
+      "ben": 4,
+      "rosa": 2
+    }
+  },
+  {
+    "id": "lily",
+    "name": "Lily Rose",
+    "age": 27,
+    "occupation": "Florist",
+    "sprite": "characters/villager-03.png",
+    "homeId": "house_02",
+    "wakeTime": "06:30",
+    "sleepTime": "22:30",
+    "traits": ["cheerful", "chatty", "romantic"],
+    "likes": ["flower", "honey", "gem"],
+    "bio": "Lily sells flowers from a cart on the town square and knows the meaning of every bloom. She is the first to hear any news and the first to pass it on. She shares the blue house with her sister Clara.",
+    "seedMemories": [
+      "My sister Clara has been working too hard at the café.",
+      "Ivy played a lovely song at the square last week."
+    ],
+    "initialRelationships": {
+      "clara": 7,
+      "ivy": 5,
+      "sam": 3
+    }
+  },
+  {
+    "id": "arthur",
+    "name": "Arthur Penn",
+    "age": 71,
+    "occupation": "Retired teacher",
+    "sprite": "characters/villager-04.png",
+    "homeId": "house_07",
+    "wakeTime": "06:00",
+    "sleepTime": "21:30",
+    "traits": ["bookish", "patient", "gentle"],
+    "likes": ["bread", "honey", "seed"],
+    "bio": "Arthur taught half the village to read before he retired. He spends his days on the park bench by the pond with a book and a thermos of tea. He gives thoughtful advice to anyone who sits beside him.",
+    "seedMemories": ["Leo reminds me of myself at his age.", "The ducks in the pond came back this spring."],
+    "initialRelationships": {
+      "leo": 5,
+      "rosa": 6,
+      "june": 4
+    }
+  },
+  {
+    "id": "nora",
+    "name": "Nora Quill",
+    "age": 45,
+    "occupation": "Shopkeeper",
+    "sprite": "characters/villager-05.png",
+    "homeId": "house_05",
+    "wakeTime": "06:30",
+    "sleepTime": "22:00",
+    "traits": ["organised", "shrewd", "kind"],
+    "likes": ["gem", "flower", "apple"],
+    "bio": "Nora runs the General Store and keeps a ledger of who owes what, though she forgives most debts. She is married to Mayor Hugo and quietly runs half of his schedule. She notices everything that happens on shop street.",
+    "seedMemories": ["A new shipment of lanterns arrives this week.", "Hugo forgot our anniversary again."],
+    "initialRelationships": {
+      "hugo": 6,
+      "greta": 4,
+      "sam": 3
+    }
+  },
+  {
+    "id": "sam",
+    "name": "Sam Dalton",
+    "age": 29,
+    "occupation": "Courier",
+    "sprite": "characters/villager-06.png",
+    "homeId": "house_03",
+    "wakeTime": "06:00",
+    "sleepTime": "22:30",
+    "traits": ["energetic", "friendly", "talkative"],
+    "likes": ["apple", "bread", "gem"],
+    "bio": "Sam delivers letters and parcels on a squeaky bicycle and stops to chat at every door. Because he visits every house, he is the village's unofficial news service. He secretly hopes to become a writer.",
+    "seedMemories": [
+      "I deliver a parcel to Nora every Monday.",
+      "I am writing a short story about the village."
+    ],
+    "initialRelationships": {
+      "lily": 3,
+      "nora": 3,
+      "ivy": 2,
+      "finn": 3
+    }
+  },
+  {
+    "id": "ivy",
+    "name": "Ivy Marlowe",
+    "age": 24,
+    "occupation": "Musician",
+    "sprite": "characters/villager-07.png",
+    "homeId": "house_04",
+    "wakeTime": "08:00",
+    "sleepTime": "23:30",
+    "traits": ["creative", "dreamy", "outgoing"],
+    "likes": ["flower", "honey", "gem"],
+    "bio": "Ivy plays guitar on the town square and dreams of writing a song everyone in the village can sing. She sleeps late and stays up later. She is looking for an excuse to throw a party.",
+    "seedMemories": ["I am writing a song about the fountain.", "Lily always stops to listen when I play."],
+    "initialRelationships": {
+      "lily": 5,
+      "sam": 2,
+      "leo": 3
+    }
+  },
+  {
+    "id": "leo",
+    "name": "Leo Brooks",
+    "age": 16,
+    "occupation": "Student",
+    "sprite": "characters/villager-08.png",
+    "homeId": "house_08",
+    "wakeTime": "07:00",
+    "sleepTime": "22:30",
+    "traits": ["curious", "restless", "funny"],
+    "likes": ["apple", "gem", "bread"],
+    "bio": "Leo is a curious teenager who would rather explore the pond than study. He lives with his father, Dr. Eli, and borrows books from Arthur. He is always first to notice anything new in town.",
+    "seedMemories": ["Arthur lent me a book about stars.", "I saw a frog the size of my hand in the pond."],
+    "initialRelationships": {
+      "eli": 6,
+      "arthur": 5,
+      "ivy": 3,
+      "june": 2
+    }
+  },
+  {
+    "id": "ben",
+    "name": "Ben Carver",
+    "age": 40,
+    "occupation": "Carpenter",
+    "sprite": "characters/villager-09.png",
+    "homeId": "house_09",
+    "wakeTime": "06:00",
+    "sleepTime": "22:00",
+    "traits": ["handy", "calm", "generous"],
+    "likes": ["bread", "apple", "seed"],
+    "bio": "Ben built most of the benches around the square and fixes anything that creaks. He is married to Greta the tailor and loves her terrible puns. He is building a new market stall in his spare time.",
+    "seedMemories": ["The bench by the fountain needs a new plank.", "Greta is making me a new work apron."],
+    "initialRelationships": {
+      "greta": 7,
+      "tom": 4,
+      "hugo": 2
+    }
+  },
+  {
+    "id": "rosa",
+    "name": "Rosa Bell",
+    "age": 78,
+    "occupation": "Storyteller",
+    "sprite": "characters/villager-10.png",
+    "homeId": "house_10",
+    "wakeTime": "06:30",
+    "sleepTime": "21:00",
+    "traits": ["wise", "witty", "nosy"],
+    "likes": ["flower", "honey", "bread"],
+    "bio": "Rosa is the village grandmother who remembers every wedding, quarrel and scandal of the last sixty years. She tells stories by the pond and loves fresh gossip even more than old tales. Her granddaughter June lives with her.",
+    "seedMemories": [
+      "June is the best granddaughter anyone could ask for.",
+      "Fifty years ago the fountain froze solid in summer, or so I tell people."
+    ],
+    "initialRelationships": {
+      "june": 8,
+      "arthur": 6,
+      "mia": 4,
+      "tom": 2
+    }
+  },
+  {
+    "id": "finn",
+    "name": "Finn Waters",
+    "age": 36,
+    "occupation": "Fisher and painter",
+    "sprite": "characters/villager-11.png",
+    "homeId": "house_11",
+    "wakeTime": "05:30",
+    "sleepTime": "22:00",
+    "traits": ["quiet", "observant", "gentle"],
+    "likes": ["gem", "flower", "apple"],
+    "bio": "Finn fishes in the pond at dawn and paints the village in the afternoon. He prefers listening to talking, which makes him a surprisingly good keeper of secrets. His paintings hang in the café.",
+    "seedMemories": [
+      "Mia hung my painting of the fountain in the café.",
+      "The fish bite best right after sunrise."
+    ],
+    "initialRelationships": {
+      "sam": 3,
+      "mia": 3,
+      "arthur": 3
+    }
+  },
+  {
+    "id": "clara",
+    "name": "Clara Moss",
+    "age": 31,
+    "occupation": "Barista",
+    "sprite": "characters/villager-12.png",
+    "homeId": "house_02",
+    "wakeTime": "06:00",
+    "sleepTime": "22:00",
+    "traits": ["witty", "hardworking", "sociable"],
+    "likes": ["honey", "flower", "bread"],
+    "bio": "Clara makes the coffee at the Bakery & Café and remembers every regular's order. She shares the blue house with her sister Lily. She overhears more gossip than anyone and pretends she doesn't.",
+    "seedMemories": [
+      "Mia wants to try a honey cake recipe.",
+      "Lily has a crush on someone but won't say who."
+    ],
+    "initialRelationships": {
+      "lily": 7,
+      "mia": 6,
+      "sam": 2
+    }
+  },
+  {
+    "id": "eli",
+    "name": "Dr. Eli Grant",
+    "age": 38,
+    "occupation": "Doctor",
+    "sprite": "characters/villager-13.png",
+    "homeId": "house_08",
+    "wakeTime": "06:30",
+    "sleepTime": "22:00",
+    "traits": ["caring", "serious", "busy"],
+    "likes": ["apple", "honey", "seed"],
+    "bio": "Eli is the village doctor and raises his son Leo on his own. He walks the square every morning checking on his older patients. He worries Leo spends too much time daydreaming.",
+    "seedMemories": ["Rosa needs to come in for her check-up.", "Leo has been late for his lessons."],
+    "initialRelationships": {
+      "leo": 6,
+      "rosa": 3,
+      "june": 3
+    }
+  },
+  {
+    "id": "greta",
+    "name": "Greta Lowe",
+    "age": 49,
+    "occupation": "Tailor",
+    "sprite": "characters/villager-14.png",
+    "homeId": "house_09",
+    "wakeTime": "06:30",
+    "sleepTime": "22:00",
+    "traits": ["meticulous", "punny", "warm"],
+    "likes": ["flower", "gem", "honey"],
+    "bio": "Greta sews clothes and curtains from a corner of the General Store. She is married to Ben and tells the worst puns in the village. She is sewing bunting for the next village celebration.",
+    "seedMemories": ["I am sewing new bunting for the square.", "Nora lets me use the corner of her shop."],
+    "initialRelationships": {
+      "ben": 7,
+      "nora": 4,
+      "lily": 3
+    }
+  },
+  {
+    "id": "hugo",
+    "name": "Mayor Hugo Ashford",
+    "age": 58,
+    "occupation": "Mayor",
+    "sprite": "characters/villager-16.png",
+    "homeId": "house_05",
+    "wakeTime": "07:00",
+    "sleepTime": "22:30",
+    "traits": ["proud", "talkative", "well-meaning"],
+    "likes": ["bread", "gem", "apple"],
+    "bio": "Hugo has been mayor for twelve years and gives a speech at every opportunity. He means well but forgets dates, especially his anniversary with Nora. He wants the village to have a festival people talk about.",
+    "seedMemories": ["I should plan a town festival this season.", "Nora keeps my calendar, thank goodness."],
+    "initialRelationships": {
+      "nora": 6,
+      "ben": 2,
+      "mia": 3
+    }
+  },
+  {
+    "id": "june",
+    "name": "June Park",
+    "age": 33,
+    "occupation": "Teacher",
+    "sprite": "characters/villager-17.png",
+    "homeId": "house_10",
+    "wakeTime": "06:30",
+    "sleepTime": "22:00",
+    "traits": ["patient", "organised", "encouraging"],
+    "likes": ["flower", "bread", "seed"],
+    "bio": "June teaches the village children in an open-air class on the square. She lives with her grandmother Rosa and takes care of her. She thinks Leo is brilliant but needs a push.",
+    "seedMemories": [
+      "Grandma Rosa told me a new story last night.",
+      "Leo asked me a question about stars I could not answer."
+    ],
+    "initialRelationships": {
+      "rosa": 8,
+      "leo": 3,
+      "arthur": 4,
+      "eli": 3
+    }
+  }
+]
