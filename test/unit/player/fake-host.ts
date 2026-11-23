@@ -9,6 +9,7 @@ import {
   type PlayerWorldSave,
 } from '../../../src/server/player/index.ts';
 import type { PlayerWorldConfig } from '../../../src/server/player/context.ts';
+import type { CommandResult } from '../../../src/server/player/types.ts';
 import type { ServerMessage } from '../../../src/shared/protocol.ts';
 import { at } from '../../../src/shared/time.ts';
 import {
@@ -207,6 +208,10 @@ export class FakeHost implements PlayerHost {
   readonly removed: string[] = [];
   proposals = 0;
   llm?: LlmQueue;
+  load: 'normal' | 'busy' | 'overloaded' = 'normal';
+  joinRide?: (rideId: string) => CommandResult;
+  triggerTrain?: () => CommandResult;
+  loadLevel = () => this.load;
 
   constructor() {
     this.add(profile('ada', 'Ada', 'house_ada', { likes: ['flower'] }), villager('ada', { x: 15, y: 10 }));

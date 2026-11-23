@@ -1,4 +1,4 @@
-import type { AppConfig } from '../config.ts';
+import { DEFAULT_CONFIG, type AppConfig } from '../config.ts';
 import type { ServerMessage } from '../../shared/protocol.ts';
 import { PLAYER_HOME_ID, type Location, type LocationId, type VillagerState } from '../../shared/types.ts';
 import type { WorldCatalogs } from './catalog.ts';
@@ -10,6 +10,13 @@ export interface PlayerWorldConfig {
   world: AppConfig['world'];
   /** Villager cap including strangers (spec: 20). */
   maxVillagers?: number;
+  // v2 sections (spec v2 §12); missing ones use the defaults.
+  zoo?: AppConfig['zoo'];
+  train?: AppConfig['train'];
+  visitors?: AppConfig['visitors'];
+  hotel?: AppConfig['hotel'];
+  interiors?: AppConfig['interiors'];
+  post?: AppConfig['post'];
 }
 
 /** Shared plumbing for the WP8 controllers. */
@@ -21,6 +28,34 @@ export class Ctx {
     readonly cfg: PlayerWorldConfig,
     readonly catalogs: WorldCatalogs,
   ) {}
+
+  get zoo(): AppConfig['zoo'] {
+    return this.cfg.zoo ?? DEFAULT_CONFIG.zoo;
+  }
+
+  get train(): AppConfig['train'] {
+    return this.cfg.train ?? DEFAULT_CONFIG.train;
+  }
+
+  get visitors(): AppConfig['visitors'] {
+    return this.cfg.visitors ?? DEFAULT_CONFIG.visitors;
+  }
+
+  get hotel(): AppConfig['hotel'] {
+    return this.cfg.hotel ?? DEFAULT_CONFIG.hotel;
+  }
+
+  get interiors(): AppConfig['interiors'] {
+    return this.cfg.interiors ?? DEFAULT_CONFIG.interiors;
+  }
+
+  get post(): AppConfig['post'] {
+    return this.cfg.post ?? DEFAULT_CONFIG.post;
+  }
+
+  get maxVillagers(): number {
+    return this.cfg.maxVillagers ?? 20;
+  }
 
   /** Unique across restarts because it embeds the game time. */
   id(prefix: string): string {

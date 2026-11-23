@@ -12,6 +12,7 @@ import type { ServerMessage } from '../../shared/protocol.ts';
 import type {
   DayPlan,
   GameMinutes,
+  LocationId,
   Point,
   VillageEvent,
   VillagerId,
@@ -68,6 +69,15 @@ export interface PlayerHost {
   spawnVillager(profile: VillagerProfile, at: Point): void;
   /** Remove a transient villager (it may walk off first); broadcasts `villagers.changed`. */
   removeVillager(id: VillagerId): void;
-  /** Optional LLM queue for `stranger.create` (only used when `world.llmStrangers`). */
+  /** Optional LLM queue for `stranger.create` and `visitor.create`. */
   readonly llm?: LlmQueue;
+
+  // ---------- v2 (optional until the engine wires them) ----------
+
+  /** Current LLM load level (cognition); optional tasks degrade under 'overloaded'. Default 'normal'. */
+  loadLevel?(): 'normal' | 'busy' | 'overloaded';
+  /** Put the player in a ride's queue (RideService); the ride runs it like a villager rider. */
+  joinRide?(rideId: LocationId): CommandResult;
+  /** `world.trigger train`: bring the next train now (TrainService.triggerNow). */
+  triggerTrain?(): CommandResult;
 }
