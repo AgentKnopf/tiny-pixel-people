@@ -30,6 +30,7 @@ import {
   interiorFor,
   interiorLayout,
   objectAt,
+  objectRects,
   residentSpots,
   toInterior,
   type InteriorLayout,
@@ -360,7 +361,8 @@ export class WorldRenderer {
     }
     const pe = this.store.playerEntity;
     const player = this.store.player;
-    if (pe && player) {
+    // Inside a building the player is drawn in the interior view only.
+    if (pe && player && !player.inside) {
       out.push({
         id: PLAYER_ID,
         pos: entityPos(pe, now),
@@ -732,7 +734,7 @@ export class WorldRenderer {
     const byY = [...spots].sort((a, b) => b[1].y - a[1].y);
     for (const [id, pos] of byY) if (inRect(p, spriteHitBox(pos, ts))) return { kind: 'villager', id };
     const tile = { x: Math.floor(p.x / ts), y: Math.floor(p.y / ts) };
-    const obj = objectAt(view.tpl, tile);
+    const obj = objectAt(view.tpl, tile, this.assets.tileNames());
     if (obj) return { kind: 'object', id: obj, locationId: view.loc.id };
     return { kind: 'ground', tile, blocked: interiorBlocked(view.tpl, tile) };
   }
@@ -849,8 +851,10 @@ export class WorldRenderer {
     // Labels and markers in screen px.
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     const toScreen = (p: Point) => ({ x: layout.x + p.x * z, y: layout.y + p.y * z });
+    const rects = objectRects(tpl, this.assets.tileNames());
     for (const o of tpl.objects ?? []) {
-      const p = toScreen({ x: o.pos.x * ts + ts / 2, y: (o.pos.y - 1) * ts });
+      const rr = rects.get(o.id) ?? { x: o.pos.x, y: o.pos.y - 1, w: 1, h: 2 };
+      const p = toScreen({ x: (rr.x + rr.w / 2) * ts, y: rr.y * ts });
       const bounce = Math.round(Math.abs(Math.sin(now / 300)) * 2 * z);
       const size = Math.round(10 * z);
       if (!this.drawIcon(o.id === 'keep_cupboard' ? 'keep' : 'star', p.x, p.y - bounce, size))

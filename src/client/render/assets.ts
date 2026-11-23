@@ -109,6 +109,8 @@ export class Assets {
   meta: MapMeta | null = null;
   animalIndex: AnimalIndex | null = null;
   vehicles: VehicleIndex | null = null;
+  private names: Map<number, string> | null = null;
+  private namesFor: LoadedTileset[] | null = null;
   private sheets = new Map<string, Drawable>();
   private images = new Map<string, Drawable | null>();
   private placeholders = new Map<string, { image: Drawable; info: AnimalSheetInfo }>();
@@ -234,9 +236,12 @@ export class Assets {
 
   /** Global tile index → tile name, over all loaded tilesets. */
   tileNames(): Map<number, string> {
+    if (this.names && this.namesFor === this.tilesets) return this.names;
     const out = new Map<number, string>();
     for (const ts of this.tilesets)
       for (const [name, i] of Object.entries(ts.meta?.tiles ?? {})) out.set(ts.ref.firstIndex + i, name);
+    this.names = out;
+    this.namesFor = this.tilesets;
     return out;
   }
 
