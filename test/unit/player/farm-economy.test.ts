@@ -24,8 +24,6 @@ function goTo(host: FakeHost, player: PlayerState, id: string): void {
   player.pos = { ...loc.entry };
 }
 
-const GRAPHIC = /\b(kill|killed|slaughter|blood|dead|meat|knife|chop)\b/i;
-
 describe('FarmEconomy', () => {
   it('turns farm products into shop stock and butcher removals into burgers', () => {
     const { host, pw } = world();
@@ -50,22 +48,22 @@ describe('FarmEconomy', () => {
       }),
     );
     expect(pw.farm.stock().burger_joint).toEqual({ burger: 8 });
-    const toasts = host.of('toast').filter((t) => t.icon === '🍔');
-    expect(toasts).toHaveLength(3);
-    for (const t of toasts) {
-      expect(t.text).toContain('Fresh burgers at the Burger Joint!');
-      expect(t.text).not.toMatch(GRAPHIC);
-    }
     expect(host.of('stock.updated').at(-1)?.stock.burger_joint).toEqual({ burger: 8 });
   });
 
-  it('names the farmer in the butcher toast', () => {
+  it('leaves the butcher toast to AnimalSim so it is shown once', () => {
     const { host, pw } = world();
     host.profiles.get('ben')!.occupation = 'Farmer';
-    pw.onAnimalChange(change({ removed: [{ id: 'c', species: 'cow', reason: 'butcher' }] }));
-    expect(host.of('toast').at(-1)?.text).toBe(
-      'Ben took a cow to the butcher. Fresh burgers at the Burger Joint!',
+    const before = host.of('toast').length;
+    pw.onAnimalChange(
+      change({
+        removed: [{ id: 'c', species: 'cow', reason: 'butcher' }],
+        toasts: ['🍔 Ben took a cow to the butcher. Fresh burgers at the Burger Joint!'],
+      } as Partial<AnimalChange>),
     );
+    expect(host.of('toast')).toHaveLength(before);
+    expect(pw.farm.stock().burger_joint).toEqual({ burger: 4 });
+    expect(host.of('stock.updated').at(-1)?.stock.burger_joint).toEqual({ burger: 4 });
   });
 
   it('caps stock at 30 per item', () => {
@@ -122,6 +120,25 @@ describe('FarmEconomy', () => {
     player.pos = { x: 15, y: 11 };
     expect(pw.handleCommand({ type: 'player.gift', villagerId: 'ada', itemId: 'ice_cream' })).toEqual([]);
     expect(host.memoriesOf('ada').at(-1)?.text).toContain('ice cream');
+  });
+
+  it('player.buy toasts and logs with the right article', () => {
+    const { host, pw, player } = world();
+    pw.onAnimalChange(change({ removed: [{ id: 'c', species: 'cow', reason: 'butcher' }] }));
+    pw.onAnimalChange(change({ produced: [{ animalId: 'c', itemId: 'milk', count: 1 }] }));
+    const buy = (locationId: string, itemId: string) => {
+      goTo(host, player, locationId);
+      expect(pw.handleCommand({ type: 'player.buy', locationId, itemId })).toEqual([]);
+      return host.of('toast').at(-1)?.text;
+    };
+    expect(buy('ice_cream_truck_1', 'ice_cream')).toBe('You bought an ice cream for 3 gold');
+    expect(buy('burger_joint', 'burger')).toBe('You bought a burger for 5 gold');
+    expect(buy('shop', 'milk')).toBe('You bought some milk for 2 gold');
+    player.gold = 0;
+    goTo(host, player, 'ice_cream_truck_1');
+    expect(
+      pw.handleCommand({ type: 'player.buy', locationId: 'ice_cream_truck_1', itemId: 'ice_cream' })?.[0],
+    ).toMatchObject({ message: 'You need 3 gold for an ice cream' });
   });
 
   it('player.buy at the farm shop sells shop stock', () => {
