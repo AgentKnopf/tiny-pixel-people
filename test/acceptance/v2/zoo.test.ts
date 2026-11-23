@@ -273,7 +273,7 @@ describe.skipIf(!readyV2(...F))(`AC9: zoo, rides and food${waitingForV2(...F)}`,
       // Eating still raises hunger (a burger or an ice cream on an outing); only the decay is off.
       const decayed = [...hungerAt0900]
         .filter(([id, h]) => (hungerAt2130.get(id) ?? h) < h)
-        .map(([id]) => `${id} ${h} -> ${hungerAt2130.get(id)}`);
+        .map(([id, h]) => `${id} ${h} -> ${hungerAt2130.get(id)}`);
       expect(decayed, 'villagers whose hunger dropped').toEqual([]);
       const home = w.engine.profiles.find((p) => p.id === NIGHT_RIDER)!.homeId;
       const allowed = new Set(['square', RIDE, home, ...OPEN_ALTERNATIVES]);
