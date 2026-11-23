@@ -18,9 +18,28 @@ seconds. Higher speeds (2×, 4×, 8×) shrink that budget by the same factor.
 
 ### Measured on a CPU-only machine
 
-This run was made with v1 (10 villagers, before the bigger village and its live checks). It used `qwen2.5:1.5b` on a 4-core cloud machine with 7.8 GB of memory and no GPU,
-with the default settings (`llm.concurrency` 1, `sim.wakeUpTimeoutSec` 300) and a 40-minute day at
-speed 2:
+The v2 live run used `qwen2.5:1.5b` with `nomic-embed-text` on a 4-core cloud machine with 7.8 GB
+of memory and no GPU, with the default settings (12 villagers, `llm.concurrency` 1,
+`sim.wakeUpTimeoutSec` 300), 40-minute days at speed 2, for 3 game days (about 62 real minutes):
+
+| What                    | Typical time                |
+| ----------------------- | --------------------------- |
+| A day plan (`plan.day`) | about 31 s                  |
+| A conversation line     | about 8 s                   |
+| A reflection            | about 16 s                  |
+| Average over all calls  | about 21 s                  |
+| The 06:00 wake-up wait  | 5 min, its limit, every day |
+
+Each morning's wait ended at its limit with 6, 6 and 8 of 12 plans ready, so 10 of 15 day plans
+(residents and visitors) came from the model and the rest were fallbacks. Every villager still
+followed its plan. Gossip, the door-note reply, the bake-offs, the visitors and the reply to your
+letter all worked; the door-note reply, the bake-offs and the letter reply came from the model. About half the conversation lines were fallbacks, and
+no pair got far enough for a new crush or a date in 3 days. The live check passed 10 of its 12
+checks; the two failures were the day plans (AC2) and romance (AC15). On a machine like this, the
+bigger village needs more model throughput than one small model on a CPU gives: see the settings
+below, or use a GPU or Apple Silicon machine.
+
+An earlier v1 run (10 villagers, before the bigger village) on the same machine and settings:
 
 | What                    | Typical time |
 | ----------------------- | ------------ |
@@ -44,7 +63,8 @@ Earlier test runs on the same machine, with `llm.concurrency` 2, show why the de
 is 1. Two calls at once made each call about twice as slow (`plan.day` 48 s instead of 26 s with `qwen2.5:1.5b`).
 `gemma3:4b` was about twice as slow again (92 s, and half of its plans hit the 2-minute timeout),
 so on a CPU like this it does worse than `qwen2.5:1.5b`. The game never crashed, and every late
-answer fell back cleanly. A 7B model on an Apple Silicon Mac or a GPU answers in a few seconds.
+answer fell back cleanly. A 7B model on an Apple Silicon Mac or a GPU should answer much faster,
+but that hasn't been measured with v2.
 
 ## The bigger village and the model
 
