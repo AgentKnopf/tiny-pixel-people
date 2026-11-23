@@ -93,7 +93,7 @@ model.
   square and Your home, plus Overview (the whole map) and one scene per new district (see
   [The bigger village](#the-bigger-village)). The camera moves to the scene you pick and follows it until you pan. The Map tile
   shows the current scene, or `free` after you pan.
-- **Home** (dock) jumps the camera to your cottage, the purple-roofed house at the bottom left.
+- **Home** (dock) jumps the camera to your cottage, the purple-roofed house at the bottom left of the old town.
 
 ## Keyboard shortcuts
 
