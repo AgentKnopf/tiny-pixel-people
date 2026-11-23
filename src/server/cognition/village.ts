@@ -74,11 +74,14 @@ export function villageFor<M extends MindLike>(queue: LlmQueue): Village<M> {
   return v as unknown as Village<M>;
 }
 
-/** Batched, cached embeddings through the queue's embedding lane. */
+/**
+ * Embeddings through the queue's embedding lane. Each memory is sent at once (the queue batches
+ * calls made in the same tick), so the job is visible to `queue.drain()` immediately.
+ */
 export class QueueEmbedder implements Embedder {
   private disabled = false;
-  private pending: Memory[] = [];
-  private scheduled = false;
+  private consecutiveNulls = 0;
+  private inflight = new Set<Memory>();
   private cache = new Map<string, number[]>();
 
   constructor(private readonly queue: LlmQueue) {}
@@ -88,35 +91,29 @@ export class QueueEmbedder implements Embedder {
   }
 
   request(memory: Memory): void {
-    if (this.disabled || memory.embedding) return;
-    this.pending.push(memory);
-    if (!this.scheduled) {
-      this.scheduled = true;
-      queueMicrotask(() => void this.flush());
+    if (this.disabled || memory.embedding || this.inflight.has(memory)) return;
+    this.inflight.add(memory);
+    let call: Promise<number[][] | null>;
+    try {
+      call = this.queue.embed([memory.text]);
+    } catch {
+      this.inflight.delete(memory);
+      return;
     }
-  }
-
-  private async flush(): Promise<void> {
-    this.scheduled = false;
-    while (this.pending.length > 0 && !this.disabled) {
-      const batch = this.pending.splice(0, 16);
-      try {
-        const vecs = await this.queue.embed(batch.map((m) => m.text));
+    call
+      .then((vecs) => {
         if (vecs === null) {
-          this.disabled = true;
-          this.pending = [];
+          this.noteNull();
           return;
         }
-        batch.forEach((m, i) => {
-          const v = vecs[i];
-          if (v && v.length) m.embedding = v;
-        });
-      } catch {
-        // Embedding failures leave those memories on keyword relevance.
-      }
-    }
+        this.consecutiveNulls = 0;
+        const v = vecs[0];
+        if (v && v.length) memory.embedding = v;
+      })
+      // Embedding failures leave the memory on keyword relevance.
+      .catch(() => {})
+      .finally(() => this.inflight.delete(memory));
   }
-
   async embedQuery(text: string): Promise<number[] | null> {
     if (this.disabled) return null;
     const key = text.slice(0, 500);
@@ -129,9 +126,10 @@ export class QueueEmbedder implements Embedder {
     try {
       const vecs = await this.queue.embed([key]);
       if (vecs === null) {
-        this.disabled = true;
+        this.noteNull();
         return null;
       }
+      this.consecutiveNulls = 0;
       const v = vecs[0];
       if (!v || v.length === 0) return null;
       this.cache.set(key, v);
@@ -140,5 +138,18 @@ export class QueueEmbedder implements Embedder {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * The queue returns null both when embeddings are off for good and when one batch failed, so
+   * only stop asking once the queue says embeddings are gone (or after repeated nulls from a queue
+   * that does not expose that flag). Returns whether embeddings are now disabled.
+   */
+  private noteNull(): boolean {
+    this.consecutiveNulls++;
+    const available = (this.queue as { embeddingsAvailable?: unknown }).embeddingsAvailable;
+    if (available === false || (typeof available !== 'boolean' && this.consecutiveNulls >= 3))
+      this.disabled = true;
+    return this.disabled;
   }
 }
