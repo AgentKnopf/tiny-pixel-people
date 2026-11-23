@@ -3,6 +3,9 @@
  * See specs/technical-spec.md §7. The engine owns physics; the mind owns decisions.
  */
 import type {
+  AnimalId,
+  AnimalSpecies,
+  VisitorInfo,
   HouseVisit,
   KeepEntry,
   Letter,
@@ -64,6 +67,10 @@ export interface WorldView {
   lettersAtHome?: readonly Letter[];
   /** Keyword search over the Keep (Laude's prompts, spec v2 §8.3). */
   searchKeep?: (query: string, k: number) => readonly KeepEntry[];
+  /** Set for train visitors: departure time (the plan is cut on the leaving day), origin and reason. */
+  visitor?: Readonly<VisitorInfo>;
+  /** Animals within 4 tiles (forest observations, spec v2 §3.5). */
+  animalsNearby?: readonly { id: AnimalId; species: AnimalSpecies; distance: number }[];
 }
 
 export type Intent =
@@ -110,7 +117,10 @@ export interface VillagerMind {
   // ---------- v2 (spec v2 §6–§8) ----------
   /** The player walked in while this villager is home and awake (`visit.greet`, with fallback). */
   greetVisitor?(view: WorldView, visit: HouseVisit): Promise<{ reply: string; source: Provenance }>;
-  /** A letter addressed to this villager was read at home; a reply to a player letter comes back via `letter.reply`. */
+  /**
+   * Called after PostOfficeService marked a letter to this villager read and wrote the read memory.
+   * Writes no read memory itself; for a player letter it queues one `letter.reply` (deduplicated per letter).
+   */
   onLetterRead?(view: WorldView, letter: Letter): void;
 }
 

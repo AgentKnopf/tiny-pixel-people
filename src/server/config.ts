@@ -162,6 +162,19 @@ export const configSchema = z
       keepMax: z.number().int().min(1).max(5000),
     }),
     forest: z.object({ enabled: z.boolean() }),
+    observer: z.object({
+      enabled: z.boolean(),
+      /** Host of the separate observer listener (only used when `port` is set). */
+      host: z.string(),
+      /** null = serve the observer API on the game server; a number = separate listener. */
+      port: z.number().int().min(0).max(65535).nullable(),
+      /** Accept non-loopback clients; only honoured when `token` is set. */
+      allowRemote: z.boolean(),
+      /** Bearer token required on every observer request when non-empty (env OBSERVER_TOKEN). */
+      token: z.string(),
+      /** Entries kept in the town event log ring buffer. */
+      logSize: z.number().int().min(100).max(100_000),
+    }),
     debug: z.boolean(),
   })
   .superRefine((cfg, ctx) => {
@@ -253,6 +266,7 @@ export const DEFAULT_CONFIG: AppConfig = {
     keepMax: 2000,
   },
   forest: { enabled: true },
+  observer: { enabled: true, host: '127.0.0.1', port: null, allowRemote: false, token: '', logSize: 5000 },
   debug: false,
 };
 
@@ -294,6 +308,7 @@ function envOverrides(env: NodeJS.ProcessEnv): PartialConfig {
     },
     sim: { dayLengthMinutes: num(env.TPP_DAY_LENGTH_MINUTES), villagers: num(env.TPP_VILLAGERS) },
     server: { port: num(env.TPP_PORT) },
+    observer: { port: num(env.TPP_OBSERVER_PORT), token: str(env.OBSERVER_TOKEN) },
     debug: bool(env.TPP_DEBUG),
   };
 }
@@ -374,5 +389,6 @@ export function redactConfig(cfg: AppConfig): AppConfig {
     ...cfg,
     llm: { ...cfg.llm, apiKey: redact(cfg.llm.apiKey) },
     embeddings: { ...cfg.embeddings, apiKey: redact(cfg.embeddings.apiKey) },
+    observer: { ...cfg.observer, token: redact(cfg.observer.token) },
   };
 }

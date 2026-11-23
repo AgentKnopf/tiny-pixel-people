@@ -1,5 +1,6 @@
 import type {
   Conversation,
+  DayPlan,
   DoorNote,
   GameMinutes,
   LocationId,
@@ -32,6 +33,8 @@ export interface SimEvents {
   learned: { fact: LearnedFact };
   /** A mind reported a finished player task (MindWorld.taskCompleted); WP8 pays the reward. */
   'task.completed': { villagerId: VillagerId; taskId: string; block: PlanBlock };
+  /** A villager's plan was replaced (mind or player task). */
+  'plan.changed': { villagerId: VillagerId; plan: DayPlan | null };
 }
 
 export type SimEventName = keyof SimEvents;

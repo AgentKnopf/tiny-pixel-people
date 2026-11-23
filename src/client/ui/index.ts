@@ -1,5 +1,6 @@
 import type { ServerMessage } from '../../shared/protocol.ts';
 import type { LocationId, VillagerId } from '../../shared/types.ts';
+import { createAnimalCard } from './animal-card.ts';
 import { createChatDialog } from './chat-dialog.ts';
 import type { ModalKind, UiContext } from './context.ts';
 import { h } from './dom.ts';
@@ -64,6 +65,7 @@ export function mountUi(root: HTMLElement, host: UiHost, store: UiStore = new Ui
     store,
     host,
     select(id) {
+      if (id) store.selectAnimal(null);
       if (id === store.selectedId) return;
       if (store.selectedId) host.send({ type: 'inspect', villagerId: null });
       store.select(id);
@@ -98,11 +100,18 @@ export function mountUi(root: HTMLElement, host: UiHost, store: UiStore = new Ui
     h('div', { class: 'ui-bottom-right' }, createDock(ctx)),
     createSimStatusBanner(store),
     createInspector(ctx),
+    createAnimalCard(store, () => store.selectAnimal(null)),
     createChatDialog(store),
     createToasts(store),
     modals.el,
   );
 
+  // The inspector and animal card sit below the stats card, whose height varies (train line, items).
+  const topRight = root.querySelector<HTMLElement>('.ui-top-right')!;
+  const syncTopRight = () =>
+    root.style.setProperty('--top-right-bottom', `${Math.round(topRight.getBoundingClientRect().bottom)}px`);
+  const resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(syncTopRight) : null;
+  resizeObserver?.observe(topRight);
   const unsubs = [
     store.subscribe(ALL_TOPICS, () => modals.refresh()),
     // Re-subscribe the inspector after a reconnect (the server forgets subscriptions).
@@ -121,6 +130,7 @@ export function mountUi(root: HTMLElement, host: UiHost, store: UiStore = new Ui
       if (modals.isOpen) ctx.closeModal();
       else if (store.chat.length) store.closeChat();
       else if (store.selectedId) ctx.select(null);
+      else if (store.selectedAnimalId) store.selectAnimal(null);
       else return;
       ev.preventDefault();
       return;
@@ -145,6 +155,10 @@ export function mountUi(root: HTMLElement, host: UiHost, store: UiStore = new Ui
     handleMessage: (msg: ServerMessage) => store.apply(msg),
     setConnectionStatus: (status: string) => store.setConnection(parseConnectionStatus(status)),
     selectVillager: (id) => ctx.select(id),
+    selectAnimal(id) {
+      if (id) ctx.select(null);
+      store.selectAnimal(id);
+    },
     openDoorNote: (houseId) => ctx.openModal('door-note', houseId),
     setActiveScene: (id) => store.setScene(id),
     setCatalog: (c) => store.setCatalog(c),
@@ -155,6 +169,7 @@ export function mountUi(root: HTMLElement, host: UiHost, store: UiStore = new Ui
     capturesKeyboard: () => modals.isOpen || isTyping(),
     destroy() {
       window.removeEventListener('keydown', onKey);
+      resizeObserver?.disconnect();
       unsubs.forEach((u) => u());
       root.replaceChildren();
     },

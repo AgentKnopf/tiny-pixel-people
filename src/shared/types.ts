@@ -233,6 +233,11 @@ export interface MemoryMeta {
   /** Reflection citations. */
   sourceIds?: MemoryId[];
   archived?: boolean;
+  // v2 (spec v2 §8)
+  letterId?: LetterId;
+  /** Post office log entry (Laude's instant knowledge). */
+  keepId?: string;
+  noticeId?: string;
 }
 
 export interface Memory {
@@ -686,7 +691,7 @@ export interface Notice {
   postedAt: GameMinutes;
   expiresAt: GameMinutes;
   eventId?: EventId;
-  /** Root memory id for gossip tracing (Laude's log memory, or the first reader's). */
+  /** Laude's log memory id; readers use `originId ?? id` for gossip tracing. */
   originId?: MemoryId;
 }
 

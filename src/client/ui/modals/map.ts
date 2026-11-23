@@ -2,6 +2,20 @@ import type { UiContext } from '../context.ts';
 import { h, replaceChildren } from '../dom.ts';
 import type { ModalView } from './modal.ts';
 
+const SCENE_EMOJI: Record<string, string> = {
+  plaza: '⛲',
+  overview: '🗺️',
+  home: '🏡',
+  farm: '🌾',
+  post_row: '📮',
+  zoo: '🦁',
+  rides: '🎢',
+  forest: '🌲',
+  farmstead: '🐄',
+  station: '🚂',
+  market: '🧺',
+};
+
 export function mapModal(ctx: UiContext): ModalView {
   const { store, host } = ctx;
   return {
@@ -19,7 +33,7 @@ export function mapModal(ctx: UiContext): ModalView {
           ? h('p', { class: 'empty' }, 'This map has no scenes.')
           : h(
               'div',
-              { class: 'grid grid-2' },
+              { class: `grid ${scenes.length > 6 ? 'grid-3' : 'grid-2'}`, 'data-testid': 'map-scenes' },
               scenes.map((s) =>
                 h(
                   'button',
@@ -33,7 +47,12 @@ export function mapModal(ctx: UiContext): ModalView {
                       ctx.closeModal();
                     },
                   },
-                  h('span', { class: 'scene-name' }, s.name),
+                  h(
+                    'span',
+                    { class: 'scene-name' },
+                    SCENE_EMOJI[s.id] ? `${SCENE_EMOJI[s.id]} ` : '',
+                    s.name,
+                  ),
                   h('span', { class: 'label' }, s.subtitle),
                 ),
               ),
