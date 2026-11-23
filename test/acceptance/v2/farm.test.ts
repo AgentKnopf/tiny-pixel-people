@@ -74,7 +74,8 @@ async function runUnit(): Promise<UnitLog> {
     now: start,
     burgerStock: () => burgers(pw.farm.stock()),
   });
-  let seenToasts = host.of('toast').length;  const log: UnitLog = {
+  let seenToasts = host.of('toast').length;
+  const log: UnitLog = {
     capProblems: [],
     births: zero(),
     oldAge: zero(),

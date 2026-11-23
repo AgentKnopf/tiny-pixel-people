@@ -109,7 +109,12 @@ function largestWalkableRegion(m: WorldMap, r: Rect): number {
       while (stack.length) {
         const p = stack.pop()!;
         size++;
-        for (const q of [{ x: p.x + 1, y: p.y }, { x: p.x - 1, y: p.y }, { x: p.x, y: p.y + 1 }, { x: p.x, y: p.y - 1 }]) {
+        for (const q of [
+          { x: p.x + 1, y: p.y },
+          { x: p.x - 1, y: p.y },
+          { x: p.x, y: p.y + 1 },
+          { x: p.x, y: p.y - 1 },
+        ]) {
           const qk = q.y * m.width + q.x;
           if (!contains(r, q) || seen.has(qk) || !walkableAt(m, q)) continue;
           seen.add(qk);

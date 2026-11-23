@@ -1,6 +1,6 @@
 /** AC16: slow-model behaviour covers the new v2 LLM tasks. */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { loadTracker, type LoadLevel } from '../../../src/server/cognition/llm.ts';
+import { LAG_OVERLOADED, loadTracker, type LoadLevel } from '../../../src/server/cognition/llm.ts';
 import type { LlmTask } from '../../../src/server/llm/types.ts';
 import { MockChatProvider } from '../../../src/server/llm/providers/mock.ts';
 import { Engine } from '../../../src/server/sim/engine.ts';
@@ -12,6 +12,7 @@ import {
   type Letter,
   type Location,
   type Point,
+  type Romance,
   type VillagerId,
   type VisitorInfo,
 } from '../../../src/shared/types.ts';
@@ -42,6 +43,8 @@ const LETTER = 'Dear Mia, the plum jam you made was wonderful. Could you teach m
 const RECIPIENT = 'mia';
 const A = 'sam';
 const B = 'ivy';
+/** The engine's romance id format (`romance-<a>-<b>`, ids sorted). */
+const SEED_ROMANCE_ID = `romance-${[A, B].sort().join('-')}`;
 
 type House = Location & { door: Point; ownerIds: VillagerId[] };
 
@@ -111,7 +114,7 @@ describe.skipIf(!readyV2(...F))(`AC16: slow model, v2 tasks${waitingForV2(...F)}
         save.romances = [
           ...(save.romances ?? []),
           {
-            id: `romance_${B}_${A}`,
+            id: SEED_ROMANCE_ID,
             pair: [B, A],
             stage: 'crush',
             since: 0,
@@ -216,3 +219,100 @@ describe.skipIf(!readyV2(...F))(`AC16: slow model, v2 tasks${waitingForV2(...F)}
     expect(keys).toEqual(expect.arrayContaining(used));
   });
 });
+
+/**
+ * The overload transition for dates: a date.ask queued while the load is normal or busy reaches the
+ * model only after the load has become overloaded (forced here through the load tracker when the
+ * provider picks the request up). The invitee's date.decide must then use its fallback without a
+ * model call; fallback accepts at affinity 4+, so the pair (affinity 8) gets a date.
+ */
+describe.skipIf(!readyV2(...F))(
+  `AC16: date.decide after the load turns overloaded${waitingForV2(...F)}`,
+  () => {
+    let w: TestWorld | undefined;
+    const asks: {
+      asker: VillagerId;
+      queuedAt: GameMinutes;
+      queuedLevel: LoadLevel;
+      overloadedAt?: GameMinutes;
+    }[] = [];
+    const decides: { asker: VillagerId; at: GameMinutes; level: LoadLevel }[] = [];
+    const pairIds = new Set<VillagerId>([A, B]);
+    const pairRomance = (): Romance | undefined =>
+      (w?.state().romances ?? []).find((r) => r.pair.length === 2 && r.pair.every((id) => pairIds.has(id)));
+
+    beforeAll(async () => {
+      const provider = new MockChatProvider('mock');
+      provider.setLatency((req) => {
+        const asker = String(req.meta?.villagerId ?? '');
+        const ask = asks.find(
+          (a) => a.asker === asker && a.overloadedAt === undefined && a.queuedLevel !== 'overloaded',
+        );
+        if (w && req.task === 'date.ask' && ask && w.engine instanceof Engine) {
+          loadTracker(w.engine.queue).seed(LAG_OVERLOADED * 4, w.now());
+          ask.overloadedAt = w.now();
+        }
+        return 0;
+      });
+      const world = await createTestWorld({
+        villagers: 12,
+        seed: 16,
+        startAt: START,
+        provider,
+        affinities: mutualAffinity(A, B, 8),
+        patchSave: (save) => {
+          save.romances = [
+            ...(save.romances ?? []),
+            {
+              id: SEED_ROMANCE_ID,
+              pair: [B, A],
+              stage: 'crush',
+              since: 0,
+              crushFrom: [A, B],
+              dates: [],
+              updatedAt: 0,
+            },
+          ];
+        },
+      });
+      w = world;
+      if (!(world.engine instanceof Engine)) throw new Error('expected the WP2 engine');
+      const queue = world.engine.queue;
+      const tracker = loadTracker(queue);
+      const enqueue = queue.enqueue.bind(queue);
+      queue.enqueue = (req, opts) => {
+        const id = String(req.meta?.villagerId ?? '');
+        const level = tracker.level(world.now());
+        if (req.task === 'date.ask' && pairIds.has(id))
+          asks.push({ asker: id, queuedAt: world.now(), queuedLevel: level });
+        if (req.task === 'date.decide' && pairIds.has(id))
+          decides.push({ asker: String(req.meta?.askerId ?? ''), at: world.now(), level });
+        return enqueue(req, opts);
+      };
+      for (let d = 0; d < 3 && !pairRomance()?.dates.length; d++) await world.advanceTo(at(d + 1, '06:00'));
+    }, 600_000);
+
+    afterAll(() => w?.dispose());
+
+    it('a date.ask queued at normal/busy reaches the model after the load became overloaded', () => {
+      const transitioned = asks.filter((a) => a.overloadedAt !== undefined && a.queuedLevel !== 'overloaded');
+      expect(
+        transitioned.length,
+        'no date.ask queued at normal/busy reached the model',
+      ).toBeGreaterThanOrEqual(1);
+    });
+
+    it('the invitee answers with the fallback: no date.decide call, and the date is planned', () => {
+      const first = asks.find((a) => a.overloadedAt !== undefined && a.queuedLevel !== 'overloaded');
+      expect(first).toBeDefined();
+      expect(decides.filter((d) => d.at >= first!.overloadedAt!)).toEqual([]);
+      const rec = pairRomance()?.dates.find((d) => d.askedBy === first!.asker);
+      expect(rec, 'no date record for the ask').toBeDefined();
+      expect(rec!.status, 'fallback accepts at affinity 4+').not.toBe('declined');
+    });
+
+    it('no date.ask is queued while overloaded', () => {
+      expect(asks.filter((a) => a.queuedLevel === 'overloaded')).toEqual([]);
+    });
+  },
+);

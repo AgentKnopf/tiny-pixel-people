@@ -55,14 +55,37 @@ const asleepWindow = (t: GameMinutes) => {
   return m >= SLEEP_FROM + LANDING_SLACK || m < SLEEP_UNTIL;
 };
 
-/** The walkable tile closest to the perch (where the player can stand near the crow). */
+/** Walkable tiles connected to `from` (4-neighbour flood fill). */
+function reachableFrom(map: WorldMap, from: Point): Set<string> {
+  const key = (p: Point) => `${p.x},${p.y}`;
+  const seen = new Set([key(from)]);
+  const queue = [from];
+  for (let p = queue.pop(); p; p = queue.pop())
+    for (const [dx, dy] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ] as const) {
+      const q = { x: p.x + dx, y: p.y + dy };
+      if (!seen.has(key(q)) && walkable(map, q)) {
+        seen.add(key(q));
+        queue.push(q);
+      }
+    }
+  return seen;
+}
+
+/** The reachable tile closest to the perch (where the player can stand near the crow). */
 function nearPerchTile(map: WorldMap, post: Location): Point {
+  // Isolated walkable pockets behind the building exist; the player must be able to walk there.
+  const reachable = reachableFrom(map, post.entry);
   let best: Point | null = null;
   let bestD = Infinity;
   for (let y = 0; y <= post.area.y + post.area.h + 4; y++)
     for (let x = post.area.x - 6; x <= post.area.x + post.area.w + 6; x++) {
       const p = { x, y };
-      if (!walkable(map, p)) continue;
+      if (!reachable.has(`${x},${y}`)) continue;
       const d = perchDistance(post, p);
       if (d < bestD) [best, bestD] = [p, d];
     }
