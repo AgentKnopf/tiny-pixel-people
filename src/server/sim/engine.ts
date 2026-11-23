@@ -140,6 +140,7 @@ const WAKE_UP_THINK_BATCH = 2;
  * re-issues the goto, so a crowd leaving at the same minute is spread over a few steps.
  */
 const PATH_SEARCHES_PER_STEP = 6;
+const PATH_MAX_DEFERRALS = 2;
 /** Real-time grace before an idle LLM queue counts as "every plan request has finished". */
 const WAKE_UP_IDLE_GRACE_MS = 1500;
 /** WP3's nightly usage line; also printed to the server terminal. */
@@ -171,6 +172,8 @@ interface Runtime {
   rodeAt?: string | null;
   /** Finished a cycle during the current ride block; stays at `to` until the plan moves on. */
   doneRide?: { rideId: string; to: string } | null;
+  /** Steps in a row this villager's goto waited for the A* budget. */
+  pathDeferrals: number;
 }
 
 interface ActiveConversation {
@@ -867,6 +870,7 @@ export class Engine implements SimEngine, SimHost {
       bubble: null,
       seen: new Map(),
       approach: null,
+      pathDeferrals: 0,
     };
     if (state.locationId === profile.homeId && state.path.length === 0) {
       const home = locationById(this.map.locations, profile.homeId);
@@ -1588,7 +1592,12 @@ export class Engine implements SimEngine, SimHost {
     }
     const spot = this.pickSpot(loc, rt.profile.id) ?? loc.entry;
     const cached = this.paths.has(s.pos, spot);
-    if (deferrable && !cached && this.pathBudget <= 0) return;
+    // A villager deferred PATH_MAX_DEFERRALS steps in a row searches anyway, so nobody starves.
+    if (deferrable && !cached && this.pathBudget <= 0 && rt.pathDeferrals < PATH_MAX_DEFERRALS) {
+      rt.pathDeferrals++;
+      return;
+    }
+    rt.pathDeferrals = 0;
     if (!cached) this.pathBudget--;
     this.rides.leave(rt.profile.id);
     rt.rodeAt = null;

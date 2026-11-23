@@ -9,7 +9,13 @@ import { MockChatProvider } from '../../src/server/llm/providers/mock.ts';
 import type { ChatProvider } from '../../src/server/llm/types.ts';
 import { JsonSaveStore } from '../../src/server/persistence/json-store.ts';
 import type { SaveData } from '../../src/server/persistence/types.ts';
-import { AFTER_RIDE_ACTIVITY, createSimEngine, type Engine } from '../../src/server/sim/engine.ts';
+import {
+  AFTER_RIDE_ACTIVITY,
+  MAX_VILLAGERS,
+  createSimEngine,
+  type Engine,
+} from '../../src/server/sim/engine.ts';
+import { loadProfiles } from '../../src/server/sim/world.ts';
 import { createStubMind, StubMind } from '../../src/server/sim/stub-mind.ts';
 import type { Intent, WorldView } from '../../src/server/cognition/types.ts';
 import { RIDE_MAX_WAIT_MINUTES, Rides } from '../../src/server/sim/rides.ts';
@@ -431,6 +437,51 @@ describe('events held at a ride', () => {
     expect(date.status).toBe('done');
     // Ride and after-ride state are not saved; the partners rejoin the ride and still qualify.
     expect(date.attendees).toEqual(expect.arrayContaining(['mia', 'tom']));
+    engine.stop();
+  });
+});
+
+class CrowdMind extends StubMind {
+  override update(view: WorldView): Intent {
+    const m = view.now % 1440;
+    if (m >= 600 && m < 720)
+      return { type: 'goto', locationId: 'forest_lake', activity: 'feeding the ducks', emoji: '🦆' };
+    return super.update(view);
+  }
+}
+
+describe('A* budget per step', () => {
+  it('spreads a crowd leaving at once over at most PATH_MAX_DEFERRALS+1 steps and nobody starves', async () => {
+    const base = loadProfiles(createSimTestWorld().engine.map);
+    const profiles = [...base];
+    for (let i = 0; profiles.length < MAX_VILLAGERS; i++) {
+      const p = base[i % base.length]!;
+      profiles.push({ ...p, id: `${p.id}_x${i}`, name: `${p.name} ${i + 2}`, initialRelationships: {} });
+    }
+    const { engine } = createSimTestWorld({
+      startAt: '09:59',
+      profiles,
+      createMind: (p, d) => new CrowdMind(p, d),
+      config: { needs: { enabled: false }, sim: { villagers: MAX_VILLAGERS } },
+    });
+    // Everyone stands still and nobody chats, so every villager needs a fresh search at 10:00.
+    const started = new Map<string, number>();
+    engine.onMessage((m) => {
+      if (m.type !== 'tick') return;
+      for (const f of m.villagers)
+        if (!started.has(f.id) && /walking to the forest lake|feeding the ducks/i.test(f.activity))
+          started.set(f.id, engine.now());
+    });
+    await engine.advance(4, { step: 1 });
+    const ids = engine.snapshot().villagers.map((v) => v.id);
+    expect(ids).toHaveLength(MAX_VILLAGERS);
+    const late = ids.filter((id) => !started.has(id) || started.get(id)! > at(0, '10:02') + 1e-6);
+    expect(late).toEqual([]);
+    await engine.advance(110);
+    const away = engine
+      .snapshot()
+      .villagers.filter((v) => v.locationId !== 'forest_lake' && !v.conversationId);
+    expect(away.map((v) => `${v.id}@${v.locationId}:${v.activity.text}`)).toEqual([]);
     engine.stop();
   });
 });
