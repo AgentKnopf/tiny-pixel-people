@@ -189,6 +189,8 @@ describe.skipIf(!readyV2(...F))(`AC16: slow model, v2 tasks${waitingForV2(...F)}
     const sorted = [...stepMs].sort((a, b) => a - b);
     const p95 = sorted[Math.floor(sorted.length * 0.95)]!;
     expect(sorted.length).toBeGreaterThan(20 * 60);
+    // Anti-blocking gate relative to one model call, cold first step included; the §16 step budget
+    // (p95 ≤ 4 ms, max ≤ 20 ms) is checked by perf-v2.test.ts in the sequential perf project.
     expect(p95).toBeLessThan(LATENCY_MS / 5);
     expect(sorted.at(-1)!).toBeLessThan(LATENCY_MS);
   });
