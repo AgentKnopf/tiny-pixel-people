@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ServerMessage } from '../../../src/shared/protocol.ts';
+import type { SimStatusMsg } from '../../../src/shared/protocol.ts';
 import { mountUi, UiStore, type UiController } from '../../../src/client/ui/index.ts';
 import { SIM_STATUS_STALE_MS } from '../../../src/client/ui/sim-status.ts';
 import { makeHello } from './fixtures.ts';
@@ -10,7 +10,7 @@ let ui: UiController;
 
 const banner = () => root.querySelector<HTMLElement>('[data-testid="sim-status"]')!;
 const status = (phase: 'wakingUp' | 'running', plansReady: number, villagers = 10) =>
-  ({ type: 'sim.status', phase, plansReady, villagers }) as unknown as ServerMessage;
+  ({ type: 'sim.status', phase, plansReady, villagers }) satisfies SimStatusMsg;
 
 beforeEach(() => {
   vi.useFakeTimers();

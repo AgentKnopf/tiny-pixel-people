@@ -2,6 +2,7 @@ import type {
   InspectDataMsg,
   QueueStats,
   ServerMessage,
+  SimStatusMsg,
   VillagerFrame,
   VillagerProfilePublic,
 } from '../../shared/protocol.ts';
@@ -41,18 +42,6 @@ export type Topic =
   | 'catalog'
   | 'chat'
   | 'sim';
-
-/** Shape of the server's `sim.status` message (SimStatusMsg in protocol.ts). */
-export interface SimStatus {
-  type: 'sim.status';
-  phase: 'wakingUp' | 'running';
-  plansReady: number;
-  villagers: number;
-}
-
-function isSimStatus(msg: { type: string }): msg is SimStatus {
-  return msg.type === 'sim.status';
-}
 
 export interface ToastItem {
   icon: string;
@@ -104,7 +93,7 @@ export class UiStore {
   catalog: Catalog = DEFAULT_CATALOG;
   chat: ChatLine[] = [];
   chatWith: VillagerId | null = null;
-  simStatus: SimStatus | null = null;
+  simStatus: SimStatusMsg | null = null;
 
   private listeners = new Map<Topic, Set<() => void>>();
   private toastListeners = new Set<(t: ToastItem) => void>();
@@ -139,11 +128,6 @@ export class UiStore {
   }
 
   apply(msg: ServerMessage): void {
-    if (isSimStatus(msg)) {
-      this.simStatus = msg;
-      this.emit('sim');
-      return;
-    }
     switch (msg.type) {
       case 'hello': {
         this.map = msg.map;
@@ -252,6 +236,10 @@ export class UiStore {
           this.chat.push({ from: msg.speakerId, to: PLAYER_ID, text: msg.text });
           this.emit('chat');
         }
+        break;
+      case 'sim.status':
+        this.simStatus = msg;
+        this.emit('sim');
         break;
       case 'toast':
         this.toast(msg.icon, msg.text);
