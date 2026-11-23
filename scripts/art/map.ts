@@ -8,7 +8,20 @@ import {
 import { rng } from './canvas.ts';
 import { E, N, S, W, type Layer, type TileAtlas } from './tiles.ts';
 
-type Terrain = 'grass' | 'path' | 'sand' | 'water' | 'soil';
+export type Terrain =
+  | 'grass'
+  | 'path'
+  | 'sand'
+  | 'water'
+  | 'soil'
+  | 'gravel'
+  | 'paving'
+  | 'savanna'
+  | 'snow'
+  | 'mud'
+  | 'moss'
+  | 'lake'
+  | 'planks';
 
 export type DraftLocation = Location;
 
@@ -21,11 +34,22 @@ export interface Light {
 /** Terrains that blend into each other without a grass seam. */
 const JOINS: Record<Terrain, Terrain[]> = {
   grass: [],
-  path: ['path', 'sand'],
+  path: ['path', 'sand', 'paving', 'planks'],
   sand: ['sand', 'path'],
   water: ['water'],
   soil: ['soil'],
+  gravel: ['gravel'],
+  paving: ['paving', 'path'],
+  savanna: ['savanna'],
+  snow: ['snow'],
+  mud: ['mud'],
+  moss: ['moss'],
+  lake: ['lake', 'planks'],
+  planks: ['planks', 'path'],
 };
+
+/** Terrains nobody can walk on. */
+const BLOCKING = new Set<Terrain>(['water', 'lake']);
 
 export class MapBuilder {
   readonly terrain: Terrain[];
@@ -121,7 +145,14 @@ export class MapBuilder {
     this.lights.push({ x, y, kind: 'lamp' });
   }
 
-  fence(x: number, y: number, w: number, h: number, gaps: { x: number; y: number }[] = []): void {
+  fence(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    gaps: { x: number; y: number }[] = [],
+    prefix = 'fence',
+  ): void {
     const cells = new Set<string>();
     for (let xx = x; xx < x + w; xx++) {
       cells.add(`${xx},${y}`);
@@ -141,13 +172,13 @@ export class MapBuilder {
       if (cells.has(`${fx - 1},${fy}`)) mask |= W;
       const idx = this.i(fx, fy);
       if (this.layers.decor[idx] !== null) throw new Error(`fence overlaps at ${fx},${fy}`);
-      this.layers.decor[idx] = `fence_${mask}`;
+      this.layers.decor[idx] = `${prefix}_${mask}`;
       this.collision[idx] = 1;
     }
   }
 
-  /** Places an object only if every cell is free and on grass; used for scattered nature. */
-  tryPlace(name: string, x: number, y: number): boolean {
+  /** Places an object only if every cell is free and on one of the given terrains; used for scattered nature. */
+  tryPlace(name: string, x: number, y: number, on: readonly Terrain[] = ['grass']): boolean {
     const def = this.atlas.objects[name]!;
     for (let dy = 0; dy < def.h; dy++)
       for (let dx = 0; dx < def.w; dx++) {
@@ -157,7 +188,7 @@ export class MapBuilder {
         const idx = this.i(tx, ty);
         if (
           this.reserved.has(idx) ||
-          this.terrain[idx] !== 'grass' ||
+          !on.includes(this.terrain[idx]!) ||
           this.layers.decor[idx] ||
           this.layers.overhead[idx] ||
           this.collision[idx]
@@ -190,7 +221,7 @@ export class MapBuilder {
         if (same(x, y + 1)) mask |= S;
         if (same(x - 1, y)) mask |= W;
         this.layers.ground[this.i(x, y)] = `${t}_${mask}`;
-        if (t === 'water') this.collision[this.i(x, y)] = 1;
+        if (BLOCKING.has(t)) this.collision[this.i(x, y)] = 1;
       }
     }
   }
@@ -289,6 +320,19 @@ const HOUSE_SLOTS_BOTTOM = [
 /** The reference layout ("Thinkyville"), adapted: see specs/visual-style-guide.md §5. */
 export function buildVillage(atlas: TileAtlas): VillageDraft {
   const m = new MapBuilder(48, 30, atlas);
+  layoutTown(m);
+  m.reserveLocationTiles();
+  townTrees(m);
+  m.finalizeGround(7);
+  townScatter(m);
+  const decorations = DECORATIONS.map((d, slot) => ({ ...d, slot }));
+  return { builder: m, scenes: [...TOWN_SCENES], itemSpawns: [...TOWN_ITEM_SPAWNS], decorations };
+}
+
+export const DECORATION_DEFS: DecorationDef[] = DECORATIONS.map((d, slot) => ({ ...d, slot }));
+
+/** Lays out the v1 town (roads, buildings, locations, furniture) in tiles x0-47 y0-29 of any builder. */
+export function layoutTown(m: MapBuilder): void {
   const TOP_Y = 2;
   const BOTTOM_Y = 23;
 
@@ -492,14 +536,18 @@ export function buildVillage(atlas: TileAtlas): VillageDraft {
 
   // player cottage decoration slots stay free; the client draws placed decorations there
   DECORATIONS.forEach((d, i) => m.reserveObject(d.sprite, DECOR_SLOTS[i]!.x, DECOR_SLOTS[i]!.y));
+}
 
-  // trees: border rows and scatter
-  m.reserveLocationTiles();
+/** Border tree rows of the town; call after every location is reserved. */
+export function townTrees(m: MapBuilder): void {
   for (let x = 0; x < 48; x += 2) {
     m.tryPlace(x % 6 === 4 ? 'tree_autumn' : 'tree_green', x, 0);
     if (x >= 8) m.tryPlace(x % 8 === 2 ? 'tree_autumn' : 'tree_green', x, 28);
   }
-  m.finalizeGround(7);
+}
+
+/** Scattered bushes, rocks and flowers in the town; call after finalizeGround. */
+export function townScatter(m: MapBuilder): void {
   const r = rng(99);
   const scatter = [
     'bush',
@@ -542,21 +590,20 @@ export function buildVillage(atlas: TileAtlas): VillageDraft {
     const y = Math.floor(r() * 30);
     m.tryPlace(scatter[Math.floor(r() * scatter.length)]!, x, y);
   }
-
-  const scenes: Scene[] = [
-    { id: 'plaza', name: 'Plaza', subtitle: 'The whole town', rect: { x: 0, y: 0, w: 48, h: 30 } },
-    { id: 'farm', name: 'Farm', subtitle: 'Scene', rect: { x: 0, y: 8, w: 18, h: 12 } },
-    { id: 'shop_street', name: 'Shop street', subtitle: 'Scene', rect: { x: 26, y: 2, w: 22, h: 14 } },
-    { id: 'park', name: 'Park', subtitle: 'Scene', rect: { x: 30, y: 12, w: 18, h: 10 } },
-    { id: 'square', name: 'Town square', subtitle: 'Scene', rect: { x: 13, y: 5, w: 22, h: 16 } },
-    { id: 'home', name: 'Your home', subtitle: 'Your cottage', rect: { x: 0, y: 18, w: 16, h: 12 } },
-  ];
-  const itemSpawns: ItemSpawnArea[] = [
-    { itemId: 'flower', area: { x: 34, y: 15, w: 13, h: 5 }, max: 4 },
-    { itemId: 'apple', area: { x: 0, y: 2, w: 48, h: 4 }, max: 3 },
-    { itemId: 'seed', area: { x: 1, y: 10, w: 12, h: 9 }, max: 3 },
-    { itemId: 'gem', area: { x: 13, y: 22, w: 34, h: 5 }, max: 1 },
-  ];
-  const decorations = DECORATIONS.map((d, slot) => ({ ...d, slot }));
-  return { builder: m, scenes, itemSpawns, decorations };
 }
+
+export const TOWN_SCENES: readonly Scene[] = [
+  { id: 'plaza', name: 'Plaza', subtitle: 'The whole town', rect: { x: 0, y: 0, w: 48, h: 30 } },
+  { id: 'farm', name: 'Farm', subtitle: 'Scene', rect: { x: 0, y: 8, w: 18, h: 12 } },
+  { id: 'shop_street', name: 'Shop street', subtitle: 'Scene', rect: { x: 26, y: 2, w: 22, h: 14 } },
+  { id: 'park', name: 'Park', subtitle: 'Scene', rect: { x: 30, y: 12, w: 18, h: 10 } },
+  { id: 'square', name: 'Town square', subtitle: 'Scene', rect: { x: 13, y: 5, w: 22, h: 16 } },
+  { id: 'home', name: 'Your home', subtitle: 'Your cottage', rect: { x: 0, y: 18, w: 16, h: 12 } },
+];
+
+export const TOWN_ITEM_SPAWNS: readonly ItemSpawnArea[] = [
+  { itemId: 'flower', area: { x: 34, y: 15, w: 13, h: 5 }, max: 4 },
+  { itemId: 'apple', area: { x: 0, y: 2, w: 48, h: 4 }, max: 3 },
+  { itemId: 'seed', area: { x: 1, y: 10, w: 12, h: 9 }, max: 3 },
+  { itemId: 'gem', area: { x: 13, y: 22, w: 34, h: 5 }, max: 1 },
+];

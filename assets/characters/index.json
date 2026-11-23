@@ -116,6 +116,16 @@
       "suggestedRole": "beekeeper"
     },
     {
+      "sprite": "characters/laude.png",
+      "description": "Laude the postmaster: blue post cap, blue jacket, round glasses, satchel strap",
+      "suggestedRole": "postmaster (Laude)"
+    },
+    {
+      "sprite": "characters/franzi.png",
+      "description": "Franzi: chestnut bob with a pink flower bow, sage-green dress",
+      "suggestedRole": "villager (Franzi)"
+    },
+    {
       "sprite": "characters/player.png",
       "description": "player avatar: yellow shirt with star, dark hair",
       "suggestedRole": "player"
