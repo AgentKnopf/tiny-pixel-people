@@ -38,7 +38,7 @@ This guide assumes the game is running. If it isn't, see the [README](../README.
 - [The forest](#the-forest)
 - [Saving and loading](#saving-and-loading)
 - [When the model is slow](#when-the-model-is-slow)
-- [Watching from another program](#watching-from-another-program)
+- [Watching from another program](#watching-from-another-program-observer-api)
 - [Tips](#tips)
 
 ## The screen
@@ -520,6 +520,27 @@ Villagers who spot one remember it ("I saw a deer near the lake").
   `replay.jsonl`. Use `persistence.slot` to keep several villages side by side, for example
   `"slot": "experiment"`.
 
+## Watching from another program (observer API)
+
+While the game runs, other programs on your computer can follow the village through a read-only
+web API, for example a script that writes a diary, or an AI that comments on the gossip. Try it in
+a terminal while the game is running:
+
+```sh
+curl -s http://127.0.0.1:3000/api/state
+curl -s "http://127.0.0.1:3000/api/events?limit=20"
+curl -s -o town.png http://127.0.0.1:3000/api/screenshot
+```
+
+`/api/state` lists every villager with where they are, what they are doing and thinking, and their
+needs. `/api/events` is the town log (arrivals, chats, plan changes, notes, gossip, events), and
+`/api/screenshot` is a picture of the map. In the bigger village there are also
+`/api/letters`, `/api/notices`, `/api/keep` and `/api/animals`. The API can only read: it never changes the village or
+asks the model anything. It only answers programs on your own computer; to require a password,
+start the game with `OBSERVER_TOKEN=some-secret npm start` and send
+`Authorization: Bearer some-secret`. Every endpoint, field and setting is described in the
+[observer API reference](observer-api.md).
+
 ## When the model is slow
 
 The village adapts on its own when the model falls behind; there is nothing to configure. It
@@ -543,13 +564,6 @@ tries) and switches to the real plan for the rest of the day when it arrives. Ea
 villager plans tomorrow in the evening, about 90 minutes before bedtime, while the model is less
 busy (except when overloaded). The mode recovers as soon as answers come back faster. For how to
 make a slow machine keep up, see [Performance and slow hardware](setup/performance.md).
-
-## Watching from another program
-
-The game also serves a read-only **observer API**: plain JSON over HTTP that another program (or
-an AI) can poll to follow the village without a browser, for example
-`curl http://127.0.0.1:3000/api/state`. It only reads; it never changes anything in the village.
-See [Observer API](observer-api.md).
 
 ## Tips
 

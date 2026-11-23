@@ -6,6 +6,7 @@ Start with the [README](../README.md) for the one-command quick start.
 
 - [User guide](user-guide.md): how to play.
 - [Troubleshooting](troubleshooting.md): when something doesn't work.
+- [Observer API](observer-api.md): follow the village from another program (read-only JSON).
 
 ## Setup
 

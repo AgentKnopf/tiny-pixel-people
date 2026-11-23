@@ -65,10 +65,13 @@ describe('server smoke test', () => {
     expect(await res.json()).toMatchObject({ ok: true, protocolVersion: 1 });
   });
 
-  it('serves state and the item catalog', async () => {
+  it('serves the snapshot, the observer state and the item catalog', async () => {
+    const snapshot = await (await fetch(`${server.url}/api/snapshot`)).json();
+    expect(snapshot.villagers.length).toBeGreaterThan(0);
+    expect(snapshot.player.id).toBe('player');
     const state = await (await fetch(`${server.url}/api/state`)).json();
-    expect(state.villagers.length).toBeGreaterThan(0);
-    expect(state.player.id).toBe('player');
+    expect(state.agents.length).toBe(snapshot.villagers.length);
+    expect(state).toMatchObject({ day: 1, time: '10:00', player: { id: 'player' } });
     const catalog = await (await fetch(`${server.url}/api/catalog`)).json();
     expect(catalog.items.length).toBeGreaterThan(0);
     expect(catalog.decorations.length).toBeGreaterThan(0);

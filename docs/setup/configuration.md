@@ -205,19 +205,16 @@ Config files from v1 keep working: every v2 section has defaults. The one change
 | --------- | ------- | ----------------------------------------- |
 | `enabled` | `true`  | The forest animals and forest activities. |
 
-## `observer`
+## `observer`: read-only API for other programs
 
-The read-only [observer API](../observer-api.md).
-
-| Key           | Default | Meaning                                                                                              |
-| ------------- | ------- | ---------------------------------------------------------------------------------------------------- |
-| `enabled`     | `true`  | Serve the observer endpoints.                                                                        |
-| `host`        | –       | With `port`: address of a separate observer listener. Otherwise the endpoints share the game server. |
-| `port`        | –       | If set, the observer API gets its own listener on this port.                                         |
-| `allowRemote` | `false` | Accept observer requests from other machines. Works only together with `OBSERVER_TOKEN`.             |
-
-The token itself is never in the config file: set the environment variable `OBSERVER_TOKEN`, and
-every observer request then needs `Authorization: Bearer <token>`.
+| Key           | Default       | Meaning                                                                                     |
+| ------------- | ------------- | ------------------------------------------------------------------------------------------- |
+| `enabled`     | `true`        | Serve the [observer API](../observer-api.md).                                               |
+| `port`        | `null`        | `null`: on the game server. A number: separate listener on that port (0 picks a free port). |
+| `host`        | `"127.0.0.1"` | Address of the separate listener.                                                           |
+| `allowRemote` | `false`       | Accept clients from other machines; only together with `token`.                             |
+| `token`       | `""`          | Bearer token required on every observer request when set (`OBSERVER_TOKEN` overrides it).   |
+| `logSize`     | `5000`        | Town log entries kept.                                                                      |
 
 ## `debug`
 
@@ -242,7 +239,8 @@ every observer request then needs `Authorization: Bearer <token>`.
 | `TPP_DAY_LENGTH_MINUTES` | `sim.dayLengthMinutes`                    |
 | `TPP_VILLAGERS`          | `sim.villagers`                           |
 | `TPP_DEBUG`              | `debug` (`1`, `true` or `yes` turn it on) |
-| `OBSERVER_TOKEN`         | Bearer token for the observer API         |
+| `TPP_OBSERVER_PORT`      | `observer.port`                           |
+| `OBSERVER_TOKEN`         | `observer.token`                          |
 
 Empty variables are ignored. Any other variable can hold an API key and be referenced with
 `llm.apiKeyEnv` / `embeddings.apiKeyEnv`, for example `OPENROUTER_API_KEY`. Without

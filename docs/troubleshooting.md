@@ -180,9 +180,9 @@ owner uses a simple greeting instead. An owner who is asleep doesn't greet you.
 
 **My program can't reach the observer API.**
 It answers on the game's address, `http://127.0.0.1:3000/api/…` by default, unless you gave it its
-own `observer.port`. Requests from other machines are refused unless `observer.allowRemote` is on
-and `OBSERVER_TOKEN` is set. With a token, every request needs `Authorization: Bearer <token>`,
-otherwise the answer is `401`. Only `GET` and `HEAD` work. See the
+own `observer.port`. Requests from other machines get `403` unless `observer.allowRemote` is on
+and a token is set (`observer.token` or `OBSERVER_TOKEN`). With a token, every request needs
+`Authorization: Bearer <token>`, otherwise the answer is `401`. Only `GET` and `HEAD` work. See the
 [observer API](observer-api.md).
 
 ## Saves

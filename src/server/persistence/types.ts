@@ -61,6 +61,28 @@ export interface SaveData {
   letters?: Letter[];
   notices?: Notice[];
   keep?: KeepEntry[];
+  /** Observer API state (town log, real-time anchors). */
+  observer?: ObserverSaveData;
+}
+
+export interface TownLogEntry {
+  /** Increasing id, unique within a save. */
+  seq: number;
+  /** Real ISO-8601 time the entry was recorded. */
+  ts: string;
+  /** Game minutes. */
+  tick: GameMinutes;
+  type: string;
+  agents: string[];
+  text: string;
+  data?: Record<string, unknown>;
+}
+
+export interface ObserverSaveData {
+  /** Town log ring buffer, oldest first. */
+  log: TownLogEntry[];
+  /** [epoch ms, game minutes] pairs, oldest first, used to map game times to real timestamps. */
+  anchors: [number, number][];
 }
 
 export interface SaveStore {
