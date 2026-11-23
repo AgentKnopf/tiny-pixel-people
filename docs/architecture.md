@@ -103,7 +103,8 @@ _Generative Agents_ (Park et al., 2023), scaled down to small local models:
   them.
 - **Planning.** For each day (prepared in the evening, otherwise at wake-up) the model writes a day plan of 5–8 blocks (time, place, activity,
   emoji), taking needs, memories, invitations and the weather into account. The plan is validated
-  and repaired (unknown places mapped, gaps filled, overlaps clipped). An answer that can't be used is
+  and repaired (unknown places mapped, gaps filled, overlaps clipped) and always uses at least two
+  different places. An answer that can't be used is
   asked for once more at once. A villager whose plan for today is a fallback then retries
   `plan.day` in the background (priority 103, `PLAN_RESCUE_*` in `cognition/mind.ts`): 30 game
   minutes after the previous attempt finished, until max(12:00, wake + 2 h), at most 8 attempts a
@@ -239,7 +240,8 @@ _Generative Agents_ (Park et al., 2023), scaled down to small local models:
   (the UI shows the model as unreachable and villagers use fallbacks), and a failed embeddings
   check switches retrieval to keywords. After that the online flag follows the calls: network
   errors, timeouts and 401/403 set it to offline, any success sets it back.
-- With 10 villagers a game day costs roughly 200 calls plus player chats.
+- With 10 villagers a game day costs up to roughly 200 calls plus player chats; under load the
+  load levels cut that (about 100 calls in a CPU-only live run with `qwen2.5:1.5b`).
 
 ## Protocol
 

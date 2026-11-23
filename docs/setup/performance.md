@@ -7,26 +7,42 @@ gossip less.
 
 ## How much the model has to do
 
-A game day with 10 villagers makes roughly 200 model calls, plus your own chats. With the default
-15-minute day at 1×, that is one call every 4.5 real seconds. With Ollama the game sends one call at
+A game day with 10 villagers can make up to roughly 200 model calls, plus your own chats. On a slow
+model the game cuts back on optional work, so it makes fewer (about 100 in the measured run below). At 200 calls
+and the default 15-minute day at 1×, that is one call every 4.5 real seconds. With Ollama the game sends one call at
 a time by default (`llm.concurrency` 1; hosted providers default to 2). On a GPU or Apple Silicon
 Mac that really runs two calls in parallel, `llm.concurrency: 2` lets each call take about 9
 seconds. Higher speeds (2×, 4×, 8×) shrink that budget by the same factor.
 
-For comparison, two test runs on a 4-core cloud machine with 7.8 GB of memory and no GPU
-(`llm.concurrency` 2, a 40-minute day, speed 2):
+### Measured on a CPU-only machine
 
-| Model          | Calls per game day | `plan.day` call | Door-note reply | Plans from the model | Live checks passed |
-| -------------- | ------------------ | --------------- | --------------- | -------------------- | ------------------ |
-| `qwen2.5:1.5b` | about 30           | 48 s            | 6 s             | at most 5 of 10      | 6 of 7             |
-| `gemma3:4b`    | about 30           | 92 s            | 86 s            | 1 of 10              | 6 of 7             |
+The final test run used `qwen2.5:1.5b` on a 4-core cloud machine with 7.8 GB of memory and no GPU,
+with the default settings (`llm.concurrency` 1, `sim.wakeUpTimeoutSec` 300) and a 40-minute day at
+speed 2:
 
-On this machine `gemma3:4b` was about twice as slow as `qwen2.5:1.5b`, and half of its day plans
-hit the 2-minute timeout. The gossip and event checks passed in both runs, but through the
-fallbacks (canned gossip lines and a default event), not through model output. An earlier version
-of the game made about 214 calls per game day on the same machine and passed 4 of 7 checks. The
-game didn't crash, and every late answer fell back cleanly. A 7B model on an Apple Silicon Mac or
-a GPU answers in a few seconds.
+| What                    | Typical time |
+| ----------------------- | ------------ |
+| A day plan (`plan.day`) | about 26 s   |
+| A conversation line     | about 7 s    |
+| A door-note reply       | about 6 s    |
+| Average over all calls  | about 11 s   |
+| The 06:00 wake-up wait  | about 5 min  |
+
+The game made about 100 model calls that day. All 10 villagers ended up with a plan from the model.
+The 06:00 wait ran to its 5-minute limit with 9 of 10 plans ready, and the last plan arrived in the
+background before noon. Gossip, the door-note reply and the village event all came from the model.
+The live check passed 6 of 7. The one failure was an extra sanity rule in the test script, not the
+acceptance criterion: one villager stayed in a single place all day. Day plans now always include at
+least two places. An earlier run with the same setup passed all 7.
+
+If the wait at 06:00 often ends at its limit with plans still missing, raise
+`sim.wakeUpTimeoutSec` (for example to 600).
+
+Earlier test runs on the same machine, with `llm.concurrency` 2, show why the default for Ollama
+is 1. Two calls at once made each call about twice as slow (`plan.day` 48 s instead of 26 s with `qwen2.5:1.5b`).
+`gemma3:4b` was about twice as slow again (92 s, and half of its plans hit the 2-minute timeout),
+so on a CPU like this it does worse than `qwen2.5:1.5b`. The game never crashed, and every late
+answer fell back cleanly. A 7B model on an Apple Silicon Mac or a GPU answers in a few seconds.
 
 ## Choose a model for your hardware
 
