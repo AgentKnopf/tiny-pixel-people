@@ -96,6 +96,7 @@ import {
 } from './prompts/misc.ts';
 import { settingsFromConfig, type CognitionSettings } from './settings.ts';
 import { villageFor, type Village } from './village.ts';
+import { RomanceAgent } from './romance.ts';
 import { addVisit, hashUnit, isForest, nearestFood, sanitizeBlocks, type Hours } from './sanitize.ts';
 import {
   GREETING_MAX,
@@ -175,6 +176,7 @@ export class Mind implements VillagerMind {
   readonly memory: MemoryStore;
   readonly settings: CognitionSettings;
   readonly window: WakeWindow;
+  readonly romance: RomanceAgent;
   lastView: WorldView | null = null;
 
   private readonly village: Village<Mind>;
@@ -256,6 +258,12 @@ export class Mind implements VillagerMind {
       for (const text of profile.seedMemories ?? [])
         this.addMemory({ kind: 'observation', at, text, importance: 5 });
     }
+    this.romance = new RomanceAgent(this);
+  }
+
+  /** State shared by all minds of this engine. */
+  get town(): Village<Mind> {
+    return this.village;
   }
 
   get world(): MindWorld {
@@ -278,6 +286,7 @@ export class Mind implements VillagerMind {
 
     if (!isAwake(this.window, mod)) {
       this.night(view);
+      this.romance.night(view);
       if (view.self.locationId !== this.profile.homeId)
         return {
           type: 'goto',
@@ -293,6 +302,7 @@ export class Mind implements VillagerMind {
     // Plan tomorrow in the evening, while the model is less busy than at the morning rush.
     if (mod >= planEnd(this.window) - 90 && this.load() !== 'overloaded') this.prepareDay(view, day + 1);
     this.syncEvents(view, day);
+    this.romance.update(view);
     this.markDone(mod);
     if (view.self.locationId === this.profile.homeId) this.readNotes(view);
     this.readNotices(view);
@@ -350,6 +360,8 @@ export class Mind implements VillagerMind {
     if (otherId === PLAYER_ID) return true;
     const last = this.lastTalkedAt.get(otherId) ?? view.self.relationships[otherId]?.lastTalkedAt;
     if (last !== undefined && view.now - last < this.settings.pairCooldownMinutes) return false;
+    // The shy pair is always up for a (short, awkward) chat at the post office.
+    if (view.self.locationId === POST_OFFICE && this.romance.shyWith(otherId)) return true;
     const affinity = view.self.relationships[otherId]?.affinity ?? 0;
     const other = this.village.minds.get(otherId);
     const news =
@@ -758,7 +770,7 @@ export class Mind implements VillagerMind {
 
   // ---------- jobs ----------
 
-  private job(key: string, fn: () => Promise<void>): void {
+  job(key: string, fn: () => Promise<void>): void {
     if (this.pending.has(key)) return;
     this.pending.add(key);
     fn()
@@ -972,6 +984,8 @@ export class Mind implements VillagerMind {
         `The zoo and its rides are open ${formatClock(z.open)}-${formatClock(z.close)}. The forest is nice for walks and picnics.`,
       );
     }
+    const couple = this.romance.planLine(view);
+    if (couple) out.push(couple);
     return out;
   }
 
@@ -982,7 +996,7 @@ export class Mind implements VillagerMind {
   }
 
   romances(view: WorldView | null = this.lastView): readonly Romance[] {
-    return view?.romances ?? this.world.romances?.() ?? [];
+    return this.romance.records(view);
   }
 
   /** The post office, on the days a shy villager (not working there) visits it (spec v2 §7.1). */
@@ -1350,7 +1364,7 @@ export class Mind implements VillagerMind {
 
   // ---------- events ----------
 
-  private allEvents(view: WorldView): VillageEvent[] {
+  allEvents(view: WorldView): VillageEvent[] {
     const byId = new Map<EventId, VillageEvent>();
     for (const e of view.events) byId.set(e.id, e);
     for (const e of this.world.events()) byId.set(e.id, e);
@@ -1379,7 +1393,12 @@ export class Mind implements VillagerMind {
           ),
         });
       }
-      if (e.status === 'done' && e.attendees.includes(this.id) && !this.decidedEvents.has(`done:${e.id}`)) {
+      if (
+        e.kind !== 'date' &&
+        e.status === 'done' &&
+        e.attendees.includes(this.id) &&
+        !this.decidedEvents.has(`done:${e.id}`)
+      ) {
         this.decidedEvents.add(`done:${e.id}`);
         const others = e.attendees.filter((a) => a !== this.id).map((a) => this.nameOf(a, view));
         const text = `I attended ${e.title} at ${this.locName(view, e.locationId)}${others.length ? ` with ${others.join(', ')}` : ''}.`;
@@ -1390,7 +1409,8 @@ export class Mind implements VillagerMind {
 
   private maybeDecideEvents(view: WorldView): void {
     for (const e of this.allEvents(view)) {
-      if (e.hostId === this.id || this.decidedEvents.has(e.id)) continue;
+      // Dates are private: only the invited partner answers, through date.decide.
+      if (e.kind === 'date' || e.hostId === this.id || this.decidedEvents.has(e.id)) continue;
       if (e.status !== 'proposed' && e.status !== 'scheduled') continue;
       if (e.end <= view.now || e.accepted.includes(this.id) || e.declined.includes(this.id)) continue;
       if (this.id === BAKE_FAN && isBakeOff(e)) {
