@@ -49,11 +49,10 @@ async function main(): Promise<void> {
       restore = (await store.load()) ?? undefined;
       if (restore) log.info(`resuming save "${cfg.persistence.slot}" from ${store.slotDir}`);
     } catch (err) {
-      log.error(
-        `could not load save "${cfg.persistence.slot}": ${(err as Error).message}; starting a new world`,
-      );
+      log.error(`could not load save "${cfg.persistence.slot}": ${(err as Error).message}`);
     }
   }
+  if (!restore) log.info(`starting new world (save "${cfg.persistence.slot}")`);
 
   let engine;
   try {
