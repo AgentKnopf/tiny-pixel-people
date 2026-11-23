@@ -17,6 +17,7 @@ import {
   type Location,
   type Memory,
   type Notice,
+  type LocationId,
   type PlayerState,
   type Romance,
   type Provenance,
@@ -1222,6 +1223,7 @@ export class Engine implements SimEngine, SimHost {
         }
         this.updateEvents(dt);
       }
+      this.holdRidingPlayer();
       try {
         this.playerWorld.update(dt);
       } catch (err) {
@@ -1350,6 +1352,7 @@ export class Engine implements SimEngine, SimHost {
   private stepRides(): void {
     for (const ride of this.rides.step(this.clock.time)) this.broadcast({ type: 'ride.updated', ride });
     for (const event of this.rides.takeEvents()) {
+      if (event.riderId === PLAYER_ID && event.kind === 'boarded') this.seatPlayer(event.rideId);
       const rt = this.runtimes.get(event.riderId);
       const loc = locationById(this.map.locations, event.rideId);
       if (rt && loc) {
@@ -1382,6 +1385,27 @@ export class Engine implements SimEngine, SimHost {
     }
   }
 
+  /** The player boards like a villager: off any walk-up path and onto a spot at the ride. */
+  private seatPlayer(rideId: LocationId): void {
+    const loc = locationById(this.map.locations, rideId);
+    if (!loc) return;
+    // PlayerWorld exposes its state read-only; the engine owns where riders are.
+    const p = this.playerWorld.state as PlayerState;
+    const riders = this.rides.all().find((r) => r.locationId === rideId)?.riders ?? [];
+    const spots = loc.spots?.length ? loc.spots : [loc.entry];
+    const seat = spots[Math.max(0, riders.indexOf(PLAYER_ID)) % spots.length]!;
+    p.path = [];
+    p.pos = { x: seat.x, y: seat.y };
+    this.broadcast({ type: 'player.updated', player: structuredClone(p) });
+  }
+
+  /** A riding player stays on the ride until the cycle ends; walks ordered meanwhile are dropped. */
+  private holdRidingPlayer(): void {
+    const p = this.playerWorld.state as PlayerState;
+    if (p.path.length === 0 || p.inside || !this.rides.isRiding(PLAYER_ID)) return;
+    p.path = [];
+    this.broadcast({ type: 'player.updated', player: structuredClone(p) });
+  }
   private afterRidePlace(ride: Location): Location | null {
     let best: Location | null = null;
     let bestD = Infinity;

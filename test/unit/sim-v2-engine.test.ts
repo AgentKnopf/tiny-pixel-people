@@ -451,7 +451,7 @@ class CrowdMind extends StubMind {
 }
 
 describe('A* budget per step', () => {
-  it('spreads a crowd leaving at once over at most PATH_MAX_DEFERRALS+1 steps and nobody starves', async () => {
+  it('spreads a crowd leaving at once over at most PATH_MAX_DEFERRALS+1 steps, and all arrive', async () => {
     const base = loadProfiles(createSimTestWorld().engine.map);
     const profiles = [...base];
     for (let i = 0; profiles.length < MAX_VILLAGERS; i++) {
@@ -482,6 +482,46 @@ describe('A* budget per step', () => {
       .snapshot()
       .villagers.filter((v) => v.locationId !== 'forest_lake' && !v.conversationId);
     expect(away.map((v) => `${v.id}@${v.locationId}:${v.activity.text}`)).toEqual([]);
+    engine.stop();
+  });
+});
+
+class ChurnMind extends StubMind {
+  override update(view: WorldView): Intent {
+    const m = Math.floor(view.now % 1440);
+    if (m >= 600 && m < 720)
+      return { type: 'goto', locationId: m % 2 ? 'square' : 'park', activity: 'pacing', emoji: '🚶' };
+    return super.update(view);
+  }
+}
+
+describe('A* budget starvation', () => {
+  it('a villager behind more uncached searches than the budget every step still gets one', async () => {
+    const base = loadProfiles(createSimTestWorld().engine.map);
+    const profiles = [...base];
+    for (let i = 0; profiles.length < MAX_VILLAGERS; i++) {
+      const p = base[i % base.length]!;
+      profiles.push({ ...p, id: `${p.id}_x${i}`, name: `${p.name} ${i + 2}`, initialRelationships: {} });
+    }
+    const victim = profiles.at(-1)!.id;
+    const { engine } = createSimTestWorld({
+      startAt: '09:59',
+      profiles,
+      // Everyone ahead of the victim changes destination every minute: a fresh search each step.
+      createMind: (p, d) => (p.id === victim ? new CrowdMind(p, d) : new ChurnMind(p, d)),
+      config: { needs: { enabled: false }, sim: { villagers: MAX_VILLAGERS } },
+    });
+    let started: number | null = null;
+    engine.onMessage((m) => {
+      if (m.type !== 'tick' || started !== null) return;
+      const f = m.villagers.find((v) => v.id === victim);
+      if (f && /walking to the forest lake|feeding the ducks/i.test(f.activity)) started = engine.now();
+    });
+    await engine.advance(10, { step: 1 });
+    expect(started, 'victim started walking').not.toBeNull();
+    expect(started!).toBeLessThanOrEqual(at(0, '10:02') + 1e-6);
+    await engine.advance(100, { step: 1 });
+    expect(engine.villager(victim)!.locationId).toBe('forest_lake');
     engine.stop();
   });
 });
