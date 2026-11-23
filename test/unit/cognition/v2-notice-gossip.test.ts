@@ -61,6 +61,21 @@ describe('news selection', () => {
     expect(after.indexOf(n)).toBeGreaterThan(after.findIndex((m) => m.kind === 'event'));
   });
 
+  it('queues a fact by when it was first known, not by its freshest copy', () => {
+    // Laude logged the notice in the Keep at 06:36 and read it on the board himself at 10:33.
+    const keep = mem('note', '📒 Notice by You: Lost: a green umbrella.', 396, 4, {
+      originId: 'n1',
+      keepId: 'k1',
+    });
+    const read = mem('observation', 'The notice board says: Lost: a green umbrella.', 633, 5, {
+      noticeId: 'n1',
+      originId: 'n1',
+    });
+    const invite = mem('event', 'Mia invited me to the bake-off.', 500, 6);
+    const picked = selectNews([keep, read, invite], 'nora', 739, 3);
+    expect(picked[0]).toBe(read);
+    expect(picked[1]).toBe(invite);
+  });
   it('copies of one fact count tellings together', () => {
     const n = notice();
     const copy = mem('heard', 'Franzi told me: Lost: a green umbrella.', 500, 5, {
