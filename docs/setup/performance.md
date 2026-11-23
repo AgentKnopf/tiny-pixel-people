@@ -117,7 +117,8 @@ more options. Hosted APIs (see [Providers](providers.md)) are usually fast enoug
 
 ## Reading the stats card and the LLM card
 
-The **stats card** (top right) shows, under `REAL MODEL CALLS`:
+The **stats card** (top right) shows, under `REAL MODEL CALLS` (`MOCK MODEL CALLS` with the `mock`
+provider, whose answers come from the game itself):
 
 - `N · T ms · K tok`: `N` calls answered so far, `T` the total time those calls took (added up, so
   it can exceed the time played when calls run in parallel), and `K` the tokens sent and received,
