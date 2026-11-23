@@ -78,7 +78,10 @@ export class StubMind implements VillagerMind {
     if (this.needOverride && view.self.needs[this.needOverride.need] >= NEED_RECOVERED)
       this.needOverride = null;
     if (!this.needOverride && view.self.status !== 'sleeping') {
-      this.needOverride = urgentNeedFix(view.self.needs, block, view.locations, this.profile.homeId);
+      this.needOverride = urgentNeedFix(view.self.needs, block, view.locations, this.profile.homeId, {
+        pos: view.self.pos,
+        minute: minuteOfDay(view.now),
+      });
     }
     const base = intentFromPlan(this.profile, this.plan, view.events, view.now);
     if (this.needOverride && base.type === 'goto' && !/^(host|attend) the /.test(base.activity)) {

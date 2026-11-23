@@ -113,6 +113,9 @@ export function findPath(grid: Grid, from: Point, to: Point): Point[] | null {
 }
 
 /** A* with a bounded cache keyed by (from, to) tile pairs. */
+const pathKey = (from: Point, to: Point) =>
+  `${Math.round(from.x)},${Math.round(from.y)}>${Math.round(to.x)},${Math.round(to.y)}`;
+
 export class PathFinder {
   private readonly cache = new Map<string, Point[] | null>();
 
@@ -121,8 +124,13 @@ export class PathFinder {
     private readonly maxEntries = 4000,
   ) {}
 
+  /** Whether find(from, to) would be answered from the cache. */
+  has(from: Point, to: Point): boolean {
+    return this.cache.has(pathKey(from, to));
+  }
+
   find(from: Point, to: Point): Point[] | null {
-    const key = `${Math.round(from.x)},${Math.round(from.y)}>${Math.round(to.x)},${Math.round(to.y)}`;
+    const key = pathKey(from, to);
     const hit = this.cache.get(key);
     if (hit !== undefined) {
       this.cache.delete(key);

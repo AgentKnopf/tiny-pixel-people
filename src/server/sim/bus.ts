@@ -6,10 +6,14 @@ import type {
   LocationId,
   PlanBlock,
   Point,
+  Romance,
   VillageEvent,
   VillagerId,
 } from '../../shared/types.ts';
 import type { LearnedFact } from '../cognition/types.ts';
+import type { AnimalStepResult } from './animals.ts';
+import type { RideEvent } from './rides.ts';
+import type { TrainEvent } from './train.ts';
 import { createLogger } from '../log.ts';
 
 const log = createLogger('bus');
@@ -35,6 +39,14 @@ export interface SimEvents {
   'task.completed': { villagerId: VillagerId; taskId: string; block: PlanBlock };
   /** A villager's plan was replaced (mind or player task). */
   'plan.changed': { villagerId: VillagerId; plan: DayPlan | null };
+  /** v2: what the animal sim did this step (births, removals, products, emotes, toasts). */
+  'animals.step': { time: GameMinutes; change: AnimalStepResult };
+  train: TrainEvent;
+  ride: RideEvent;
+  /** A villager ate at a food venue; `veggie_burger` when the burgers were sold out. */
+  'food.eaten': { villagerId: VillagerId; venueId: LocationId; itemId: string };
+  /** A romance record was created or changed (MindWorld.upsertRomance). */
+  'romance.updated': { romance: Romance };
 }
 
 export type SimEventName = keyof SimEvents;

@@ -750,7 +750,10 @@
       ],
       "district": "post_row",
       "interiorId": "cottage_b",
-      "description": "Grey-walled cottage with an ochre roof on the bakery road."
+      "description": "Grey-walled cottage with an ochre roof on the bakery road.",
+      "ownerIds": [
+        "laude"
+      ]
     },
     {
       "id": "post_office",
@@ -875,7 +878,10 @@
       ],
       "district": "post_row",
       "interiorId": "cottage_c",
-      "description": "Rose-roofed cottage right next to the post office."
+      "description": "Rose-roofed cottage right next to the post office.",
+      "ownerIds": [
+        "franzi"
+      ]
     },
     {
       "id": "zoo_penguin",
