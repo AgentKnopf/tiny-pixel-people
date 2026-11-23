@@ -17,7 +17,7 @@ import { addInteriors } from './v2-fixtures.ts';
 const KEEP_MAX = 4;
 const T = at(0, '09:00') + 0.25;
 
-function world(restore?: Partial<PlayerWorldSave>): { host: FakeHost; pw: PlayerWorld } {
+function world(restore?: Partial<PlayerWorldSave>, keepMax = KEEP_MAX): { host: FakeHost; pw: PlayerWorld } {
   const host = new FakeHost();
   addInteriors(host);
   host.add(
@@ -25,7 +25,7 @@ function world(restore?: Partial<PlayerWorldSave>): { host: FakeHost; pw: Player
     villager('laude', { x: 24, y: 6 }),
   );
   host.time = T;
-  const config = { ...testConfig(), post: { ...DEFAULT_CONFIG.post, keepMax: KEEP_MAX } };
+  const config = { ...testConfig(), post: { ...DEFAULT_CONFIG.post, keepMax } };
   const pw = createPlayerWorld({ host, config, catalogs, restore });
   (pw.state as PlayerState).pos = { x: 24, y: 5 };
   return { host, pw };
@@ -141,19 +141,30 @@ describe('ids after a same-minute save, load and continue', () => {
     ).toEqual([]);
   });
 
-  it('a trimmed Keep keeps counting past its highest saved id', () => {
+  it.each([
+    ['the same keepMax', KEEP_MAX],
+    ['a smaller keepMax after loading', 1],
+  ])('a trimmed Keep never reuses an id Laude still remembers (%s)', (_label, keepMax) => {
     const a = world();
     busyMinute(a.pw, 'one');
     busyMinute(a.pw, 'two');
     const saved = JSON.parse(JSON.stringify(a.pw.serialize())) as PlayerWorldSave;
-    // Trimmed entries' ids live on in Laude's memories (meta.keepId), so they must not come back either.
-    const issued = a.host.of('keep.added').map((m) => m.entry.id);
-    expect(issued.length).toBeGreaterThan(saved.keep.length);
-    const b = world(saved);
-    b.pw.handleCommand({ type: 'letter.send', to: 'ada', text: 'One more' });
+    // Laude's memories outlive trimming and are saved outside the WP8 part.
+    const remembered = a.host
+      .memoriesOf('laude')
+      .map((m) => m.meta?.keepId)
+      .filter((id): id is string => typeof id === 'string');
+    const kept = new Set(saved.keep.map((e) => e.id));
+    expect(remembered.filter((id) => !kept.has(id)).length).toBeGreaterThan(0);
+
+    const b = world(saved, keepMax);
+    expect(b.pw.post.keep.size()).toBe(Math.min(keepMax, saved.keep.length));
+    busyMinute(b.pw, 'three');
     const added = b.host.of('keep.added').map((m) => m.entry.id);
     expect(added.length).toBeGreaterThan(0);
-    for (const id of added) expect(issued, id).not.toContain(id);
+    for (const id of added) expect(remembered, id).not.toContain(id);
+    const laudeNow = b.host.memoriesOf('laude').map((m) => m.meta?.keepId);
+    for (const id of laudeNow) expect(remembered, String(id)).not.toContain(id);
   });
 
   it('starts above suffixes seen anywhere in an older save', () => {
