@@ -49,7 +49,7 @@ describe('morning wake-up hold', () => {
     expect(statuses()[1]).toMatchObject({ plansReady: 4, villagers: 4 });
   });
 
-  it('gives up after a few rounds in virtual-clock mode', async () => {
+  it('ends once no LLM work is left, keeping fallback plans', async () => {
     const { engine, statuses } = world('05:58');
     await engine.advance(5, { drainLlm: true });
     expect(engine.now()).toBeCloseTo(at(0, '06:03'));
