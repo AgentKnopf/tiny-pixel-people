@@ -95,7 +95,7 @@ import {
 } from './prompts/misc.ts';
 import { settingsFromConfig, type CognitionSettings } from './settings.ts';
 import { villageFor, type Village } from './village.ts';
-import { addVisit, hashUnit, isForest, sanitizeBlocks, type Hours } from './sanitize.ts';
+import { addVisit, hashUnit, isForest, nearestFood, sanitizeBlocks, type Hours } from './sanitize.ts';
 import {
   GREETING_MAX,
   KEEPER,
@@ -1247,10 +1247,18 @@ export class Mind implements VillagerMind {
       emoji: '🏠',
     };
     if (this.settings.needsEnabled && this.plan) {
-      const o = needOverride(view.self.needs, block, view.locations, this.profile.homeId, mod, (need) => {
-        const at = this.needFixedAt[need];
-        return at !== undefined && view.now - at < 120;
-      });
+      const o = needOverride(
+        view.self.needs,
+        block,
+        view.locations,
+        this.profile.homeId,
+        mod,
+        (need) => {
+          const at = this.needFixedAt[need];
+          return at !== undefined && view.now - at < 120;
+        },
+        () => nearestFood(view.locations, this.profile.homeId, view.self.pos, mod, this.zooHours()),
+      );
       if (o) {
         this.needFixedAt[o.need] = view.now;
         this.setPlan({
