@@ -80,7 +80,7 @@ npm run lint
 npm run typecheck
 npm test           # unit + acceptance tests with the mock provider, no network
 npm run test:perf  # timing checks, one file at a time
-npm run check      # lint, typecheck, tests, timing checks and build (what CI runs, plus format:check)
+npm run check      # lint, typecheck, tests, timing checks and build (CI runs the same steps plus format:check)
 npm run format
 ```
 

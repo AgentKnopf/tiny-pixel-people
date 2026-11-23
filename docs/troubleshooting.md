@@ -200,7 +200,8 @@ upgraded; a save from a newer version of the game is refused. The server starts 
 next save **overwrites the old slot**. To keep the old save, stop the server right away and copy the
 slot folder (`saves/default/`) somewhere else.
 
-**Two Keep entries in an older save have the same id.**
+**Two entries in an older save have the same id** (Keep entries, conversations, notes, rumors or
+house visits).
 This is a known limitation. Before the fix, a build could reuse an id after loading a save: for Keep
 entries, conversations, notes, rumors or house visits. The current game continues every counter
 above the ids in the save, so it never makes a new duplicate. It doesn't repair duplicates that an

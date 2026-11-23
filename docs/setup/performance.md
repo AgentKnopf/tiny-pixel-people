@@ -10,7 +10,7 @@ gossip less.
 A game day with 10 villagers can make up to roughly 200 model calls, plus your own chats (the
 v2 default of 12 residents plus visitors makes more; see
 [The bigger village and the model](#the-bigger-village-and-the-model)). On a slow
-model the game cuts back on optional work, so it makes fewer (about 100 in the measured run below). At 200 calls
+model the game cuts back on optional work, so it makes fewer (about 100 in the measured run below). At about 200 calls
 and the default 15-minute day at 1×, that is one call every 4.5 real seconds. With Ollama the game sends one call at
 a time by default (`llm.concurrency` 1; hosted providers default to 2). On a GPU or Apple Silicon
 Mac that really runs two calls in parallel, `llm.concurrency: 2` lets each call take about 9
@@ -110,7 +110,8 @@ more options. Hosted APIs (see [Providers](providers.md)) are usually fast enoug
   sending more only makes each one slower and makes timeouts more likely. It also means one
   villager conversation at a time.
 - `sim.dayLengthMinutes` 60–120: a longer day gives each call more real time. Play at 1×.
-- `sim.villagers`: fewer villagers make fewer calls. Below 12, Laude and Franzi stay away.
+- `sim.villagers`: fewer villagers make fewer calls. At 11, Franzi stays away; at 10 or fewer,
+  Laude does too.
 - `cognition.importanceMode: "heuristic"`: rates memories with a rule instead of a model call.
 - `cognition.maxConversationTurns` (default 6): shorter conversations need fewer calls.
 - Keep `nomic-embed-text` for embeddings; it is small and fast even on a CPU.

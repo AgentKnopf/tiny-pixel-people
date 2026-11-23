@@ -53,7 +53,7 @@ The village fills the window. A dark, see-through interface floats on top of it:
 | Bottom        | The toolbar: `PAUSE`, zoom (`−`, fit, `+`), the speed buttons `1× 2× 4× 8×`, and the world event buttons, including 🚂 Train. On narrower windows the event buttons show only their icons; hover for the name.                                                                                                                                                                                                                                                                                           |
 | Bottom centre | The place bar, when there is something to do where you stand: buy food, ride a ride, write a letter or read the notice board, and `🏠 Inside …` with `🚪 Exit` while you are inside a house.                                                                                                                                                                                                                                                                                                             |
 | Bottom right  | The dock: `Backpack`, `Map`, `Pet`, `Decorate`, `Home`, `Mail` (your mailbox), `Letters` and `Gold`. `Mail` and `Letters` show how many new ones are waiting.                                                                                                                                                                                                                                                                                                                                            |
-| Right         | The inspector, when you click a villager. Clicking an animal opens a small animal card: its name and species, and for farm and zoo animals also the stage (baby, adult, elder), male or female, its age in days and what it is doing. Forest animals and the crow show only their name and species.                                                                                                                                                                                                      |
+| Right         | The inspector, when you click a villager. Clicking an animal opens a small animal card: its name and species, and for farm and zoo animals also the stage (baby, adult, elder), male or female, its age in days, what it is doing and where it lives. Forest animals and the crow show only their name and species.                                                                                                                                                                                      |
 
 Short messages ("toasts") pop up at the bottom centre, for example `📮 Mailbox placed at your
 cottage ✓`. Your conversations with villagers appear in a small dialog there too.
@@ -297,8 +297,8 @@ see them heading to the zoo after work or taking a walk in the woods.
 | **Zoo**            | top middle          | Twelve animal enclosures, three rides, the Burger Joint and two ice cream trucks.                             |
 | **Forest**         | the whole east side | Trails, an old grove with a picnic spot, a lake with ducks, and shy forest animals.                           |
 | **Farmstead**      | bottom left         | Cow and sheep pastures, the chicken coop, the barn, the farmhouse and the butcher's shed.                     |
-| **Market**         | bottom middle       | The main road from north to south with market stalls, a place to meet like the plaza.                         |
-| **Station, hotel** | bottom right        | The railway platform and a hotel with six rooms for visitors.                                                 |
+| **Market**         | bottom, left centre | The main road from north to south with market stalls, a place to meet like the plaza.                         |
+| **Station, hotel** | bottom middle       | The railway platform and a hotel with six rooms for visitors.                                                 |
 
 The **Map** in the dock lists a scene for each district (Post row, Zoo, Rides, Forest, Farmstead,
 Station, Market) and an **Overview** of the whole map, next to the old town scenes. Plaza is still
@@ -387,8 +387,8 @@ button in the toolbar brings the next train right away. The stats card shows whe
 is due and how full the hotel is, for example `🚂 Next train 16:00 · Hotel 3/6`. While a train is
 in, it says `🚂 Train arriving …`, `🚂 Train boarding · departs …` or `🚂 Train departing`.
 
-Trains bring **visitors**. Two to four of them are in town at any time (`visitors.min`,
-`visitors.max`); the first train of a new village brings two or three. Each one is invented by the
+Trains bring **visitors**. Once the first train has come, two to four of them are in town at any
+time (`visitors.min`, `visitors.max`); the first train of a new village brings two or three. Each one is invented by the
 language model, with a name, a job, a reason for the trip and things they like. When the model is
 too slow, the visitor comes from a list of ready-made travellers instead (`data/visitors.json`).
 
@@ -396,7 +396,7 @@ A visitor walks from the platform to the **hotel**, checks into one of its six r
 (`hotel.rooms`) and then lives in town like everyone else: plans a day, chats, gossips and may even
 go on a date. After one to three days (`visitors.stayDays`) the visitor takes a train home. The
 villagers keep their memories of them. The inspector shows a badge such as
-`🧳 Visitor · leaves tomorrow 16:00` (or `today`, or the weekday for later days).
+`🧳 Visitor · leaves tomorrow 16:00` (or `today 16:00`, or `Day 4 16:00` for later days).
 
 The 🕵 **Stranger** button still works as before; strangers have nothing to do with trains.
 
@@ -412,10 +412,11 @@ Nothing is locked, but the owner notices:
 | Who is home       | What happens                                                                                                                                                                                                          |
 | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | The owner, awake  | The owner stops what it's doing, waves 👋 and greets you (`Oh, hello! Come on in, make yourself at home.` if the model is slow). It remembers your visit and likes you a little more (`interiors.visitAffinity`, +1). |
-| The owner, asleep | When it wakes up, it remembers that you walked in while it was asleep, and likes you a little less (−1).                                                                                                              |
+| The owner, asleep | When it wakes up, it remembers that you walked in while it was asleep, and likes you a little less (−1), every time you do it.                                                                                        |
 | Nobody            | That's **snooping**. When the owner comes home, it finds out it was you and likes you less (`interiors.snoopAffinity`, −2). Neighbours within a few tiles who saw you go in will gossip about it.                     |
 
-A visit counts once per house per game day, good or bad. The hotel lobby and the post office have
+A friendly visit (+1) and snooping (−2) each count once per house per game day. Walking in on a
+sleeping owner costs −1 every time. The hotel lobby and the post office have
 no owner, so going in there is always fine. Your own cottage has no inside yet; decorations stay on
 the porch. Door notes still work from outside the door.
 
@@ -438,7 +439,7 @@ included, up to 500 characters. Letters you receive also show in your **Mail** a
   (`post.deliveryTimes`), and the crow on the roof caws when it does.
 - The villager reads the letter the next time it comes home, remembers it, and writes back. The
   reply goes out with the next delivery and lands in your inbox.
-- Villagers write letters too: a thank-you on the evening after you gave them a gift, a note to a
+- Villagers write letters too: a thank-you at 21:00 on the day you gave them a gift, a note to a
   friend they haven't seen in a while, and now and then a shy note between Franzi and Laude. At most
   three villager letters go out per day (`post.maxVillagerLettersPerDay`), and at most one of them
   to you.
@@ -449,8 +450,7 @@ letter icon over the post office means letters are waiting for the next round.
 
 The **Mail** tile in the dock opens your mailbox, and so does clicking your own door. Letters
 delivered to you appear there (marked `new` until you read them), with **✉️ Open Letters** to
-answer. Villagers who know you may also leave a door note there once you have placed the mailbox
-decoration.
+answer.
 
 ### The notice board
 
@@ -522,7 +522,7 @@ older) take part.
    `💕 Mia Hartley and Tom Fielding are now a couple!`. Couples keep going on dates.
 5. **Breaking up** happens quietly, only if a couple stops liking each other for days.
 
-Visitors can have crushes and go on dates, but they don't become couples before their train leaves.
+Visitors can have crushes and go on dates, but they never become part of a couple.
 The inspector shows `💕 Partner: …`, `💞 Dating: …`, `💗 Crush on: …` (or `💗 Shy crush on: …`) and
 the last three dates.
 

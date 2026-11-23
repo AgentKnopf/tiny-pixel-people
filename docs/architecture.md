@@ -84,10 +84,10 @@ a collision grid and named locations. It is split into seven districts (`WorldMa
 | `town`      | 0, 0, 48, 30       | The v1 town, unchanged: plaza, bakery, shop, crop field, park, houses, your cottage. |
 | `post_row`  | 44, 0, 20, 9       | `house_laude`, `post_office` (notice board, the crow's perch), `house_franzi`.       |
 | `zoo`       | 48, 0, 48, 34      | `zoo_gate`, 12 enclosures, 3 rides, `burger_joint`, 2 ice cream trucks.              |
-| `forest`    | 96, 0, 32, 56      | `forest` trails, `forest_grove`, `forest_lake`.                                      |
+| `forest`    | 96, 0, 32, 60      | `forest` trails, `forest_grove`, `forest_lake`.                                      |
 | `farmstead` | 0, 30, 36, 30      | `cow_pasture`, `sheep_pasture`, `chicken_coop`, `barn`, `farmhouse`, `butcher`.      |
-| `market`    | 36, 30, 24, 30     | The north-south main road and the `market` location.                                 |
-| `station`   | 60, 36, 36, 24     | The `station` platform and the `hotel`.                                              |
+| `market`    | 36, 30, 12, 30     | The north-south main road and the `market` location.                                 |
+| `station`   | 48, 34, 48, 26     | The `station` platform and the `hotel`.                                              |
 
 `post_row` overlaps `town` and `zoo`; district lookup checks it first. The town keeps its v1
 coordinates, so v1 positions and saves stay valid. Roads join the districts, and the railway
