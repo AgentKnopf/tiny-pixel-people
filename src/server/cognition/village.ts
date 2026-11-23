@@ -86,6 +86,13 @@ export function villageFor<M extends MindLike>(queue: LlmQueue): Village<M> {
  * Embeddings through the queue's embedding lane. Each memory is sent at once (the queue batches
  * calls made in the same tick), so the job is visible to `queue.drain()` immediately.
  */
+/**
+ * Longest real-time wait for a query embedding. With one local model server the embedding waits
+ * behind whole chat generations; past this, retrieval goes on with keyword relevance instead of
+ * holding up the reply, plan or line that needs the memories.
+ */
+export const EMBED_QUERY_TIMEOUT = { ms: 4_000 };
+
 export class QueueEmbedder implements Embedder {
   private disabled = false;
   private consecutiveNulls = 0;
@@ -132,7 +139,13 @@ export class QueueEmbedder implements Embedder {
       return hit;
     }
     try {
-      const vecs = await this.queue.embed([key]);
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeout = new Promise<'timeout'>((resolve) => {
+        timer = setTimeout(() => resolve('timeout'), EMBED_QUERY_TIMEOUT.ms);
+        timer.unref?.();
+      });
+      const vecs = await Promise.race([this.queue.embed([key]), timeout]).finally(() => clearTimeout(timer));
+      if (vecs === 'timeout') return null;
       if (vecs === null) {
         this.noteNull();
         return null;

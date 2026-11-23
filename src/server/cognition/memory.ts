@@ -93,11 +93,28 @@ export class MemoryStore implements MemoryStream {
     return this.memories.some((m) => m.meta.originId === originId);
   }
 
-  async retrieve(query: string, now: GameMinutes, opts: RetrieveOptions = {}): Promise<Memory[]> {
+  /** `giveUp`: once it settles, stop waiting for the query embedding and rank by keywords. */
+  async retrieve(
+    query: string,
+    now: GameMinutes,
+    opts: RetrieveOptions = {},
+    giveUp?: Promise<unknown>,
+  ): Promise<Memory[]> {
     const k = opts.k ?? this.opts.defaultK;
     const candidates = this.memories.filter((m) => isRetrievable(m, now, opts));
     if (candidates.length === 0) return [];
-    const embedding = this.opts.embedder ? await this.opts.embedder.embedQuery(query) : null;
+    const pending = this.opts.embedder ? this.opts.embedder.embedQuery(query) : null;
+    const embedding = pending
+      ? await (giveUp
+          ? Promise.race([
+              pending,
+              giveUp.then(
+                () => null,
+                () => null,
+              ),
+            ])
+          : pending)
+      : null;
     // Memories whose embedding batch failed transiently get another try.
     if (embedding) for (const m of candidates) if (!m.embedding) this.opts.embedder?.request(m);
     const top = scoreMemories(

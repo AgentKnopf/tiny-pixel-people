@@ -7,6 +7,8 @@ import { fallbackStats, loadTracker } from '../../../src/server/cognition/llm.ts
 import { PRIORITY } from '../../../src/server/cognition/mind.ts';
 import { createTestVillage } from './helpers.ts';
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 function compactPlan(req: ChatRequest): string {
   const p = req.meta?.profile as VillagerProfile;
   return JSON.stringify({
@@ -50,6 +52,30 @@ describe('morning plans', () => {
     expect(v.worlds.get('mia')!.plan).toMatchObject({ day: 0, source: 'llm' });
     expect(mia.isPlanSettled(0)).toBe(true);
     expect(mia.isPlanSettled(1)).toBe(false);
+  });
+
+  it('is not settled on a fresh world until the plan is final, however slow the model', async () => {
+    const p = new MockChatProvider();
+    let answer: (() => void) | null = null;
+    p.setScript(
+      'plan.day',
+      (req) =>
+        new Promise<string>((resolve) => {
+          answer = () => resolve(compactPlan(req));
+        }),
+    );
+    const v = createTestVillage({ start: at(0, '05:00'), provider: p });
+    const mia = v.minds.get('mia')!;
+    expect(mia.isPlanSettled(0)).toBe(false);
+    v.time.now += 1;
+    mia.update(v.view('mia'));
+    await sleep(50);
+    expect(v.queue.count('plan.day')).toBe(1);
+    expect(mia.isPlanSettled(0)).toBe(false);
+    answer!();
+    for (let i = 0; i < 5; i++) await sleep(10);
+    expect(mia.isPlanSettled(0)).toBe(true);
+    expect(v.worlds.get('mia')!.plan).toMatchObject({ day: 0, source: 'llm' });
   });
 
   it('counts a plan as settled once the model has failed twice', async () => {

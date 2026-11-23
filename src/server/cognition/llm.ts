@@ -215,6 +215,16 @@ async function askInner<T>(queue: LlmQueue, spec: AskSpec<T>): Promise<AskResult
   }
 }
 
+/** Resolves once the game clock reaches `until` (polled; the clock only moves between sim steps). */
+export function gameTimer(now: () => number, until: number): { done: Promise<void>; stop: () => void } {
+  const w = watchDeadline(now, until);
+  const done = new Promise<void>((resolve) => {
+    if (w.signal.aborted) resolve();
+    else w.signal.addEventListener('abort', () => resolve(), { once: true });
+  });
+  return { done, stop: w.stop };
+}
+
 /** Abort once the game clock passes `deadline` (polled; the clock only moves between sim steps). */
 function watchDeadline(now: () => number, deadline: number): { signal: AbortSignal; stop: () => void } {
   const ctl = new AbortController();
