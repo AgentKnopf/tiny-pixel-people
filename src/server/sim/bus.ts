@@ -10,6 +10,9 @@ import type {
   VillagerId,
 } from '../../shared/types.ts';
 import type { LearnedFact } from '../cognition/types.ts';
+import type { AnimalStepResult } from './animals.ts';
+import type { RideEvent } from './rides.ts';
+import type { TrainEvent } from './train.ts';
 import { createLogger } from '../log.ts';
 
 const log = createLogger('bus');
@@ -35,6 +38,10 @@ export interface SimEvents {
   'task.completed': { villagerId: VillagerId; taskId: string; block: PlanBlock };
   /** A villager's plan was replaced (mind or player task). */
   'plan.changed': { villagerId: VillagerId; plan: DayPlan | null };
+  /** v2: what the animal sim did this step (births, removals, products, emotes, toasts). */
+  'animals.step': { time: GameMinutes; change: AnimalStepResult };
+  train: TrainEvent;
+  ride: RideEvent;
 }
 
 export type SimEventName = keyof SimEvents;

@@ -1,4 +1,11 @@
-import type { GameMinutes, Location, LocationId, RideSpec, RideState, VillagerId } from '../../shared/types.ts';
+import type {
+  GameMinutes,
+  Location,
+  LocationId,
+  RideSpec,
+  RideState,
+  VillagerId,
+} from '../../shared/types.ts';
 import { minuteOfDay, parseClock } from '../../shared/time.ts';
 import type { RideService } from './types.ts';
 
@@ -34,7 +41,11 @@ export class Rides implements RideService {
   private events: RideEvent[] = [];
   private now: GameMinutes;
 
-  constructor(locations: readonly Location[], zooHours: { openTime: string; closeTime: string }, now: GameMinutes) {
+  constructor(
+    locations: readonly Location[],
+    zooHours: { openTime: string; closeTime: string },
+    now: GameMinutes,
+  ) {
     this.now = now;
     for (const loc of locations) {
       if (loc.kind !== 'ride' || !loc.ride) continue;
@@ -111,7 +122,8 @@ export class Rides implements RideService {
       }
       const open = isOpen(r.open, r.close, now);
       for (const id of [...s.queue]) {
-        if (!open || now - (r.joinedAt.get(id) ?? now) > RIDE_MAX_WAIT_MINUTES) this.drop(id, 'gaveUp', r, now);
+        if (!open || now - (r.joinedAt.get(id) ?? now) > RIDE_MAX_WAIT_MINUTES)
+          this.drop(id, 'gaveUp', r, now);
       }
       if (s.status !== 'running') s.status = open ? 'idle' : 'closed';
       if (s.status === 'idle' && s.queue.length > 0) {

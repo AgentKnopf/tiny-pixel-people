@@ -234,7 +234,7 @@ describe('AnimalSim zoo', () => {
     run(sim, START, 2 * MINUTES_PER_DAY, () => {
       for (const a of sim.all())
         if (a.group === 'zoo')
-          expect(inRect(a.pos, pens.get(a.homeId)), `${a.id} at ${a.pos.x},${a.pos.y}`).toBe(true);
+          expect(inRect(a.pos, pens.get(a.homeId)!), `${a.id} at ${a.pos.x},${a.pos.y}`).toBe(true);
     });
   });
 
@@ -277,7 +277,7 @@ describe('AnimalSim forest', () => {
       void people;
       for (const a of sim.all())
         if (a.group === 'ambient' && a.species !== 'crow')
-          expect(inRect(a.pos, pens.get(a.homeId)), `${a.id} at ${a.pos.x},${a.pos.y}`).toBe(true);
+          expect(inRect(a.pos, pens.get(a.homeId)!), `${a.id} at ${a.pos.x},${a.pos.y}`).toBe(true);
     });
   });
 

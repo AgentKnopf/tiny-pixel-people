@@ -9,6 +9,7 @@ import {
 import { MINUTES_PER_DAY, dayOf, formatClock, minuteOfDay, parseClock } from '../../shared/time.ts';
 import {
   PLAYER_ID,
+  type AnimalSpecies,
   type Conversation,
   type DoorNote,
   type GameMinutes,
@@ -48,6 +49,7 @@ import {
   type PlayerReplyRequest,
   type PlayerWorld,
 } from '../player/index.ts';
+import { createAnimalSim, type AnimalStepResult, type DeterministicAnimalSim } from './animals.ts';
 import { SimBus } from './bus.ts';
 import { SimClock } from './clock.ts';
 import { advanceAlongPath, distance, facingFor, tileOf } from './movement.ts';
@@ -58,6 +60,8 @@ import { Rng } from './rng.ts';
 import { createStubConversationRunner } from './stub-mind.ts';
 import { TownLog } from './town-log.ts';
 import { recordTownLog } from './town-recorder.ts';
+import { Rides } from './rides.ts';
+import { Train } from './train.ts';
 import type { AdvanceOptions, SimEngine, SimEngineOptions } from './types.ts';
 import { isAt, loadMap, loadProfiles, locationAt, locationById, nearestWalkable } from './world.ts';
 
@@ -81,6 +85,9 @@ export const PLAYER_CHAT_HOLD_MINUTES = 5;
 const SOCIAL_TRAITS = /outgoing|friendly|cheerful|social|warm|generous|chatty|organi[sz]ed|lively/i;
 const PLAYER_REPLY_FALLBACK = "Sorry, I'm a bit distracted right now.";
 export const MAX_VILLAGERS = 20;
+/** The crow caws when the player comes this close (tiles). */
+export const CROW_CAW_RADIUS = 3;
+export const ANIMALS_NEARBY_RADIUS = 4;
 /** Bubbles stay visible for this many real milliseconds. */
 export const BUBBLE_MS = 5000;
 const STATS_INTERVAL_MS = 2000;
@@ -178,6 +185,7 @@ export function toPublicProfile(p: VillagerProfile): VillagerProfilePublic {
     sprite: p.sprite,
   };
   if (p.transient) out.transient = true;
+  if (p.visitor) out.visitor = true;
   return out;
 }
 
@@ -191,6 +199,10 @@ export class Engine implements SimEngine, SimHost {
   readonly store: JsonSaveStore;
   /** Town event log and game-to-real time anchors (observer API). */
   readonly townLog: TownLog;
+  readonly animals: DeterministicAnimalSim;
+  /** null when `train.enabled` is false or the map has no station. */
+  readonly train: Train | null;
+  readonly rides: Rides;
 
   private readonly clock: SimClock;
   private readonly rng: Rng;
@@ -221,6 +233,8 @@ export class Engine implements SimEngine, SimHost {
   private wokeDay = -1;
   private idleProbe: { done: boolean } | null = null;
   private wakeHold: { day: number; startedMs: number; ready: number; rounds: number } | null = null;
+  private playerNearCrow = false;
+  private deferred: ServerMessage[] = [];
 
   constructor(opts: SimEngineOptions) {
     const cfg = opts.config;
@@ -299,6 +313,19 @@ export class Engine implements SimEngine, SimHost {
       const snapshot = restore?.minds.find((m) => m.villagerId === p.id);
       this.addRuntime(p, saved ? this.restoreState(saved) : this.initialState(p), snapshot);
     }
+    this.moveIn(restore, profiles);
+    const farmer = [...this.runtimes.values()].find((r) => /farmer/i.test(r.profile.occupation));
+    this.animals = createAnimalSim({
+      config: cfg,
+      map: this.map,
+      now: startAt,
+      ...(restore ? { restore: { animals: restore.animals, farm: restore.farm } } : {}),
+      ...(farmer ? { farmerName: farmer.profile.name.split(' ')[0]! } : {}),
+      findPath: (from, to) => this.paths.find(from, to),
+    });
+    const hasStation = this.map.locations.some((l) => l.kind === 'station');
+    this.train = cfg.train.enabled && hasStation ? new Train(cfg.train, startAt, restore?.train) : null;
+    this.rides = new Rides(this.map.locations, cfg.zoo, startAt);
     this.registerBuiltins();
     recordTownLog(this, this.townLog);
     this.townLog.anchor(true);
@@ -336,7 +363,10 @@ export class Engine implements SimEngine, SimHost {
         events: this.eventList,
         notes: this.noteList,
         activeConversations: [...this.active.values()].map((a) => a.conversation),
+        animals: [...this.animals.all()],
       }),
+      rides: [...this.rides.all()],
+      train: this.train?.state() ?? null,
       ...this.playerWorld.snapshot(),
     };
   }
@@ -437,6 +467,8 @@ export class Engine implements SimEngine, SimHost {
       notes: this.noteList,
       conversations: this.conversations().filter((c) => c.startedAt >= now - 2 * MINUTES_PER_DAY),
       ...this.playerWorld.serialize(),
+      ...this.animals.serialize(),
+      train: this.train?.state() ?? null,
       observer: this.townLog.serialize(),
     });
   }
@@ -949,6 +981,7 @@ export class Engine implements SimEngine, SimHost {
     if (this.stepping) return;
     this.stepping = true;
     try {
+      if (this.deferred.length > 0) for (const m of this.deferred.splice(0)) this.broadcast(m);
       if (dt > 0) {
         const prevDay = dayOf(this.clock.time);
         this.clock.time += dt;
@@ -958,6 +991,9 @@ export class Engine implements SimEngine, SimHost {
         this.updateNeedsAndBlocks(dt);
         for (const rt of [...this.runtimes.values()]) this.think(rt);
         for (const rt of [...this.runtimes.values()]) this.moveVillager(rt, dt);
+        this.stepAnimals();
+        this.stepTrain();
+        this.stepRides();
         const minute = Math.floor(this.clock.time);
         if (minute > this.lastMinute) {
           this.lastMinute = minute;
@@ -979,6 +1015,83 @@ export class Engine implements SimEngine, SimHost {
     } finally {
       this.stepping = false;
     }
+  }
+
+  // ---------- v2 deterministic subsystems ----------
+
+  private stepAnimals(): void {
+    const now = this.clock.time;
+    const occupants: Point[] = [...this.runtimes.values()].map((r) => r.state.pos);
+    const player = this.player;
+    if (!player.inside) occupants.push(player.pos);
+    let change: AnimalStepResult;
+    try {
+      change = this.animals.step(now, occupants);
+    } catch (err) {
+      log.error('animal step failed', err);
+      return;
+    }
+    const crowId = this.animals.crowId();
+    const crow = crowId ? this.animals.all().find((a) => a.id === crowId) : undefined;
+    const near = !!crow && !player.inside && distance(player.pos, crow.pos) <= CROW_CAW_RADIUS;
+    if (near && !this.playerNearCrow) this.animals.caw('player');
+    this.playerNearCrow = near;
+    if (change.added.length > 0 || change.removed.length > 0 || change.updated.length > 0) {
+      this.broadcast({
+        type: 'animals.changed',
+        added: change.added,
+        removed: change.removed,
+        updated: change.updated,
+      });
+    }
+    for (const e of change.emotes)
+      this.broadcast({ type: 'animal.emote', animalId: e.animalId, emote: e.emote });
+    for (const t of change.toasts) {
+      const [icon = '🐾', ...rest] = t.split(' ');
+      this.toast(icon, rest.join(' '));
+    }
+    if (change.farmerNotes.length > 0) {
+      const farmer = [...this.runtimes.values()].find((r) => /farmer/i.test(r.profile.occupation));
+      for (const text of change.farmerNotes) {
+        if (farmer) this.observe(farmer.profile.id, { at: now, kind: 'observation', text, importance: 4 });
+      }
+    }
+    this.bus.emit('animals.step', { time: now, change });
+  }
+
+  private stepTrain(): void {
+    if (!this.train) return;
+    const changed = this.train.step(this.clock.time);
+    for (const event of this.train.takeEvents()) this.bus.emit('train', event);
+    if (changed) this.broadcast({ type: 'train.updated', train: changed });
+  }
+
+  private stepRides(): void {
+    for (const ride of this.rides.step(this.clock.time)) this.broadcast({ type: 'ride.updated', ride });
+    for (const event of this.rides.takeEvents()) this.bus.emit('ride', event);
+  }
+
+  private animalsNear(pos: Point): { id: string; species: AnimalSpecies; distance: number }[] {
+    const out: { id: string; species: AnimalSpecies; distance: number }[] = [];
+    for (const a of this.animals.all()) {
+      const d = distance(pos, a.pos);
+      if (d <= ANIMALS_NEARBY_RADIUS) out.push({ id: a.id, species: a.species, distance: d });
+    }
+    return out.sort((a, b) => a.distance - b.distance);
+  }
+
+  /** Residents in the profile list but not in the save (Laude and Franzi for a v1 save) move in at home. */
+  private moveIn(restore: SaveData | null, profiles: readonly VillagerProfile[]): void {
+    if (!restore) return;
+    const names = profiles
+      .filter((p) => !p.transient && this.runtimes.has(p.id) && !restore.villagers.some((v) => v.id === p.id))
+      .map((p) => p.name.split(' ')[0]!);
+    if (names.length === 0) return;
+    const who = names.length === 1 ? names[0]! : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
+    const where = this.map.locations.some((l) => l.id === 'bakery') ? ' near the bakery' : '';
+    // Sent on the first step: nobody listens while the engine is being built.
+    this.deferred.push({ type: 'toast', icon: '🏡', text: `${who} moved in${where}!` });
+    this.deferred.push({ type: 'log', level: 'info', text: `${who} moved in${where}.`, time: this.now() });
   }
 
   private onNewDay(day: number): void {
@@ -1516,6 +1629,7 @@ export class Engine implements SimEngine, SimHost {
       events: this.eventList.filter((e) => e.status !== 'cancelled' && e.end >= now - MINUTES_PER_DAY),
       villagerNames: names,
       weather: { ...this.playerWorld.weather },
+      animalsNearby: this.animalsNear(rt.state.pos),
     };
   }
 
@@ -1547,7 +1661,14 @@ export class Engine implements SimEngine, SimHost {
       if (forceAll || this.lastFrames.get(f.id) !== key) frames.push(f);
       this.lastFrames.set(f.id, key);
     }
-    this.broadcast({ type: 'tick', time: this.clock.time, speed: this.clock.speed, villagers: frames });
+    const animals = this.animals.frames();
+    this.broadcast({
+      type: 'tick',
+      time: this.clock.time,
+      speed: this.clock.speed,
+      villagers: frames,
+      ...(animals.length > 0 ? { animals } : {}),
+    });
   }
 
   /** All frames (used by tests and new clients). */
