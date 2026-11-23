@@ -16,6 +16,8 @@ import type { AppConfig } from '../../../src/server/config.ts';
 import type { AnimalChange } from '../../../src/server/sim/types.ts';
 import { featurePath, readyV2, repoPath, waitingForV2, type Feature } from '../../helpers/features.ts';
 import { animalCapProblems, farmCounts, hourlyInvariants } from '../../helpers/invariants.ts';
+import { JsonSaveStore } from '../../../src/server/persistence/json-store.ts';
+import type { SaveData } from '../../../src/server/persistence/types.ts';
 import { animalSimFactory, graphicWords, V2 } from '../../helpers/v2.ts';
 import { setup } from '../../unit/player/fake-host.ts';
 import { addV2Locations } from '../../unit/player/v2-fixtures.ts';
@@ -271,6 +273,81 @@ describe.skipIf(!readyV2(...F))(`AC10: farm lifecycle${waitingForV2(...F)}`, () 
         .flatMap((m) => m.removed)
         .filter((r) => r.species === 'cow').length;
       expect(cowBirths).toBeLessThanOrEqual(removed);
+    });
+  });
+
+  describe('birth gap survives a save and restore (spec v2 §3.2)', () => {
+    // Certain breeding, so every mother outside her gap gives birth at 06:00; no crowding butcher.
+    const farm = { breedChance: 1, butcherAtCount: FARM_CAP_PER_SPECIES };
+    const saveAt = at(0, '12:00');
+    const endAt = at(2, '07:00');
+    const GAP = 2 * 1440;
+    let w: TestWorld;
+    let w2: TestWorld | undefined;
+    let saved: SaveData;
+    let straight: Partial<AnimalState>[] = [];
+    let resumed: Partial<AnimalState>[] = [];
+    const restoredLast = new Map<string, number | undefined>();
+    const gapProblems: string[] = [];
+
+    const farmAnimals = (xs: readonly AnimalState[] | undefined) =>
+      (xs ?? []).filter((a) => a.group === 'farm');
+    // Restored animals wander on a fresh RNG stream, so babies spawn beside a mother at a different tile.
+    const births = (msgs: TestWorld['messages']) =>
+      farmAnimals(msgs.flatMap((m) => (m.type === 'animals.changed' ? m.added : []))).map(
+        ({ id, species, sex, bornAt, name, lifespanDays }) => ({
+          id,
+          species,
+          sex,
+          bornAt,
+          name,
+          lifespanDays,
+        }),
+      );
+
+    beforeAll(async () => {
+      w = await createTestWorld({ villagers: 12, seed: SEED, startAt: '05:00', config: { farm } });
+      await w.advanceTo(saveAt, { chunk: 1 });
+      const store = new JsonSaveStore({ dir: w.config.persistence.dir, slot: 'farm-gap' });
+      await store.save(w.engine.toSaveData());
+      saved = (await store.load())!;
+      const mark = w.messages.length;
+      await w.advanceTo(endAt, { chunk: 1 });
+      straight = births(w.messages.slice(mark));
+
+      w2 = await createTestWorld({ villagers: 12, seed: SEED, config: { farm }, restore: saved });
+      const last = new Map(farmAnimals(saved.animals).map((a) => [a.id, a.lastBirthAt]));
+      for (const a of farmAnimals(w2.state().animals)) restoredLast.set(a.id, a.lastBirthAt);
+      await w2.advanceTo(endAt, { chunk: 1 });
+      for (const a of farmAnimals(w2.state().animals)) {
+        const before = last.get(a.id);
+        if (a.lastBirthAt !== undefined && before !== undefined && a.lastBirthAt !== before) {
+          if (a.lastBirthAt - before < GAP)
+            gapProblems.push(`${a.id}: births at ${before} and ${a.lastBirthAt}, under 2 days apart`);
+        }
+      }
+      resumed = births(w2.messages);
+    }, 600_000);
+
+    afterAll(() => {
+      w?.dispose();
+      w2?.dispose();
+    });
+
+    it("saves each mother's last birth and restores it unchanged", () => {
+      const mothers = farmAnimals(saved.animals).filter((a) => a.lastBirthAt !== undefined);
+      expect(mothers.length, 'mothers with lastBirthAt in the save').toBeGreaterThanOrEqual(1);
+      for (const m of mothers) expect(restoredLast.get(m.id), m.id).toBe(m.lastBirthAt);
+    });
+
+    it('no mother gives birth again within 2 days of her saved last birth', () => {
+      expect(gapProblems).toEqual([]);
+    });
+
+    it('the restored world has the births of the uninterrupted one on the next two days', () => {
+      expect(straight.length).toBeGreaterThanOrEqual(1);
+      expect(resumed).toEqual(straight);
+      expect(w2!.errors()).toEqual([]);
     });
   });
 });

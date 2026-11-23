@@ -1,4 +1,4 @@
-/** AC24: Laude and Franzi live near the bakery; Laude goes to bake-offs. */
+/** AC24: Laude and Franzi live on the bakery road; Laude goes to bake-offs. */
 import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DEFAULT_CONFIG } from '../../../src/server/config.ts';
@@ -13,7 +13,8 @@ import { createTestWorld, type TestWorld } from '../../helpers/world.ts';
 
 const F = [...V2.sim, 'villagers' as const, 'romanceData' as const, 'saveV1Fixture' as const];
 const BAKE = /bak(e|ing)/i;
-const MAX_PATH_TILES = 30;
+/** The bakery's road: the v1 top road extended east (spec v2 §2.1). */
+const BAKERY_ROAD_Y = { from: 6, to: 8 };
 /** "Next to": the rects share rows (or columns) and at most 2 tiles lie between them. */
 const MAX_NEIGHBOUR_GAP = 2;
 
@@ -56,14 +57,20 @@ describe.skipIf(!readyV2(...F))(`AC24: Laude and Franzi${waitingForV2(...F)}`, (
     expect(Math.max(dx, dy)).toBeLessThanOrEqual(MAX_NEIGHBOUR_GAP);
   });
 
-  it('both houses are within 30 path tiles of the bakery entry', () => {
+  it('both houses face the bakery road (entries on y 6–8)', () => {
+    const map = loadMap();
+    for (const id of ['house_laude', 'house_franzi']) {
+      const { y } = loc(map, id).entry;
+      expect(y, `${id} entry y`).toBeGreaterThanOrEqual(BAKERY_ROAD_Y.from);
+      expect(y, `${id} entry y`).toBeLessThanOrEqual(BAKERY_ROAD_Y.to);
+    }
+  });
+
+  it('both house entries are reachable from the bakery entry by A* (no distance bound)', () => {
     const map = loadMap();
     const bakery = loc(map, 'bakery').entry;
-    for (const id of ['house_laude', 'house_franzi']) {
-      const path = findPath(map, loc(map, id).entry, bakery);
-      expect(path, `${id} cannot reach the bakery`).not.toBeNull();
-      expect(path!.length, id).toBeLessThanOrEqual(MAX_PATH_TILES);
-    }
+    for (const id of ['house_laude', 'house_franzi'])
+      expect(findPath(map, bakery, loc(map, id).entry), `${id} from the bakery`).not.toBeNull();
   });
 
   it('with villagers: 10, the v1 set is unchanged', async () => {

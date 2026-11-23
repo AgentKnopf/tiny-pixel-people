@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { JsonSaveStore } from '../../../src/server/persistence/json-store.ts';
 import { SAVE_SCHEMA_VERSION, type SaveData } from '../../../src/server/persistence/types.ts';
+import { at } from '../../../src/shared/time.ts';
 import { FARM_SPECIES, ZOO_SPECIES, type WorldSnapshot } from '../../../src/shared/types.ts';
 import { readyV2, repoPath, waitingForV2, type Feature } from '../../helpers/features.ts';
 import { farmCounts, hourlyInvariants } from '../../helpers/invariants.ts';
@@ -179,9 +180,23 @@ describe.skipIf(!readyV2(...ROUND_TRIP))(`AC17: v2 save round-trip${waitingForV2
   let resaved: SaveData;
   let before: WorldSnapshot;
   let after: WorldSnapshot;
+  /** A mother given a recent birth in the starting save, so `lastBirthAt` is set when we save. */
+  let mother: { id: string; lastBirthAt: number } | undefined;
 
   beforeAll(async () => {
-    w = await createTestWorld({ villagers: 12, startAt: '06:00', seed: 31 });
+    w = await createTestWorld({
+      villagers: 12,
+      startAt: '06:00',
+      seed: 31,
+      patchSave: (save) => {
+        const m = (save.animals ?? []).find(
+          (a) => a.group === 'farm' && a.sex === 'female' && a.stage === 'adult',
+        );
+        if (!m) throw new Error('the save has no adult female farm animal');
+        m.lastBirthAt = at(0, '06:00') - 60;
+        mother = { id: m.id, lastBirthAt: m.lastBirthAt };
+      },
+    });
     const map = w.engine.map;
     if (!(await walkPlayerTo(w, loc(map, 'post_office').entry)))
       throw new Error('cannot reach the post office');
@@ -217,6 +232,9 @@ describe.skipIf(!readyV2(...ROUND_TRIP))(`AC17: v2 save round-trip${waitingForV2
     expect(loaded.animals?.length).toBeGreaterThan(0);
     expect(loaded.animals!.every((a) => a.group !== 'ambient')).toBe(true);
     expect(loaded.farm?.seeded).toBe(true);
+    const m = loaded.animals!.find((a) => a.id === mother?.id);
+    expect(m, 'the mother').toBeDefined();
+    expect(m!.lastBirthAt, 'mother lastBirthAt').toBeGreaterThanOrEqual(mother!.lastBirthAt);
     expect(loaded.train).toBeTruthy();
     expect(loaded.visitors?.length).toBeGreaterThan(0);
     expect(loaded.hotel?.rooms.some((r) => r.guestId !== null)).toBe(true);
