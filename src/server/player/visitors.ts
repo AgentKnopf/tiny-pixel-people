@@ -1,7 +1,6 @@
 import { z } from 'zod';
-import { dayOf, formatClock, minuteOfDay, parseClock } from '../../shared/time.ts';
+import { dayOf, formatClock, parseClock } from '../../shared/time.ts';
 import type {
-  DayPlan,
   GameMinutes,
   Provenance,
   VillagerId,
@@ -18,7 +17,7 @@ import type { VisitorService } from './types.ts';
 export const STATION_ID = 'station';
 /** Visitors check in on reaching the hotel, or after this long at the latest (game minutes). */
 export const CHECK_IN_TIMEOUT = 120;
-/** On the leaving day the plan ends at the station this long before departure. */
+/** Visitors head for the station (status 'leaving', room freed) this long before departure; cognition cuts the plan. */
 export const STATION_LEAD_MINUTES = 30;
 /** One-day stays take the morning train when it is more than this long after arrival. */
 const MORNING_TRAIN_MIN_GAP = 18 * 60;
@@ -51,14 +50,14 @@ export interface VisitorEvents {
 /**
  * Train visitors (spec v2 §5.2). The engine spawns the profiles `onTrainArrived` returns on the
  * platform and removes the ids `onTrainDeparting` returns; this service decides who comes and goes,
- * pre-generates profiles via `visitor.create` and runs check-in, the leaving-day plan cut and check-out.
+ * pre-generates profiles via `visitor.create` and runs check-in and check-out. The leaving-day plan
+ * cut (last block at `station`) is done by cognition's plan sanitizing.
  */
 export class Visitors implements VisitorService {
   private infos: VisitorInfo[] = [];
   readonly profiles = new Map<VillagerId, VillagerProfile>();
   private readonly ready: Ready[] = [];
   private readonly missed = new Map<VillagerId, number>();
-  private readonly cutPlans = new WeakSet<DayPlan>();
   private pending = 0;
   private cursor = 0;
   private started = false;
@@ -130,7 +129,7 @@ export class Visitors implements VisitorService {
     return boarding;
   }
 
-  /** Every sim step: check-in, the leaving-day plan cut and the walk to the station. */
+  /** Every sim step: check-in, and 'leaving' (room freed) 30 minutes before departure. */
   update(now: GameMinutes): void {
     if (!this.started) {
       this.started = true;
@@ -150,7 +149,6 @@ export class Visitors implements VisitorService {
         info.roomId = null;
         this.events.updated(info);
       }
-      if (v?.plan) this.cutPlan(info, v.plan);
     }
   }
 
@@ -240,31 +238,6 @@ export class Visitors implements VisitorService {
     info.roomId = null;
     this.events.updated(info);
     if (profile) this.ctx.log(`${profile.name} left on the train`);
-  }
-
-  /** On the leaving day the plan ends with a station block from departure − 30 min (spec v2 §5.2). */
-  private cutPlan(info: VisitorInfo, plan: DayPlan): void {
-    const lead = info.departsAt - STATION_LEAD_MINUTES;
-    if (plan.day !== dayOf(lead) || this.cutPlans.has(plan)) return;
-    const from = minuteOfDay(lead);
-    const end = Math.min(1440, from + STATION_LEAD_MINUTES + 10);
-    const last = plan.blocks[plan.blocks.length - 1];
-    if (
-      last &&
-      last.locationId === STATION_ID &&
-      last.start <= from &&
-      plan.blocks.every((b) => b.end <= end)
-    ) {
-      this.cutPlans.add(plan);
-      return;
-    }
-    const blocks = plan.blocks
-      .filter((b) => b.start < from)
-      .map((b) => (b.end > from ? { ...b, end: from } : b));
-    blocks.push({ start: from, end, locationId: STATION_ID, activity: 'Waiting for the train', emoji: '🧳' });
-    const next: DayPlan = { ...plan, blocks, revision: plan.revision + 1 };
-    this.cutPlans.add(next);
-    this.ctx.host.setPlan(info.villagerId, next);
   }
 
   // ---------- profiles ----------

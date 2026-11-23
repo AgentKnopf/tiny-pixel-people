@@ -57,7 +57,7 @@ interface RunStats {
 /**
  * Drive trains like the engine would: spawn arrivals on the platform at each arrival time and
  * board at arrival + dwell. Visitors walk to the hotel an hour after arriving and to the platform
- * when their plan says so; `stuck` visitors never reach the platform.
+ * once they are leaving; `stuck` visitors never reach the platform.
  */
 async function run(
   host: FakeHost,
@@ -99,8 +99,7 @@ async function run(
       const s = host.states.find((v) => v.id === info.villagerId);
       if (!s) continue;
       if (info.status === 'arriving' && host.time - info.arrivedAt >= 60) s.locationId = 'hotel';
-      const block = s.plan?.blocks.find((b) => b.start <= m && m < b.end);
-      if (block?.locationId === 'station') s.locationId = 'station';
+      if (info.status === 'leaving') s.locationId = 'station';
     }
     pw.update(1);
     await Promise.resolve();
@@ -194,32 +193,6 @@ describe('VisitorService', () => {
       expect(host.time).toBeGreaterThan(m.visitor.arrivedAt);
     }
     expect(new Set(checkIns.map((m) => m.visitor.villagerId)).size).toBe(stats.arrivals.size);
-  });
-
-  it('cuts the leaving-day plan to end at the station', async () => {
-    const { host, pw } = world(mockQueue());
-    host.time = at(0, '09:59');
-    await runWithPlans(host, pw, 0.01);
-    const [first] = pw.visitors.visitors();
-    expect(first).toBeDefined();
-    const id = first!.villagerId;
-    const lead = first!.departsAt - 30;
-    host.time = lead - 600;
-    const day = dayOf(lead);
-    host.setPlan(id, {
-      day,
-      summary: '',
-      blocks: [{ start: 360, end: 1320, locationId: 'park', activity: 'Relaxing' }],
-      revision: 0,
-      source: 'llm',
-      createdAt: host.time,
-    });
-    pw.update(1);
-    const plan = host.states.find((s) => s.id === id)!.plan!;
-    expect(plan.blocks.at(-1)).toMatchObject({ locationId: 'station', start: minuteOfDay(lead) });
-    expect(plan.blocks[0]!.end).toBe(minuteOfDay(lead));
-    pw.update(1);
-    expect(host.states.find((s) => s.id === id)!.plan).toBe(plan);
   });
 
   it('a visitor who misses the train leaves on a later one, at the latest the second after', async () => {
