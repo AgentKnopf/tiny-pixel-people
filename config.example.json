@@ -59,7 +59,7 @@
   "player": {
     "name": "You",
     "petName": "Pip",
-    "petSpecies": "dog"
+    "petSpecies": "cat"
   },
   "economy": {
     "startGold": 50,
