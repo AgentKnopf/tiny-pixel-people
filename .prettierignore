@@ -3,3 +3,4 @@ node_modules
 saves
 package-lock.json
 assets
+data/map/village.json

@@ -76,7 +76,7 @@ describe('server smoke test', () => {
 
   it('sends hello and routes commands over the WebSocket', async () => {
     const { ws, hello, next } = await connect();
-    expect(hello.map.width).toBe(48);
+    expect(hello.map.width).toBe(128);
     expect(hello.llm.provider).toBe('mock');
     expect(hello.map.scenes.map((s) => s.id)).toContain('home');
     expect(hello.snapshot.player.id).toBe('player');

@@ -1,5 +1,16 @@
-import type { ItemSpawnArea, Location, Rect, Scene } from '../../src/shared/types.ts';
+import {
+  ZOO_SPECIES,
+  type District,
+  type InteriorTemplate,
+  type ItemSpawnArea,
+  type Location,
+  type LocationHours,
+  type Scene,
+  type WorldMap,
+  type ZooSpecies,
+} from '../../src/shared/types.ts';
 import { rng } from './canvas.ts';
+import { buildInteriors } from './interiors.ts';
 import {
   DECORATION_DEFS,
   MapBuilder,
@@ -13,65 +24,33 @@ import {
 } from './map.ts';
 import { E, N, S, W, type TileAtlas } from './tiles.ts';
 
-/** Location fields added in v2 (spec v2 §2): interior template, ambient animal habitat, crow perch. */
-export interface LocationV2 extends Location {
-  district?: District;
-  interiorId?: InteriorId;
-  /** Habitat rect for animals that live here (enclosure interior, pasture, lake, woods). */
-  pen?: Rect;
-  /** Roof tiles the post office crow hops between. */
-  perch?: Rect;
-}
-
-export type District = 'town' | 'post_row' | 'zoo' | 'farmstead' | 'market' | 'station' | 'forest';
-export type InteriorId = 'cottage_a' | 'cottage_b' | 'cottage_c' | 'hotel_lobby' | 'post_office';
-
-export interface DistrictDef {
-  id: District;
-  name: string;
-  rect: Rect;
-}
-
 export interface VillageV2Draft {
   builder: MapBuilder;
-  locations: LocationV2[];
+  locations: Location[];
   scenes: Scene[];
   itemSpawns: ItemSpawnArea[];
   decorations: DecorationDef[];
-  districts: DistrictDef[];
+  districts: District[];
+  interiors: InteriorTemplate[];
+  railway: NonNullable<WorldMap['railway']>;
 }
 
 export const V2_WIDTH = 128;
 export const V2_HEIGHT = 60;
 
-export const DISTRICTS: DistrictDef[] = [
+/** Spec v2 §2 district rects; post_row overlaps town and zoo and is looked up first. */
+export const DISTRICTS: District[] = [
   { id: 'town', name: 'Old town', rect: { x: 0, y: 0, w: 48, h: 30 } },
   { id: 'post_row', name: 'Post Row', rect: { x: 44, y: 0, w: 20, h: 9 } },
   { id: 'zoo', name: 'City Zoo & Rides', rect: { x: 48, y: 0, w: 48, h: 34 } },
+  { id: 'forest', name: 'Whisper Woods', rect: { x: 96, y: 0, w: 32, h: 56 } },
   { id: 'farmstead', name: 'Meadow Farm', rect: { x: 0, y: 30, w: 36, h: 30 } },
   { id: 'market', name: 'Market Road', rect: { x: 36, y: 30, w: 24, h: 30 } },
-  { id: 'station', name: 'Station & Hotel', rect: { x: 60, y: 33, w: 36, h: 27 } },
-  { id: 'forest', name: 'Whisper Woods', rect: { x: 96, y: 0, w: 32, h: 56 } },
+  { id: 'station', name: 'Station & Hotel', rect: { x: 60, y: 36, w: 36, h: 24 } },
 ];
 
-/** Species per enclosure; ids are `enclosure_<species>`. */
-export const ZOO_SPECIES = [
-  'penguin',
-  'polar_bear',
-  'panda',
-  'monkey',
-  'lion',
-  'zebra',
-  'giraffe',
-  'elephant',
-  'hippo',
-  'kangaroo',
-  'flamingo',
-  'crocodile',
-] as const;
-export type ZooSpecies = (typeof ZOO_SPECIES)[number];
-
-const INTERIORS: InteriorId[] = ['cottage_a', 'cottage_b', 'cottage_c'];
+const ZOO_HOURS: LocationHours = { open: '08:00', close: '21:00' };
+const HOUSE_INTERIORS = ['cottage_a', 'cottage_b', 'cottage_c'] as const;
 
 const p = (x: number, y: number) => ({ x, y });
 
@@ -80,11 +59,7 @@ export function buildVillageV2(atlas: TileAtlas): VillageV2Draft {
   const m = new MapBuilder(V2_WIDTH, V2_HEIGHT, atlas);
   layoutTown(m);
   const townCount = m.locations.length;
-  const v2: LocationV2[] = [];
-  const add = (loc: LocationV2) => {
-    m.location(loc);
-    v2.push(loc);
-  };
+  const add = (loc: Location) => m.location(loc);
   const lamp = (x: number, y: number) => {
     m.place('lamp', x, y);
     m.lights.push({ x, y, kind: 'lamp' });
@@ -104,11 +79,15 @@ export function buildVillageV2(atlas: TileAtlas): VillageV2Draft {
   const postDoor = m.building('post_office', 50, 2);
   const franziDoor = m.building('house_franzi', 58, 2);
   for (const d of [laudeDoor, postDoor, franziDoor]) m.paint(d.x, d.y + 1, 1, 1, 'path');
-  m.place('notice_board', 56, 4);
+  m.place('notice_board', 56, 5);
   m.place('post_box', 49, 4);
   lamp(63, 5);
-  m.place('flowerpot_pink', 57, 6);
   m.place('flowerpot_yellow', 63, 3);
+  const houseSpots = (d: { x: number; y: number }) => [
+    p(d.x, d.y + 1),
+    p(d.x - 1, d.y + 1),
+    p(d.x + 1, d.y + 1),
+  ];
   add({
     id: 'house_laude',
     name: "Laude's house",
@@ -116,29 +95,39 @@ export function buildVillageV2(atlas: TileAtlas): VillageV2Draft {
     area: { x: 44, y: 2, w: 5, h: 4 },
     entry: p(laudeDoor.x, laudeDoor.y + 1),
     door: laudeDoor,
-    spots: [
-      p(laudeDoor.x, laudeDoor.y + 1),
-      p(laudeDoor.x - 1, laudeDoor.y + 1),
-      p(laudeDoor.x + 1, laudeDoor.y + 1),
-    ],
-    ownerIds: ['laude'],
+    spots: houseSpots(laudeDoor),
     district: 'post_row',
     interiorId: 'cottage_b',
-    description: 'Grey-walled cottage with an ochre roof, a short walk east of the bakery.',
+    description: 'Grey-walled cottage with an ochre roof on the bakery road.',
   });
   add({
     id: 'post_office',
     name: 'Post Office',
-    kind: 'shop',
-    area: { x: 50, y: 2, w: 8, h: 5 },
+    kind: 'post',
+    area: { x: 50, y: 2, w: 7, h: 4 },
     entry: p(postDoor.x, postDoor.y + 1),
     door: postDoor,
-    spots: [p(postDoor.x, postDoor.y + 1), p(postDoor.x - 1, postDoor.y + 1), p(56, 6), p(57, 7), p(51, 6)],
-    perch: { x: 51, y: 2, w: 4, h: 1 },
+    spots: [
+      p(postDoor.x, postDoor.y + 1),
+      p(postDoor.x - 1, postDoor.y + 1),
+      p(postDoor.x + 1, postDoor.y + 1),
+    ],
+    perch: [p(51, 2), p(52, 2), p(54, 2), p(55, 2)],
+    hours: { open: '08:00', close: '18:00' },
     district: 'post_row',
     interiorId: 'post_office',
     description:
-      "Laude's blue-roofed post office with a notice board out front and a crow on the roof; the Keep cupboard is inside.",
+      "Laude's blue-roofed post office; the crow Quill lives on the roof and the Keep cupboard is inside.",
+  });
+  add({
+    id: 'notice_board',
+    name: 'Notice board',
+    kind: 'public',
+    area: { x: 56, y: 5, w: 2, h: 2 },
+    entry: p(55, 6),
+    spots: [p(55, 6), p(56, 7), p(57, 7)],
+    district: 'post_row',
+    description: 'Roofed cork board in front of the post office where anyone can pin a notice.',
   });
   add({
     id: 'house_franzi',
@@ -147,12 +136,7 @@ export function buildVillageV2(atlas: TileAtlas): VillageV2Draft {
     area: { x: 58, y: 2, w: 5, h: 4 },
     entry: p(franziDoor.x, franziDoor.y + 1),
     door: franziDoor,
-    spots: [
-      p(franziDoor.x, franziDoor.y + 1),
-      p(franziDoor.x - 1, franziDoor.y + 1),
-      p(franziDoor.x + 1, franziDoor.y + 1),
-    ],
-    ownerIds: ['franzi'],
+    spots: houseSpots(franziDoor),
     district: 'post_row',
     interiorId: 'cottage_c',
     description: 'Rose-roofed cottage right next to the post office.',
@@ -191,10 +175,11 @@ export function buildVillageV2(atlas: TileAtlas): VillageV2Draft {
     flamingo: { ground: 'sand', pool: true, props: ['reeds', 'reeds'] },
     crocodile: { ground: 'mud', pool: true, props: ['log'] },
   };
+  if (enclosures.length !== ZOO_SPECIES.length) throw new Error('one enclosure per zoo species');
   for (const e of enclosures) {
     const hab = HABITAT[e.species];
     const inner = { x: e.x + 1, y: e.y + 1, w: e.w - 2, h: e.h - 2 };
-    m.paint(e.x, e.y, e.w, e.h, hab.ground === 'grass' ? 'grass' : hab.ground);
+    m.paint(e.x, e.y, e.w, e.h, hab.ground);
     if (hab.pool) m.paint(inner.x + inner.w - 3, inner.y + inner.h - 2, 3, 2, 'water');
     m.fence(e.x, e.y, e.w, e.h, [], 'zfence');
     hab.props.forEach((name, i) => {
@@ -205,35 +190,40 @@ export function buildVillageV2(atlas: TileAtlas): VillageV2Draft {
     });
     const cx = e.x + Math.floor(e.w / 2);
     const vy = e.view === 'S' ? e.y + e.h : e.y - 1;
+    const label = e.species.replace('_', ' ');
     add({
-      id: `enclosure_${e.species}`,
-      name: `${e.species.replace('_', ' ').replace(/^./, (c) => c.toUpperCase())} enclosure`,
-      kind: 'public',
+      id: `zoo_${e.species}`,
+      name: `${label.replace(/^./, (c) => c.toUpperCase())} enclosure`,
+      kind: 'zoo',
       area: { x: e.x, y: e.y, w: e.w, h: e.h },
       entry: p(cx, vy),
       spots: [p(cx - 1, vy), p(cx, vy), p(cx + 1, vy)],
+      species: e.species,
       pen: inner,
+      hours: ZOO_HOURS,
       district: 'zoo',
-      description: `Fenced ${e.species.replace('_', ' ')} enclosure; visitors watch from the path.`,
+      description: `Fenced ${label} enclosure; visitors watch from the path.`,
     });
   }
-  // gate and rest corner
+  m.place('zoo_gate', 64, 6);
+  add({
+    id: 'zoo_gate',
+    name: 'Zoo gate',
+    kind: 'zoo',
+    area: { x: 64, y: 6, w: 1, h: 3 },
+    entry: p(64, 8),
+    spots: [p(63, 7), p(65, 7), p(63, 8), p(65, 8)],
+    hours: ZOO_HOURS,
+    district: 'zoo',
+    description: 'Striped gate arch over the promenade where the zoo begins.',
+  });
+  // west gate from the town road at y 20, rest corner
   m.place('pillar_red', 48, 18);
   m.place('pillar_red', 48, 22);
   m.place('sign_zoo', 50, 18);
   m.place('bench', 92, 11);
   m.place('bin', 94, 13);
   m.place('balloons', 94, 9);
-  add({
-    id: 'zoo',
-    name: 'City Zoo',
-    kind: 'public',
-    area: { x: 48, y: 0, w: 48, h: 34 },
-    entry: p(49, 20),
-    spots: [p(49, 20), p(50, 21), p(63, 12), p(92, 14), p(60, 17), p(76, 8)],
-    district: 'zoo',
-    description: 'Zoo with twelve enclosures, promenades, food carts and the rides; the gate faces the town.',
-  });
 
   // rides: rollercoaster loop with station, ferris wheel, carousel, burger joint, ice cream trucks
   const loop = { x: 49, y: 22, w: 16, h: 9 };
@@ -258,21 +248,19 @@ export function buildVillageV2(atlas: TileAtlas): VillageV2Draft {
     m.collision[ty * V2_WIDTH + tx] = 1;
   }
   m.place('coaster_station', 55, 20);
-  for (const [x, y] of [
-    [52, 27],
-    [58, 25],
-  ] as const)
-    m.place('tree_green', x, y);
+  m.place('tree_green', 52, 27);
+  m.place('tree_green', 58, 25);
   m.place('flowers_yellow', 55, 24);
   m.place('flowers_pink', 61, 28);
   add({
     id: 'rollercoaster',
     name: 'Rollercoaster',
-    kind: 'public',
+    kind: 'ride',
     area: { x: 49, y: 20, w: 16, h: 11 },
     entry: p(56, 21),
-    spots: [p(55, 21), p(56, 21), p(57, 21), p(55, 20), p(57, 20)],
-    pen: loop,
+    spots: [p(55, 21), p(56, 21), p(57, 21), p(55, 20), p(57, 20), p(54, 21), p(58, 21), p(53, 21)],
+    ride: { capacity: 8, durationMin: 10, playerCost: 4, funGain: 35 },
+    hours: ZOO_HOURS,
     district: 'zoo',
     description:
       'Red steel rollercoaster loop; riders queue and board at the striped station on its north side.',
@@ -281,10 +269,12 @@ export function buildVillageV2(atlas: TileAtlas): VillageV2Draft {
   add({
     id: 'ferris_wheel',
     name: 'Ferris wheel',
-    kind: 'public',
+    kind: 'ride',
     area: { x: 67, y: 21, w: 6, h: 7 },
     entry: p(70, 28),
-    spots: [p(69, 28), p(70, 28), p(71, 28)],
+    spots: [p(69, 28), p(70, 28), p(71, 28), p(68, 28), p(72, 28)],
+    ride: { capacity: 8, durationMin: 15, playerCost: 3, funGain: 25 },
+    hours: ZOO_HOURS,
     district: 'zoo',
     description: 'Ferris wheel with eight coloured gondolas, a favourite for dates at sunset.',
   });
@@ -292,10 +282,12 @@ export function buildVillageV2(atlas: TileAtlas): VillageV2Draft {
   add({
     id: 'carousel',
     name: 'Carousel',
-    kind: 'public',
+    kind: 'ride',
     area: { x: 74, y: 22, w: 5, h: 5 },
     entry: p(76, 27),
-    spots: [p(75, 27), p(76, 27), p(77, 27)],
+    spots: [p(75, 27), p(76, 27), p(77, 27), p(74, 27), p(78, 27)],
+    ride: { capacity: 6, durationMin: 8, playerCost: 2, funGain: 20 },
+    hours: ZOO_HOURS,
     district: 'zoo',
     description: 'Striped carousel under a round canopy.',
   });
@@ -303,7 +295,7 @@ export function buildVillageV2(atlas: TileAtlas): VillageV2Draft {
   add({
     id: 'burger_joint',
     name: 'Burger Joint',
-    kind: 'shop',
+    kind: 'food',
     area: { x: 80, y: 26, w: 7, h: 4 },
     entry: p(burgerDoor.x, burgerDoor.y + 1),
     door: burgerDoor,
@@ -311,26 +303,29 @@ export function buildVillageV2(atlas: TileAtlas): VillageV2Draft {
       p(burgerDoor.x - 1, burgerDoor.y + 1),
       p(burgerDoor.x + 1, burgerDoor.y + 1),
       p(89, 29),
-      p(90, 30),
+      p(92, 29),
     ],
+    hours: { open: '11:00', close: '21:00' },
     district: 'zoo',
-    description: 'Burger joint with a yellow-and-red awning; serves burgers made from farm produce.',
+    description: 'Burger joint with a yellow-and-red awning and parasol tables; burgers come from the farm.',
   });
   m.place('umbrella_red', 89, 27);
   m.place('umbrella_teal', 92, 27);
-  m.place('ice_cream_truck', 65, 30);
-  m.place('ice_cream_truck', 88, 25);
-  for (const [i, t] of [p(65, 30), p(88, 25)].entries())
+  const trucks = [p(65, 30), p(88, 25)];
+  trucks.forEach((t, i) => {
+    m.place('ice_cream_truck', t.x, t.y);
     add({
       id: `ice_cream_truck_${i + 1}`,
       name: 'Ice cream truck',
-      kind: 'shop',
+      kind: 'food',
       area: { x: t.x, y: t.y, w: 2, h: 1 },
       entry: p(t.x, t.y + 1),
       spots: [p(t.x, t.y + 1), p(t.x + 1, t.y + 1)],
+      hours: { open: '10:00', close: '19:00' },
       district: 'zoo',
       description: 'Pink ice cream truck with a cone on the roof.',
     });
+  });
   m.place('cart_popcorn', 60, 18);
   m.place('cart_lemonade', 79, 18);
   m.place('cart_cotton_candy', 66, 18);
@@ -341,108 +336,110 @@ export function buildVillageV2(atlas: TileAtlas): VillageV2Draft {
   for (const x of [54, 70, 86]) lamp(x, 16);
 
   // ------------------------------------------------------------ farmstead
-  m.paint(18, 33, 2, 13, 'path');
+  m.paint(16, 33, 1, 13, 'path'); // farm lane between the pastures
   m.paint(0, 46, 46, 1, 'path');
   m.paint(13, 53, 33, 1, 'path');
+  m.paint(33, 37, 11, 1, 'path'); // butcher -> market road
   m.place('sign_farm', 13, 29);
-  m.paint(2, 35, 15, 10, 'grass');
-  m.fence(1, 34, 17, 12, [p(17, 40)]);
-  m.fence(20, 34, 14, 11, [p(20, 39)]);
+  m.fence(0, 34, 16, 12, [p(15, 40)]);
+  m.fence(17, 34, 14, 11, [p(17, 39)]);
   m.paint(2, 48, 10, 7, 'mud');
   m.fence(1, 47, 12, 9, [p(6, 47)]);
   const coop = m.place('coop', 8, 48);
   m.place('trough', 4, 36);
-  m.place('trough', 22, 36);
-  m.place('hay', 15, 43);
-  m.place('hay', 31, 42);
-  m.place('tree_green', 9, 39);
+  m.place('trough', 20, 36);
+  m.place('hay', 13, 43);
+  m.place('hay', 28, 42);
+  m.place('tree_green', 8, 39);
   add({
     id: 'cow_pasture',
     name: 'Cow pasture',
-    kind: 'nature',
-    area: { x: 1, y: 34, w: 17, h: 12 },
-    entry: p(18, 40),
-    spots: [p(18, 39), p(18, 41), p(16, 40)],
-    pen: { x: 2, y: 35, w: 15, h: 10 },
+    kind: 'farm',
+    area: { x: 0, y: 34, w: 16, h: 12 },
+    entry: p(16, 40),
+    spots: [p(16, 41), p(16, 42), p(16, 43)],
+    species: 'cow',
+    pen: { x: 1, y: 35, w: 14, h: 10 },
     district: 'farmstead',
-    description: 'Large fenced pasture for up to ten cows (room for more); gate on the east lane.',
+    description: 'Large fenced cow pasture with room for more than ten cows; gate on the farm lane.',
   });
   add({
     id: 'sheep_pasture',
     name: 'Sheep pasture',
-    kind: 'nature',
-    area: { x: 20, y: 34, w: 14, h: 11 },
-    entry: p(19, 39),
-    spots: [p(19, 38), p(21, 39), p(19, 40)],
-    pen: { x: 21, y: 35, w: 12, h: 9 },
+    kind: 'farm',
+    area: { x: 17, y: 34, w: 14, h: 11 },
+    entry: p(16, 39),
+    spots: [p(16, 38), p(16, 37), p(16, 36)],
+    species: 'sheep',
+    pen: { x: 18, y: 35, w: 12, h: 9 },
     district: 'farmstead',
-    description: 'Fenced sheep pasture; gate on the west lane.',
+    description: 'Fenced sheep pasture; gate on the farm lane.',
   });
   add({
     id: 'chicken_coop',
     name: 'Chicken coop',
-    kind: 'nature',
+    kind: 'farm',
     area: { x: 1, y: 47, w: 12, h: 9 },
     entry: p(6, 46),
     door: p(coop.x + 1, coop.y + 2),
-    spots: [p(5, 46), p(6, 48), p(7, 46)],
+    spots: [p(5, 46), p(7, 46), p(8, 46)],
+    species: 'chicken',
     pen: { x: 2, y: 48, w: 10, h: 7 },
     district: 'farmstead',
-    description: 'Chicken yard with a little coop; eggs are collected from the coop door.',
+    description: 'Muddy chicken yard with a little coop; eggs are collected at the coop.',
   });
   const farmhouseDoor = m.building('farmhouse', 14, 48);
   m.paint(farmhouseDoor.x, farmhouseDoor.y + 1, 1, 1, 'path');
   add({
     id: 'farmhouse',
     name: 'Farmhouse',
-    kind: 'shop',
+    kind: 'farm',
     area: { x: 14, y: 48, w: 6, h: 4 },
     entry: p(farmhouseDoor.x, farmhouseDoor.y + 1),
     door: farmhouseDoor,
     spots: [p(farmhouseDoor.x + 1, farmhouseDoor.y + 1), p(farmhouseDoor.x, farmhouseDoor.y + 2)],
     district: 'farmstead',
-    interiorId: 'cottage_a',
-    description: 'Farmhouse where the farm work is organised; milk, eggs and wool are sold from here.',
+    description: 'Farm office and farm shop counter (a workplace, not a home).',
   });
   const barnDoor = m.building('barn', 21, 48);
   add({
     id: 'barn',
     name: 'Barn',
-    kind: 'nature',
+    kind: 'farm',
     area: { x: 21, y: 48, w: 7, h: 5 },
     entry: p(barnDoor.x, barnDoor.y + 1),
     door: barnDoor,
     spots: [p(barnDoor.x - 1, barnDoor.y + 1), p(barnDoor.x + 1, barnDoor.y + 1)],
     district: 'farmstead',
-    description: 'Big red barn for hay, tools and animals at night.',
+    description: "Big red barn: the farmer's workplace, where the cheese is made.",
   });
-  const butcherDoor = m.building('butcher', 30, 48);
-  m.paint(butcherDoor.x, butcherDoor.y + 1, 1, 1, 'path');
+  const butcherDoor = m.building('butcher', 31, 33);
   add({
     id: 'butcher',
     name: 'Butcher',
-    kind: 'shop',
-    area: { x: 30, y: 48, w: 5, h: 4 },
+    kind: 'farm',
+    area: { x: 31, y: 33, w: 5, h: 4 },
     entry: p(butcherDoor.x, butcherDoor.y + 1),
     door: butcherDoor,
-    spots: [p(butcherDoor.x, butcherDoor.y + 2), p(butcherDoor.x + 1, butcherDoor.y + 2)],
+    spots: [p(butcherDoor.x + 1, butcherDoor.y + 1), p(butcherDoor.x + 2, butcherDoor.y + 1)],
     district: 'farmstead',
-    description: 'Small butcher shed at the farm edge by the market road (off-screen, nothing graphic).',
+    description: 'Small shed by the east-west road where animals leave the farm (off-screen).',
   });
   m.place('churn', 20, 50);
   m.place('hay', 28, 50);
-  m.place('crate', 35, 51);
+  m.place('hay', 31, 50);
+  m.place('crate', 32, 50);
   lamp(13, 50);
   lamp(29, 51);
 
   // ------------------------------------------------------------ market road
   m.paint(46, 48, 14, 2, 'path');
-  m.place('stall_red', 40, 36);
+  m.place('stall_red', 39, 39);
   m.place('stall_blue', 47, 36);
   m.place('stall_red', 47, 42);
-  m.place('crate', 40, 41);
-  m.place('barrel', 41, 41);
-  m.place('bench', 40, 44);
+  m.place('crate', 40, 42);
+  m.place('barrel', 41, 42);
+  m.place('bench', 40, 45);
   for (const y of [34, 40, 50]) lamp(46, y);
   add({
     id: 'market',
@@ -450,7 +447,7 @@ export function buildVillageV2(atlas: TileAtlas): VillageV2Draft {
     kind: 'public',
     area: { x: 36, y: 33, w: 24, h: 23 },
     entry: p(45, 39),
-    spots: [p(43, 38), p(46, 39), p(43, 44), p(46, 45), p(41, 39)],
+    spots: [p(43, 38), p(46, 39), p(43, 44), p(46, 45), p(41, 40), p(48, 38)],
     district: 'market',
     description: 'Road from the town to the station with market stalls and spare plots for new shops.',
   });
@@ -463,7 +460,7 @@ export function buildVillageV2(atlas: TileAtlas): VillageV2Draft {
   add({
     id: 'hotel',
     name: 'Hotel',
-    kind: 'shop',
+    kind: 'hotel',
     area: { x: 80, y: 38, w: 11, h: 6 },
     entry: p(hotelDoor.x, hotelDoor.y + 1),
     door: hotelDoor,
@@ -473,16 +470,17 @@ export function buildVillageV2(atlas: TileAtlas): VillageV2Draft {
     description: 'Three-storey hotel for train guests; the lobby leads to six rooms.',
   });
   const stationDoor = m.building('station', 64, 46);
-  for (let x = 60; x < 96; x++) m.layers.decor[55 * V2_WIDTH + x] = 'platform_line';
+  const platform = { x: 60, y: 53, w: 36, h: 3 };
+  for (let x = platform.x; x < platform.x + platform.w; x++)
+    m.layers.decor[55 * V2_WIDTH + x] = 'platform_line';
   add({
     id: 'station',
     name: 'Train Station',
-    kind: 'public',
+    kind: 'station',
     area: { x: 60, y: 46, w: 36, h: 10 },
     entry: p(stationDoor.x, stationDoor.y + 1),
     door: stationDoor,
-    spots: [p(66, 54), p(70, 54), p(74, 54), p(78, 54), p(82, 54), p(86, 54), p(90, 54)],
-    pen: { x: 60, y: 53, w: 36, h: 3 },
+    spots: [p(66, 54), p(70, 54), p(74, 54), p(78, 54), p(82, 54), p(86, 54), p(90, 54), p(69, 53)],
     district: 'station',
     description:
       'Station building and a long platform; trains arrive from the east edge and leave to the west.',
@@ -491,12 +489,14 @@ export function buildVillageV2(atlas: TileAtlas): VillageV2Draft {
   m.place('flowerpot_pink', 76, 50);
   m.place('flowerpot_yellow', 63, 50);
   for (const x of [77, 93]) lamp(x, 46);
-  // railway: blocked gravel bed with one track across the whole map
+  // railway: blocked gravel bed with one track across the map, open at the level crossings
+  const crossings = [44, 45, 110, 111];
   for (let x = 0; x < V2_WIDTH; x++) {
     m.layers.decor[57 * V2_WIDTH + x] = 'rail_h';
-    for (let y = 56; y <= 58; y++) m.collision[y * V2_WIDTH + x] = 1;
+    for (let y = 56; y <= 58; y++) m.collision[y * V2_WIDTH + x] = crossings.includes(x) ? 0 : 1;
   }
-
+  for (const x of crossings) for (let y = 56; y <= 58; y++) m.paint(x, y, 1, 1, 'path');
+  const railway: VillageV2Draft['railway'] = { rows: [56, 58], platform };
   // ------------------------------------------------------------ forest
   for (let y = 0; y < 56; y++)
     for (let x = 96; x < V2_WIDTH; x++) if (m.terrainAt(x, y) === 'grass') m.paint(x, y, 1, 1, 'moss');
@@ -573,11 +573,11 @@ export function buildVillageV2(atlas: TileAtlas): VillageV2Draft {
 
   // ------------------------------------------------------------ v1 houses get interiors
   m.locations.slice(0, townCount).forEach((loc) => {
-    if (loc.kind !== 'house') return;
+    loc.district = 'town';
+    if (loc.kind !== 'house' || loc.id === 'player_home') return;
     const n = Number(loc.id.split('_')[1] ?? 0);
-    (loc as LocationV2).interiorId = loc.id === 'player_home' ? 'cottage_a' : INTERIORS[n % 3]!;
+    loc.interiorId = HOUSE_INTERIORS[n % HOUSE_INTERIORS.length]!;
   });
-  m.locations.slice(0, townCount).forEach((loc) => ((loc as LocationV2).district = 'town'));
 
   // ------------------------------------------------------------ nature
   m.reserveLocationTiles();
@@ -638,6 +638,7 @@ export function buildVillageV2(atlas: TileAtlas): VillageV2Draft {
     { id: 'farmstead', name: 'Farmstead', subtitle: 'Meadow Farm', rect: { x: 0, y: 30, w: 36, h: 30 } },
     { id: 'station', name: 'Station', subtitle: 'Station & Hotel', rect: { x: 56, y: 33, w: 40, h: 27 } },
     { id: 'forest', name: 'Forest', subtitle: 'Whisper Woods', rect: { x: 96, y: 0, w: 32, h: 56 } },
+    { id: 'market', name: 'Market', subtitle: 'Market Road', rect: { x: 36, y: 30, w: 24, h: 30 } },
   ];
   const itemSpawns: ItemSpawnArea[] = [
     ...TOWN_ITEM_SPAWNS,
@@ -648,10 +649,12 @@ export function buildVillageV2(atlas: TileAtlas): VillageV2Draft {
   ];
   return {
     builder: m,
-    locations: m.locations as LocationV2[],
+    locations: m.locations,
     scenes,
     itemSpawns,
     decorations: DECORATION_DEFS,
     districts: DISTRICTS,
+    interiors: buildInteriors(atlas),
+    railway,
   };
 }

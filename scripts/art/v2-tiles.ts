@@ -202,6 +202,23 @@ function drawSignBoard(
   return c;
 }
 
+/** Striped banner pole over the promenade; walkable so the path stays open. */
+function drawZooGate(): PixelCanvas {
+  const c = new PixelCanvas(16, 48);
+  const b = new PixelCanvas(16, 48);
+  b.rect(6, 4, 4, 42, P.stone);
+  for (let y = 6; y < 44; y += 6) b.rect(6, y, 4, 3, P.red);
+  b.rect(4, 0, 8, 5, P.flowerYellow);
+  b.rect(0, 8, 16, 10, P.white);
+  b.rect(0, 8, 16, 2, P.red);
+  b.rect(0, 16, 16, 2, P.red);
+  drawText(b, 2, 11, 'ZOO', P.woodDarker);
+  b.outline(P.outline);
+  c.ellipse(8, 46, 4, 1.2, P.shadow);
+  c.blit(b, 0, 0);
+  return c;
+}
+
 function drawPillar(flag: Color): PixelCanvas {
   const c = new PixelCanvas(16, 32);
   const b = new PixelCanvas(16, 32);
@@ -668,6 +685,7 @@ export function extendAtlasV2(atlas: TileAtlas): void {
   });
   o('pillar_red', drawPillar(P.red), { overheadRows: 1, collision: [[0], [1]] });
   o('pillar_green', drawPillar('#5f9a48'), { overheadRows: 1, collision: [[0], [1]] });
+  o('zoo_gate', drawZooGate(), { overheadRows: 2, collision: [[0], [0], [0]] });
   o('tree_acacia', drawAcacia(), {
     overheadRows: 1,
     collision: [

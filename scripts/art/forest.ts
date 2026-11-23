@@ -360,14 +360,14 @@ export function extendAtlasForest(atlas: TileAtlas): void {
   });
   o('post_box', drawPostBox(), { overheadRows: 1, collision: [[0], [1]] });
   atlas.addBuilding('post_office', {
-    w: 6,
+    w: 7,
     h: 4,
     roof: ROOF_POST,
     wall: P.wallCream,
     wallDark: P.wallCreamDark,
     doorCol: 3,
     doorColor: ROOF_POST.base,
-    windows: [8, 72],
+    windows: [8, 88],
     sign: 'POST OFFICE',
     awning: ['#f2c94c', ROOF_POST.light],
     chimney: true,

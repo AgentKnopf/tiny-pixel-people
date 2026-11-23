@@ -3,7 +3,7 @@
  *   npm run art
  * Outputs go to assets/ (served at /assets by Vite) and preview renders to docs/art/.
  */
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PixelCanvas, type Rgba } from './canvas.ts';
@@ -19,7 +19,7 @@ import {
 import { ICON, ICONS as ICONS_V1, drawGlow, drawIcon } from './icons.ts';
 import { ICONS_V2 } from './icons-v2.ts';
 import { buildVillage, type MapBuilder } from './map.ts';
-import type { ItemDef, WorldMap } from '../../src/shared/types.ts';
+import type { ItemDef, Location, WorldMap } from '../../src/shared/types.ts';
 import { encodePng } from './png.ts';
 import { ANIMALS, ANIMAL_FRAMES, ANIMAL_ROWS, CROW_FRAMES, crow, drawAnimalSheet } from './animals.ts';
 import { buildVillageV2 } from './map-v2.ts';
@@ -36,6 +36,7 @@ import {
 } from './rides.ts';
 import { TILE, buildAtlas, type TileAtlas } from './tiles.ts';
 import { extendAtlasV2 } from './v2-tiles.ts';
+import { addInteriorTiles } from './interiors.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const TILE_COLUMNS = 16;
@@ -120,7 +121,9 @@ export function buildArt(): ArtFiles {
   files = new Map();
   const atlas = buildAtlas();
   extendAtlasV2(atlas);
-  const { builder: m, scenes, itemSpawns, decorations } = buildVillage(atlas);
+  addInteriorTiles(atlas);
+  /** The v1 48×30 town is still built for the town previews below. */
+  const { builder: m, scenes, decorations } = buildVillage(atlas);
 
   // tileset
   writePng('assets/tiles/village.png', atlas.sheet(TILE_COLUMNS));
@@ -189,24 +192,7 @@ export function buildArt(): ArtFiles {
   );
   writePng('assets/ui/glow.png', drawGlow(64));
 
-  // map draft
   const toIds = (layer: (string | null)[]) => layer.map((n) => (n ? atlas.id(n) : -1));
-  const worldMap: WorldMap = {
-    width: m.width,
-    height: m.height,
-    tileSize: TILE,
-    tilesets: [{ image: 'tiles/village.png', tileSize: TILE, columns: TILE_COLUMNS, firstIndex: 0 }],
-    layers: {
-      ground: toIds(m.layers.ground),
-      decor: toIds(m.layers.decor),
-      overhead: toIds(m.layers.overhead),
-    },
-    collision: m.collision,
-    locations: m.locations,
-    scenes,
-    itemSpawns,
-  };
-  write('assets/maps/village.json', mapJson(worldMap));
   const items: ItemDef[] = [
     { id: 'flower', name: 'Wild flower', emoji: '🌸', sprite: 'ui/icons.json#flower' },
     { id: 'apple', name: 'Apple', emoji: '🍎', sprite: 'ui/icons.json#apple' },
@@ -215,17 +201,73 @@ export function buildArt(): ArtFiles {
     { id: 'bread', name: 'Bread', emoji: '🍞', sprite: 'ui/icons.json#bread' },
     { id: 'honey', name: 'Honey jar', emoji: '🍯', sprite: 'ui/icons.json#honey' },
   ];
+  // the map (128×60): v1 town unchanged plus the new districts
+  const v2 = buildVillageV2(atlas);
+  const m2 = v2.builder;
+  const worldMap: WorldMap = {
+    width: m2.width,
+    height: m2.height,
+    tileSize: TILE,
+    tilesets: [{ image: 'tiles/village.png', tileSize: TILE, columns: TILE_COLUMNS, firstIndex: 0 }],
+    layers: {
+      ground: toIds(m2.layers.ground),
+      decor: toIds(m2.layers.decor),
+      overhead: toIds(m2.layers.overhead),
+    },
+    collision: m2.collision,
+    locations: v2.locations,
+    scenes: v2.scenes,
+    itemSpawns: v2.itemSpawns,
+    districts: v2.districts,
+    interiors: v2.interiors,
+    railway: v2.railway,
+  };
+  write('assets/maps/village.json', mapJson(worldMap));
+  // data/map/village.json is the same map; the sim owns its location names and owners, so those win.
+  const dataPath = join(ROOT, 'data/map/village.json');
+  const dataLocations = existsSync(dataPath)
+    ? new Map((JSON.parse(readFileSync(dataPath, 'utf8')) as WorldMap).locations.map((l) => [l.id, l]))
+    : new Map<string, Location>();
+  write(
+    'data/map/village.json',
+    mapJson({
+      ...worldMap,
+      locations: worldMap.locations.map((l) => ({ ...l, ...dataLocations.get(l.id) })),
+    }),
+  );
   write(
     'assets/maps/village.meta.json',
     json({
       note: 'Suggested catalogues matching the art; sprite = "<sheet json>#<name>" or an object name in tiles/village.json.',
-      lights: m.lights,
-      decorations,
+      lights: m2.lights,
+      decorations: v2.decorations,
       items,
       pet: { name: 'Pip', species: 'cat', sprite: 'characters/pet-pip.png' },
     }),
   );
-
+  {
+    const pad = 8;
+    const ws = v2.interiors.map((t) => t.width * TILE);
+    const sheet = new PixelCanvas(
+      ws.reduce((s, w) => s + w + pad, pad),
+      Math.max(...v2.interiors.map((t) => t.height * TILE)) + pad * 2,
+    );
+    sheet.rect(0, 0, sheet.width, sheet.height, '#272618');
+    let ox = pad;
+    for (const t of v2.interiors) {
+      for (const layer of ['ground', 'decor', 'overhead'] as const)
+        t.layers[layer].forEach((id, i) => {
+          if (id >= 0)
+            sheet.blit(
+              atlas.tiles[id]!.canvas,
+              ox + (i % t.width) * TILE,
+              pad + Math.floor(i / t.width) * TILE,
+            );
+        });
+      ox += t.width * TILE + pad;
+    }
+    writePng('docs/art/interiors-x3.png', sheet.scaled(3));
+  }
   // previews
   const demo = CHARACTERS.slice(0, 14).map((c, i) => {
     const loc = m.locations.find((l) => l.id === 'square')!;
@@ -291,39 +333,6 @@ export function buildArt(): ArtFiles {
       .scaled(4),
   );
 
-  // v2 map (128×60): v1 town unchanged plus the new districts
-  const v2 = buildVillageV2(atlas);
-  const m2 = v2.builder;
-  const toIds2 = (layer: (string | null)[]) => layer.map((n) => (n ? atlas.id(n) : -1));
-  write(
-    'assets/maps/village-v2.json',
-    mapJson({
-      width: m2.width,
-      height: m2.height,
-      tileSize: TILE,
-      tilesets: [{ image: 'tiles/village.png', tileSize: TILE, columns: TILE_COLUMNS, firstIndex: 0 }],
-      layers: {
-        ground: toIds2(m2.layers.ground),
-        decor: toIds2(m2.layers.decor),
-        overhead: toIds2(m2.layers.overhead),
-      },
-      collision: m2.collision,
-      locations: v2.locations,
-      scenes: v2.scenes,
-      itemSpawns: v2.itemSpawns,
-      districts: v2.districts,
-    }),
-  );
-  write(
-    'assets/maps/village-v2.meta.json',
-    json({
-      note: 'Companion of village-v2.json; same shape as village.meta.json.',
-      lights: m2.lights,
-      decorations: v2.decorations,
-      items,
-      pet: { name: 'Pip', species: 'cat', sprite: 'characters/pet-pip.png' },
-    }),
-  );
   // animals
   const animalSheets: { key: string; sheet: PixelCanvas }[] = [];
   const animalIndex = ANIMALS.map(({ group, species, age, spec }) => {
