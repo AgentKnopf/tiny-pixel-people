@@ -10,6 +10,7 @@ import {
   trackMasks,
   trainPose,
 } from '../../src/client/render/rides.ts';
+import { placeLabel } from '../../src/client/render/renderer.ts';
 
 /** 6×4 loop of coaster tiles inside an 8×6 map, the way the art map paints it. */
 function coasterMap(): { map: WorldMap; names: Map<number, string> } {
@@ -26,7 +27,7 @@ function coasterMap(): { map: WorldMap; names: Map<number, string> } {
     height: H,
     tileSize: 16,
     layers: { ground: [], decor, overhead: [] },
-    railway: { rows: [4, 5], platform: { x: 0, y: 2, w: 8, h: 2 } },
+    railway: { rows: [3, 5], platform: { x: 0, y: 1, w: 8, h: 2 } },
   } as unknown as WorldMap;
   return { map, names };
 }
@@ -106,5 +107,18 @@ describe('train', () => {
   it('needs a railway', () => {
     const noRail = { ...map, railway: undefined } as WorldMap;
     expect(trainPose(t('boarding'), 610, noRail)).toBeNull();
+  });
+});
+
+describe('name tag placement', () => {
+  it('moves a covered tag down, then drops it only when allowed', () => {
+    const placed: { x: number; y: number; w: number; h: number }[] = [];
+    const tag = { x: 0, y: 0, w: 40, h: 10 };
+    expect(placeLabel(tag, placed, true)).toBe(0);
+    expect(placeLabel(tag, placed, true)).toBe(11);
+    expect(placeLabel(tag, placed, true)).toBe(22);
+    expect(placeLabel(tag, placed, true)).toBeNull();
+    expect(placeLabel(tag, placed, false)).toBe(0);
+    expect(placeLabel({ ...tag, x: 60 }, placed, true)).toBe(0);
   });
 });

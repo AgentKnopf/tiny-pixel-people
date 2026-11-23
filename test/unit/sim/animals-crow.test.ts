@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MINUTES_PER_DAY, minuteOfDay } from '../../../src/shared/time.ts';
-import { makeSim, PERCH, POST_OFFICE } from './animal-fixture.ts';
+import { animalTestMap, makeSim, PERCH, POST_OFFICE } from './animal-fixture.ts';
 
 const onPerch = (p: { x: number; y: number }) => PERCH.some((q) => q.x === p.x && q.y === p.y);
 
@@ -51,22 +51,11 @@ describe('AnimalSim crow', () => {
   });
 
   it('has no crow without a perch', () => {
-    const sim = makeSim({
-      map: (() => {
-        const m = makeSim().crowId() ? undefined : undefined;
-        void m;
-        return { ...animalMapWithoutPerch() };
-      })(),
-    });
+    const map = animalTestMap();
+    map.locations = map.locations.map((l) => (l.id === 'post_office' ? { ...l, perch: undefined } : l));
+    const sim = makeSim({ map });
     expect(sim.crowId()).toBeNull();
     sim.caw('letter');
     expect(sim.step(8 * 60 + 1, []).emotes).toEqual([]);
   });
 });
-
-import { animalTestMap } from './animal-fixture.ts';
-function animalMapWithoutPerch() {
-  const m = animalTestMap();
-  m.locations = m.locations.map((l) => (l.id === 'post_office' ? { ...l, perch: undefined } : l));
-  return m;
-}

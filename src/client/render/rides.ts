@@ -144,7 +144,7 @@ export const CAR_TILES = 4;
 export interface TrainPose {
   /** Left edge of the engine in tiles (fractional); carriages follow to the east. */
   x: number;
-  /** Rail row the frames stand on. */
+  /** Rail row the frames stand on (the middle of the `railway.rows` bed). */
   row: number;
   moving: boolean;
 }
@@ -160,7 +160,8 @@ export function trainPose(train: TrainState | null, gameTime: number, map: World
   if (!train || !rail || train.status === 'away') return null;
   const len = TRAIN_CARS * CAR_TILES;
   const stop = rail.platform.x + Math.floor((rail.platform.w - len) / 2);
-  const row = rail.rows[0];
+  // `rows` is the first and last row of the bed (gravel, rail, gravel); the rails run in the middle.
+  const row = Math.round((rail.rows[0] + rail.rows[1]) / 2);
   if (train.status === 'boarding') return { x: stop, row, moving: false };
   if (train.status === 'arriving') {
     const t = clamp01((gameTime - (train.arrivesAt - TRAIN_MOVE_MIN)) / TRAIN_MOVE_MIN);

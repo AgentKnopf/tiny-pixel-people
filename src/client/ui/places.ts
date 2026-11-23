@@ -42,16 +42,18 @@ export function isOpen(loc: Location, t: number): boolean {
   return open <= close ? m >= open && m < close : m >= open || m < close;
 }
 
-/** Chebyshev distance from a tile to a location's area (0 = inside it). */
+// Distances are Euclidean, like the server's range checks, so buttons show only where the server accepts them.
+
+/** Distance from a tile to a location's area (0 = inside it). */
 export function distanceToArea(loc: Location, p: Point): number {
   const { x, y, w, h } = loc.area;
-  const dx = p.x < x ? x - p.x : p.x >= x + w ? p.x - (x + w - 1) : 0;
-  const dy = p.y < y ? y - p.y : p.y >= y + h ? p.y - (y + h - 1) : 0;
-  return Math.max(dx, dy);
+  const dx = Math.max(x - p.x, 0, p.x - (x + w - 1));
+  const dy = Math.max(y - p.y, 0, p.y - (y + h - 1));
+  return Math.hypot(dx, dy);
 }
 
 export function distance(a: Point, b: Point): number {
-  return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
+  return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
 export const POST_OFFICE_ID: LocationId = 'post_office';
@@ -72,7 +74,7 @@ export function nearNoticeBoard(store: UiStore): boolean {
   if (store.player?.inside) return false;
   const board = store.location(NOTICE_BOARD_ID);
   const p = store.playerTile();
-  return !!board && !!p && distanceToArea(board, p) <= 3;
+  return !!board && !!p && (distanceToArea(board, p) <= 3 || distance(board.entry, p) <= 3);
 }
 
 export function insidePostOffice(store: UiStore): boolean {

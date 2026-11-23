@@ -20,7 +20,7 @@ export function wholeMapScene(map: WorldMap): Scene {
   return {
     id: DEFAULT_SCENE_ID,
     name: 'Plaza',
-    subtitle: 'The whole town',
+    subtitle: 'The old town',
     rect: { x: 0, y: 0, w: map.width, h: map.height },
   };
 }

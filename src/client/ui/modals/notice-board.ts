@@ -22,7 +22,9 @@ export function noticeBoardModal(ctx: UiContext): ModalView {
   textarea.addEventListener('input', () =>
     setText(counter, `${textarea.value.length} / ${NOTICE_MAX_LENGTH}`),
   );
-  textarea.addEventListener('keydown', (ev) => ev.stopPropagation());
+  textarea.addEventListener('keydown', (ev) => {
+    if (ev.key !== 'Escape') ev.stopPropagation();
+  });
   const postBtn = h(
     'button',
     {

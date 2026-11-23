@@ -593,11 +593,11 @@ export function townScatter(m: MapBuilder): void {
 }
 
 export const TOWN_SCENES: readonly Scene[] = [
-  { id: 'plaza', name: 'Plaza', subtitle: 'The whole town', rect: { x: 0, y: 0, w: 48, h: 30 } },
-  { id: 'farm', name: 'Farm', subtitle: 'Scene', rect: { x: 0, y: 8, w: 18, h: 12 } },
-  { id: 'shop_street', name: 'Shop street', subtitle: 'Scene', rect: { x: 26, y: 2, w: 22, h: 14 } },
-  { id: 'park', name: 'Park', subtitle: 'Scene', rect: { x: 30, y: 12, w: 18, h: 10 } },
-  { id: 'square', name: 'Town square', subtitle: 'Scene', rect: { x: 13, y: 5, w: 22, h: 16 } },
+  { id: 'plaza', name: 'Plaza', subtitle: 'The old town', rect: { x: 0, y: 0, w: 48, h: 30 } },
+  { id: 'farm', name: 'Farm', subtitle: 'Crop field', rect: { x: 0, y: 8, w: 18, h: 12 } },
+  { id: 'shop_street', name: 'Shop street', subtitle: 'General Store', rect: { x: 26, y: 2, w: 22, h: 14 } },
+  { id: 'park', name: 'Park', subtitle: 'Pond Park', rect: { x: 30, y: 12, w: 18, h: 10 } },
+  { id: 'square', name: 'Town square', subtitle: 'Fountain and stalls', rect: { x: 13, y: 5, w: 22, h: 16 } },
   { id: 'home', name: 'Your home', subtitle: 'Your cottage', rect: { x: 0, y: 18, w: 16, h: 12 } },
 ];
 

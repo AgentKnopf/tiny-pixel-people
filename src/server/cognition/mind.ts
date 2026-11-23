@@ -55,6 +55,7 @@ import {
   type LoadLevel,
 } from './llm.ts';
 import { MemoryStore } from './memory.ts';
+import { compareIds } from './rng.ts';
 import {
   blockAt,
   describeBlocks,
@@ -95,7 +96,7 @@ import {
 } from './prompts/misc.ts';
 import { settingsFromConfig, type CognitionSettings } from './settings.ts';
 import { villageFor, type Village } from './village.ts';
-import { addVisit, hashUnit, isForest, sanitizeBlocks, type Hours } from './sanitize.ts';
+import { addVisit, hashUnit, isForest, nearestFood, sanitizeBlocks, type Hours } from './sanitize.ts';
 import {
   GREETING_MAX,
   KEEPER,
@@ -202,7 +203,8 @@ export class Mind implements VillagerMind {
   private readonly planDoneAt = new Map<number, number>();
   /** Day of the plan.day job in flight at planToday priority, if any. */
   private urgentPlanDay: number | null = null;
-  private readonly needFixedAt: Partial<Record<keyof Needs, GameMinutes>> = {};
+  /** End (game minutes) of the latest override block per need. */
+  private readonly needFixUntil: Partial<Record<keyof Needs, GameMinutes>> = {};
   private readonly lastTalkedAt = new Map<VillagerId, GameMinutes>();
   private lastArchiveDay = -1;
   private eventRequested = false;
@@ -988,10 +990,10 @@ export class Mind implements VillagerMind {
   private shyVisitPlace(day: number, locations: readonly Location[]): Location | null {
     const cfg = this.deps.config.romance;
     if (!cfg?.enabled) return null;
-    const post = locations.find((l) => l.id === POST_OFFICE);
-    if (!post || workLocation(this.profile, locations) === POST_OFFICE) return null;
     const shy = this.romances().some((r) => r.shy && r.stage !== 'ended' && r.pair.includes(this.id));
     if (!shy) return null;
+    const post = locations.find((l) => l.id === POST_OFFICE);
+    if (!post || workLocation(this.profile, locations) === POST_OFFICE) return null;
     return hashUnit(`${this.settings.seed}:${this.id}:visit:${day}`) < cfg.shyVisitChance ? post : null;
   }
 
@@ -1247,12 +1249,23 @@ export class Mind implements VillagerMind {
       emoji: '🏠',
     };
     if (this.settings.needsEnabled && this.plan) {
-      const o = needOverride(view.self.needs, block, view.locations, this.profile.homeId, mod, (need) => {
-        const at = this.needFixedAt[need];
-        return at !== undefined && view.now - at < 120;
-      });
+      const o = needOverride(
+        view.self.needs,
+        block,
+        view.locations,
+        this.profile.homeId,
+        mod,
+        // Only while its override block runs: a need still critical once the block is over (the
+        // villager went back to work half fed) gets a fresh override at once.
+        (need) => view.now < (this.needFixUntil[need] ?? -Infinity),
+        () => nearestFood(view.locations, this.profile.homeId, view.self.pos, mod, this.zooHours()),
+        (id) => {
+          const l = view.locations.find((x) => x.id === id);
+          return l ? Math.abs(l.entry.x - view.self.pos.x) + Math.abs(l.entry.y - view.self.pos.y) : Infinity;
+        },
+      );
       if (o) {
-        this.needFixedAt[o.need] = view.now;
+        this.needFixUntil[o.need] = view.now - mod + o.block.end;
         this.setPlan({
           ...this.plan,
           blocks: normalizeBlocks(insertBlock(this.plan.blocks, o.block), this.window, this.profile.homeId),
@@ -1547,7 +1560,7 @@ export class Mind implements VillagerMind {
       const villagers = Object.entries(view.villagerNames)
         .filter(([id]) => id !== this.id && id !== PLAYER_ID)
         .map(([id, name]) => ({ id, name, affinity: view.self.relationships[id]?.affinity ?? 0 }))
-        .sort((a, b) => b.affinity - a.affinity || a.id.localeCompare(b.id));
+        .sort((a, b) => b.affinity - a.affinity || compareIds(a.id, b.id));
       const p = eventProposePrompt(
         this.profile,
         view.now,
@@ -1610,7 +1623,7 @@ export class Mind implements VillagerMind {
       .sort(
         (a, b) =>
           (view.self.relationships[b]?.affinity ?? 0) - (view.self.relationships[a]?.affinity ?? 0) ||
-          a.localeCompare(b),
+          compareIds(a, b),
       );
     while (invitees.size < 5 && others.length) invitees.add(others.shift()!);
     const event: VillageEvent = {
@@ -1678,7 +1691,7 @@ export class Mind implements VillagerMind {
     if (this.animalSeenAt === loc.id) return;
     const seen = (view.animalsNearby ?? [])
       .filter((a) => a.distance <= 4 && a.species !== 'crow')
-      .sort((a, b) => a.distance - b.distance || a.id.localeCompare(b.id))[0];
+      .sort((a, b) => a.distance - b.distance || compareIds(a.id, b.id))[0];
     if (!seen) return;
     this.animalSeenAt = loc.id;
     const where = /lake/.test(loc.id)
