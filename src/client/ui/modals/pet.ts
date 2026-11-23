@@ -20,7 +20,9 @@ export function petModal(ctx: UiContext): ModalView {
         maxlength: 20,
         value: name,
         'aria-label': 'Pet name',
-        onkeydown: (ev: Event) => ev.stopPropagation(),
+        onkeydown: (ev: Event) => {
+          if ((ev as KeyboardEvent).key !== 'Escape') ev.stopPropagation();
+        },
       });
       replaceChildren(
         body,
