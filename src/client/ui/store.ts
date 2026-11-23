@@ -2,6 +2,7 @@ import type {
   InspectDataMsg,
   QueueStats,
   ServerMessage,
+  SimStatusMsg,
   VillagerFrame,
   VillagerProfilePublic,
 } from '../../shared/protocol.ts';
@@ -39,7 +40,8 @@ export type Topic =
   | 'selection'
   | 'scene'
   | 'catalog'
-  | 'chat';
+  | 'chat'
+  | 'sim';
 
 export interface ToastItem {
   icon: string;
@@ -91,6 +93,7 @@ export class UiStore {
   catalog: Catalog = DEFAULT_CATALOG;
   chat: ChatLine[] = [];
   chatWith: VillagerId | null = null;
+  simStatus: SimStatusMsg | null = null;
 
   private listeners = new Map<Topic, Set<() => void>>();
   private toastListeners = new Set<(t: ToastItem) => void>();
@@ -233,6 +236,10 @@ export class UiStore {
           this.chat.push({ from: msg.speakerId, to: PLAYER_ID, text: msg.text });
           this.emit('chat');
         }
+        break;
+      case 'sim.status':
+        this.simStatus = msg;
+        this.emit('sim');
         break;
       case 'toast':
         this.toast(msg.icon, msg.text);

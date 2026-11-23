@@ -15,6 +15,7 @@ import { mapModal } from './modals/map.ts';
 import { ModalHost, type ModalView } from './modals/modal.ts';
 import { petModal } from './modals/pet.ts';
 import { createRumorPanel } from './rumor-panel.ts';
+import { createSimStatusBanner } from './sim-status.ts';
 import { createStatsCard } from './stats.ts';
 import { UiStore, type Topic } from './store.ts';
 import { createToasts } from './toasts.ts';
@@ -95,6 +96,7 @@ export function mountUi(root: HTMLElement, host: UiHost, store: UiStore = new Ui
     h('div', { class: 'ui-top-right' }, createStatsCard(store)),
     h('div', { class: 'ui-bottom-left' }, createLlmCard(store), createToolbar(ctx)),
     h('div', { class: 'ui-bottom-right' }, createDock(ctx)),
+    createSimStatusBanner(store),
     createInspector(ctx),
     createChatDialog(store),
     createToasts(store),
