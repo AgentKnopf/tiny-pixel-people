@@ -103,8 +103,11 @@ _Generative Agents_ (Park et al., 2023), scaled down to small local models:
   them.
 - **Planning.** For each day (prepared in the evening, otherwise at wake-up) the model writes a day plan of 5–8 blocks (time, place, activity,
   emoji), taking needs, memories, invitations and the weather into account. The plan is validated
-  and repaired (unknown places mapped, gaps filled, overlaps clipped) and always uses at least two
-  different places. An answer that can't be used is
+  and repaired (unknown places mapped, gaps filled, overlaps clipped). Every plan, from the model or a fallback, visits at least two places:
+  `ensureVariety` (`cognition/planning.ts`, applied in `Mind.setPlan` and `fallbackBlocks`) gives a
+  one-place plan a one-hour break at a place it doesn't use yet (lunch at the bakery or on the
+  square, or an evening walk in the park), after the current time if possible and never over an
+  event or player-task block. The plan keeps its `source`. An answer that can't be used is
   asked for once more at once. A villager whose plan for today is a fallback then retries
   `plan.day` in the background (priority 103, `PLAN_RESCUE_*` in `cognition/mind.ts`): 30 game
   minutes after the previous attempt finished, until max(12:00, wake + 2 h), at most 8 attempts a
