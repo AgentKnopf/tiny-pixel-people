@@ -43,6 +43,12 @@ describe('v2 map art (assets/maps/village.json)', () => {
     );
   });
 
+  it('labels every scene with its own descriptive subtitle', () => {
+    const subtitles = map.scenes.map((s) => s.subtitle);
+    for (const s of map.scenes) expect(s.subtitle, s.id).not.toMatch(/^(scene)?$/i);
+    expect(new Set(subtitles).size).toBe(subtitles.length);
+  });
+
   it('covers every tile with districts, and only post_row overlaps', () => {
     for (let y = 0; y < map.height; y++)
       for (let x = 0; x < map.width; x++) {

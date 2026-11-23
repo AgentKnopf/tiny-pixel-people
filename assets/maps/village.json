@@ -2129,7 +2129,7 @@
     {
       "id": "plaza",
       "name": "Plaza",
-      "subtitle": "The whole town",
+      "subtitle": "The old town",
       "rect": {
         "x": 0,
         "y": 0,
@@ -2140,7 +2140,7 @@
     {
       "id": "farm",
       "name": "Farm",
-      "subtitle": "Scene",
+      "subtitle": "Crop field",
       "rect": {
         "x": 0,
         "y": 8,
@@ -2151,7 +2151,7 @@
     {
       "id": "shop_street",
       "name": "Shop street",
-      "subtitle": "Scene",
+      "subtitle": "General Store",
       "rect": {
         "x": 26,
         "y": 2,
@@ -2162,7 +2162,7 @@
     {
       "id": "park",
       "name": "Park",
-      "subtitle": "Scene",
+      "subtitle": "Pond Park",
       "rect": {
         "x": 30,
         "y": 12,
@@ -2173,7 +2173,7 @@
     {
       "id": "square",
       "name": "Town square",
-      "subtitle": "Scene",
+      "subtitle": "Fountain and stalls",
       "rect": {
         "x": 13,
         "y": 5,
