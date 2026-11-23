@@ -93,7 +93,7 @@ The whole village at a glance.
   derived or `null`.
 - `mood`: one word derived from the needs: `asleep`, `tired`, `hungry`, `lonely` or `bored` (a need
   below 25), otherwise `happy` (average ≥ 75), `content` (≥ 50) or `meh`.
-- `x`, `y`: tile coordinates (the map is 128×60 tiles of 16 px).
+- `x`, `y`: tile coordinates (the map is 48×30 tiles of 16 px).
 
 ### `GET /api/agents/{id}`
 
@@ -252,7 +252,7 @@ waiting.
 
 ### `GET /api/screenshot?scale=1`
 
-A PNG of the whole map (2048×960 px at `scale=1`; `scale` 1–4 enlarges it without smoothing) with
+A PNG of the whole map (768×480 px at `scale=1`; `scale` 1–4 enlarges it without smoothing) with
 every villager, visitor and the player in place. It has no day/night lighting, bubbles or UI.
 `501` if the art files in `assets/` are missing.
 
@@ -279,51 +279,6 @@ every villager, visitor and the player in place. It has no day/night lighting, b
 | `observer.logSize`     | `5000`        | Town log entries kept (100–100000).                                                                                                                         |
 
 Environment: `OBSERVER_TOKEN` sets `observer.token`, `TPP_OBSERVER_PORT` sets `observer.port`.
-
-## v2: the bigger village
-
-The v2 village adds fields, endpoints and town log types. Everything stays read-only.
-
-### Agents and state
-
-- `agents[].kind` is `villager`, `visitor` (a train visitor staying at the hotel) or `stranger` (a
-  passer-by from the toolbar **Stranger** event).
-- `/api/state` also has `train` (its state and next arrival), `hotel` (rooms and occupancy),
-  `visitors` (ids and departure times), `farm` (animals per species) and `stock` (food per venue).
-- `/api/agents/{id}` adds `romance` (stage, partner, dates) and, for visitors, `visitor`. The
-  `player` object shows `inside` while you are inside a house. `relationships[].kind` can also be
-  `crush`, `shy_crush`, `dating` or `partner`.
-
-### New endpoints
-
-| Endpoint                                | Returns                                                                               |
-| --------------------------------------- | ------------------------------------------------------------------------------------- |
-| `GET /api/letters?agent=&since=&limit=` | `[{ ts, day, time, from, to, text, status, reply? }]`                                 |
-| `GET /api/notices`                      | The notices on the board right now.                                                   |
-| `GET /api/keep?since=&kind=&q=&limit=`  | Entries from the Keep (notes, letters, notices, rumors, replies), with a text search. |
-| `GET /api/animals?group=&species=`      | `[{ id, species, group, name?, stage?, ageDays?, location, x, y, status }]`           |
-
-`group` is `zoo`, `farm` or `ambient` (forest animals and the crow). `/api/notes` stays door notes
-only.
-
-### New town log types
-
-| Topic           | Types                                                                                                       |
-| --------------- | ----------------------------------------------------------------------------------------------------------- |
-| Romance         | `crush`, `date_asked`, `date`, `date_missed`, `couple`, `romance_ended`, and `romance` for any other change |
-| Post            | `letter_sent`, `letter_delivered`, `letter_read`, `letter_replied`, `notice_posted`, `keep_logged`          |
-| Train, visitors | `train_arrived`, `train_departed`, `visitor_arrived`, `visitor_checked_in`, `visitor_left`                  |
-| Animals         | `animal_born`, `animal_died`, `animal_butchered`                                                            |
-| Houses          | `house_visit`, `snooping`                                                                                   |
-| Rides and food  | `ride`, `purchase`                                                                                          |
-
-```sh
-B=http://127.0.0.1:3000
-curl -s "$B/api/letters?agent=laude&limit=10"
-curl -s "$B/api/keep?q=biscuit&kind=rumor"
-curl -s "$B/api/animals?group=farm&species=cow"
-curl -s "$B/api/events?type=couple,date,visitor_arrived"
-```
 
 ## Examples
 
