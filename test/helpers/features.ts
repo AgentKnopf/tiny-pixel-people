@@ -4,7 +4,9 @@
  * land early and turns itself on as packages merge. Set TPP_ACCEPTANCE_STRICT=1 to run everything
  * regardless (an unimplemented feature then fails instead of skipping).
  */
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const FEATURE_FILES = {
@@ -39,7 +41,7 @@ export const FEATURE_FILES = {
   ambientData: 'data/ambient.json',
   romanceData: 'data/romance.json',
   visitorProfiles: 'data/visitors.json',
-  saveV1Fixture: 'test/fixtures/save-v1.json',
+  saveV1Fixture: 'test/fixtures/save-v1/world.json',
 } as const satisfies Record<string, string | readonly string[]>;
 
 export type Feature = keyof typeof FEATURE_FILES;
@@ -92,18 +94,106 @@ export function mapIsV2(): boolean {
   }
 }
 
-/** Like waitingFor(), also naming the v2 map when it is still the v1 one. */
+/**
+ * What the real engine actually wires up, probed once per test file by building an engine and
+ * reading its snapshot: a service file existing on main is not enough, the v2 suites drive the
+ * engine's entry points (snapshot fields, commands, broadcasts).
+ */
+type EngineCap =
+  | 'animals'
+  | 'rides'
+  | 'train'
+  | 'visitors'
+  | 'hotel'
+  | 'romances'
+  | 'houseVisits'
+  | 'letters'
+  | 'stock'
+  | 'newResidents';
+
+const FEATURE_CAPS: Partial<Record<Feature, EngineCap[]>> = {
+  animals: ['animals'],
+  rides: ['rides'],
+  train: ['train'],
+  visitors: ['visitors', 'train'],
+  hotel: ['hotel'],
+  romance: ['romances'],
+  houseVisits: ['houseVisits'],
+  postOffice: ['letters'],
+  farmEconomy: ['stock'],
+  villagers: ['newResidents'],
+};
+
+const CAP_LABEL: Record<EngineCap, string> = {
+  animals: 'snapshot.animals',
+  rides: 'snapshot.rides',
+  train: 'snapshot.train',
+  visitors: 'snapshot.visitors',
+  hotel: 'snapshot.hotel',
+  romances: 'snapshot.romances',
+  houseVisits: 'snapshot.houseVisits',
+  letters: 'snapshot.letters',
+  stock: 'snapshot.stock',
+  newResidents: 'laude and franzi in the default roster',
+};
+
+async function probeEngine(): Promise<ReadonlySet<EngineCap>> {
+  const caps = new Set<EngineCap>();
+  if (STRICT || !mapIsV2() || !has('engine') || !has('mind') || !has('queue')) return caps;
+  try {
+    type Snap = Record<string, unknown> & { villagers: { id: string }[] };
+    type Probe = { snapshot(): Snap; stop(): void };
+    const { createSimEngine } = (await import(/* @vite-ignore */ repoPath(featurePath('engine')))) as {
+      createSimEngine: (o: unknown) => Probe;
+    };
+    const { loadConfig } = (await import(/* @vite-ignore */ repoPath('src/server/config.ts'))) as {
+      loadConfig: (o: unknown) => Record<string, unknown>;
+    };
+    const { MockChatProvider } = (await import(
+      /* @vite-ignore */ repoPath('src/server/llm/providers/mock.ts')
+    )) as { MockChatProvider: new () => unknown };
+    const dir = mkdtempSync(join(tmpdir(), 'tpp-probe-'));
+    const config = loadConfig({
+      env: {},
+      cwd: dir,
+      overrides: {
+        llm: { provider: 'mock', model: 'mock' },
+        embeddings: { provider: 'none' },
+        persistence: { dir: join(dir, 'saves'), loadOnStart: false, autosaveGameMinutes: 0 },
+      },
+    });
+    const engine = createSimEngine({ config, providers: { chat: new MockChatProvider(), embeddings: null } });
+    const s = engine.snapshot();
+    engine.stop();
+    for (const cap of Object.keys(CAP_LABEL) as EngineCap[])
+      if (cap !== 'newResidents' && s[cap] !== undefined) caps.add(cap);
+    const ids = new Set(s.villagers.map((v) => v.id));
+    if (ids.has('laude') && ids.has('franzi')) caps.add('newResidents');
+  } catch {
+    // An engine that cannot be built leaves every v2 suite skipped; the v1 suites report the error.
+  }
+  return caps;
+}
+
+const ENGINE_CAPS = await probeEngine();
+
+const missingCaps = (features: readonly Feature[]): EngineCap[] =>
+  STRICT
+    ? []
+    : [...new Set(features.flatMap((f) => FEATURE_CAPS[f] ?? []))].filter((c) => !ENGINE_CAPS.has(c));
+
+/** Like waitingFor(), also naming the v2 map and engine wiring that are still missing. */
 export function waitingForV2(...features: Feature[]): string {
   const parts: string[] = [];
-  const missing = features.filter((f) => !has(f));
   if (!STRICT) {
     if (!mapIsV2()) parts.push('the 128x60 map');
-    parts.push(...missing.map((f) => candidates(f).join(' or ')));
+    parts.push(...features.filter((f) => !has(f)).map((f) => candidates(f).join(' or ')));
+    if (mapIsV2()) parts.push(...missingCaps(features.filter(has)).map((c) => `engine: ${CAP_LABEL[c]}`));
   }
   return parts.length ? ` [skipped: waiting for ${parts.join(', ')}]` : '';
 }
 
-/** True when the v2 map and every listed feature exist (or strict mode is on). */
+/** True when the v2 map, every listed feature file and its engine wiring exist (or strict mode is on). */
 export function readyV2(...features: Feature[]): boolean {
-  return STRICT || (mapIsV2() && features.every(has));
+  return STRICT || (mapIsV2() && features.every(has) && missingCaps(features).length === 0);
 }

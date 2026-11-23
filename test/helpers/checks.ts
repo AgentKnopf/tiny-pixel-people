@@ -19,6 +19,8 @@ export interface CheckResult {
   id: string;
   title: string;
   pass: boolean;
+  /** The run never gave the check a chance (counted neither as pass nor as fail). */
+  skipped?: boolean;
   detail: string;
   /** Live runs only: whether the result came from LLM output or a fallback (see provenance.ts). */
   via?: { via: 'llm' | 'fallback' | 'mixed' | 'unknown' | 'n/a'; detail: string };
@@ -239,14 +241,16 @@ export function checkInspector(results: { id: VillagerId; msg: InspectDataMsg | 
 export function formatReport(results: CheckResult[]): string {
   const lines = results.map(
     (r) =>
-      `${r.pass ? 'PASS' : 'FAIL'}  ${r.id.padEnd(5)} ${r.title}\n        ${r.detail}` +
+      `${r.skipped ? 'SKIP' : r.pass ? 'PASS' : 'FAIL'}  ${r.id.padEnd(5)} ${r.title}\n        ${r.detail}` +
       (r.via && r.via.via !== 'n/a' ? `\n        via ${r.via.via}: ${r.via.detail}` : ''),
   );
-  const passed = results.filter((r) => r.pass).length;
-  const attributed = results.filter((r) => r.pass && r.via && r.via.via !== 'n/a');
+  const judged = results.filter((r) => !r.skipped);
+  const passed = judged.filter((r) => r.pass).length;
+  const skipped = results.length - judged.length;
+  const attributed = judged.filter((r) => r.pass && r.via && r.via.via !== 'n/a');
   const count = (v: string) => attributed.filter((r) => r.via!.via === v).length;
   const tally = attributed.length
     ? ` (model-output checks: ${count('llm')} via LLM, ${count('fallback') + count('mixed')} via fallback, ${count('unknown')} unknown)`
     : '';
-  return `${lines.join('\n')}\n\n${passed}/${results.length} checks passed${tally}`;
+  return `${lines.join('\n')}\n\n${passed}/${judged.length} checks passed${skipped ? ` (${skipped} skipped)` : ''}${tally}`;
 }

@@ -2,11 +2,14 @@
  * Live acceptance run against the provider in config.json (spec §14, "Live" column).
  *
  *   npm run test:live -- [--config path] [--speed 4] [--day-length 15] [--max-minutes 90]
- *                        [--villagers 10] [--report live-report.json]
+ *                        [--villagers 10] [--days 1] [--report live-report.json]
  *
  * Starts the real server (src/server/main.ts) on a free port with a temporary save dir and debug
- * commands on, runs one game day from 06:00 and judges AC1–AC7 with the same checks as the mock
- * suite (test/helpers/checks.ts). Exit code 0 = all checks passed.
+ * commands on, runs one game day from 06:00 (or --days days) and judges AC1–AC7 with the same checks
+ * as the mock suite (test/helpers/checks.ts). On a v2 server it also judges visitors (AC12), a
+ * player letter and its reply (AC20), the Keep (AC22), the butcher toast (AC10) and dates (AC15;
+ * needs --days 3 or more), see test/helpers/checks-v2.ts. Checks the run never gave a chance are
+ * reported as SKIP. Exit code 0 = every judged check passed.
  */
 import { spawn } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -22,10 +25,12 @@ import type {
   ConversationMessageMsg,
   HelloMessage,
   InspectDataMsg,
+  KeepDataMsg,
   ServerMessage,
   StatsMsg,
+  ToastMsg,
 } from '../src/shared/protocol.ts';
-import type { DoorNote, WorldSnapshot } from '../src/shared/types.ts';
+import type { DoorNote, Letter, Point, VisitorInfo, WorldSnapshot } from '../src/shared/types.ts';
 import { at, formatClock } from '../src/shared/time.ts';
 import {
   checkEvents,
@@ -39,12 +44,21 @@ import {
   type AdherenceSample,
   type CheckResult,
 } from '../test/helpers/checks.ts';
+import {
+  checkButcherToasts,
+  checkDates,
+  checkKeep,
+  checkLetter,
+  checkVisitors,
+} from '../test/helpers/checks-v2.ts';
 import { attachProvenance } from '../test/helpers/provenance.ts';
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const FACT = "The mayor's cat is named Biscuit.";
 const FACT_KEYWORD = 'Biscuit';
 const NOTE = 'Could you water the sunflowers by the fountain tomorrow morning?';
+const LETTER = 'Would you bake a lemon cake for the harvest picnic on Sunday?';
+const POST_OFFICE = 'post_office';
 
 interface Args {
   config?: string;
@@ -52,11 +66,12 @@ interface Args {
   dayLength?: number;
   maxMinutes: number;
   villagers?: number;
+  days: number;
   report?: string;
 }
 
 function parseArgs(argv: string[]): Args {
-  const out: Args = { speed: 4, maxMinutes: 90 };
+  const out: Args = { speed: 4, maxMinutes: 90, days: 1 };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const next = () => argv[++i] ?? '';
@@ -65,15 +80,17 @@ function parseArgs(argv: string[]): Args {
     else if (a === '--day-length') out.dayLength = Number(next());
     else if (a === '--max-minutes') out.maxMinutes = Number(next());
     else if (a === '--villagers') out.villagers = Number(next());
+    else if (a === '--days') out.days = Number(next());
     else if (a === '--report') out.report = next();
     else if (a === '--help' || a === '-h') {
       console.log(
-        'usage: npm run test:live -- [--config path] [--speed 1|2|4|8] [--day-length min] [--max-minutes n] [--villagers n] [--report file]',
+        'usage: npm run test:live -- [--config path] [--speed 1|2|4|8] [--day-length min] [--max-minutes n] [--villagers n] [--days n] [--report file]',
       );
       process.exit(0);
     }
   }
   if (![1, 2, 4, 8].includes(out.speed)) throw new Error('--speed must be 1, 2, 4 or 8');
+  if (!Number.isInteger(out.days) || out.days < 1) throw new Error('--days must be a whole number >= 1');
   return out;
 }
 
@@ -194,24 +211,45 @@ async function main(): Promise<void> {
   const messages: ServerMessage[] = [];
   let lastStats: StatsMsg | null = null;
   let lastStatus = '';
-  const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
-  const hello = await new Promise<HelloMessage>((res, rej) => {
-    ws.on('message', (data) => {
-      const msg = JSON.parse(String(data)) as ServerMessage;
-      if (msg.type === 'hello') res(msg);
-      else if (msg.type === 'stats') lastStats = msg;
-      else if (msg.type !== 'tick') messages.push(msg);
-      if (msg.type === 'sim.status') {
-        // The server repeats the wakingUp status every few seconds for late-joining clients.
-        const status = `${msg.phase}: ${msg.plansReady}/${msg.villagers} plans ready`;
-        if (status !== lastStatus) log(`sim ${status} (real ${new Date().toISOString().slice(11, 19)})`);
-        lastStatus = status;
-      } else if (msg.type === 'log' && msg.text.startsWith('LLM use so far'))
-        log(`server at ${formatClock(msg.time)}: ${msg.text}`);
+  /** Real-time WebSocket drops: messages broadcast while reconnecting are lost, so say so in the report. */
+  const wsDrops: string[] = [];
+  let closing = false;
+  let ws!: WebSocket;
+  let resolveHello: (h: HelloMessage) => void = () => {};
+  const helloP = new Promise<HelloMessage>((res) => (resolveHello = res));
+  const connect = (first: boolean): Promise<void> =>
+    new Promise((res, rej) => {
+      const sock = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+      ws = sock;
+      sock.on('message', (data) => onMessage(JSON.parse(String(data)) as ServerMessage, first));
+      sock.once('open', () => res());
+      sock.once('error', (err) => (first ? rej(err) : res()));
+      sock.once('close', () => {
+        if (closing || child.exitCode !== null) return;
+        const at = new Date().toISOString().slice(11, 19);
+        wsDrops.push(at);
+        log(`WebSocket closed at real ${at}; reconnecting (lines broadcast meanwhile are lost)`);
+        setTimeout(() => void connect(false), 1000);
+      });
     });
-    ws.once('error', rej);
-  });
-  const send = (cmd: ClientMessage) => ws.send(JSON.stringify(cmd));
+  const onMessage = (msg: ServerMessage, first: boolean) => {
+    if (msg.type === 'hello') {
+      if (first) resolveHello(msg);
+    } else if (msg.type === 'stats') lastStats = msg;
+    else if (msg.type !== 'tick') messages.push(msg);
+    if (msg.type === 'sim.status') {
+      // The server repeats the wakingUp status every few seconds for late-joining clients.
+      const status = `${msg.phase}: ${msg.plansReady}/${msg.villagers} plans ready`;
+      if (status !== lastStatus) log(`sim ${status} (real ${new Date().toISOString().slice(11, 19)})`);
+      lastStatus = status;
+    } else if (msg.type === 'log' && msg.text.startsWith('LLM use so far'))
+      log(`server at ${formatClock(msg.time)}: ${msg.text}`);
+  };
+  await connect(true);
+  const hello = await helloP;
+  const send = (cmd: ClientMessage) => {
+    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(cmd));
+  };
   results.push({
     id: 'AC7',
     title: 'the model from config is the one the server runs',
@@ -223,7 +261,18 @@ async function main(): Promise<void> {
   const start = hello.snapshot.time;
   const day0 = Math.floor(start / 1440);
   const t = (hhmm: string) => at(day0, hhmm);
-  const end = at(day0 + 1, '00:00');
+  const end = at(day0 + args.days, '00:00');
+  const firstDayEnd = at(day0 + 1, '00:00');
+  // A v2 world is recognised by its map (spec v2 §2.1), not the protocol version.
+  const postOffice = hello.map.locations.find((l) => l.id === POST_OFFICE);
+  const v2 = postOffice !== undefined;
+  const postDoor: Point | undefined = postOffice && (postOffice.door ?? postOffice.entry);
+  const visitorsSeen: VisitorInfo[] = [];
+  let trainArrived = false;
+  let letterTo: string | null = null;
+  let walkingToPost = false;
+  let keepRequested = false;
+  let keepError: string | undefined;
   const deadline = Date.now() + args.maxMinutes * 60_000;
   const samples: AdherenceSample[] = [];
   let factSource: string | null = null;
@@ -238,7 +287,37 @@ async function main(): Promise<void> {
     const s = await getJson<WorldSnapshot>(`${base}/api/snapshot`);
     if (!s) continue;
     last = s;
-    samples.push({ time: s.time, villagers: s.villagers });
+    if (s.time < firstDayEnd) samples.push({ time: s.time, villagers: s.villagers });
+    if (v2) {
+      visitorsSeen.push(...(s.visitors ?? []));
+      if (s.train && s.train.status === 'boarding') trainArrived = true;
+      if (postDoor && !letterTo && s.time >= t('08:30')) {
+        const near = Math.hypot(s.player.pos.x - postDoor.x, s.player.pos.y - postDoor.y) <= 2;
+        if (!walkingToPost) {
+          walkingToPost = true;
+          send({ type: 'player.move', to: postDoor });
+          log(`player walks to the post office (${formatClock(s.time)})`);
+        } else if (near) {
+          const visitors = new Set((s.visitors ?? []).map((x) => x.villagerId));
+          const to = s.villagers.find((x) => !visitors.has(x.id) && x.id !== factSource) ?? s.villagers[0];
+          if (to) {
+            letterTo = to.id;
+            send({ type: 'letter.send', to: to.id, text: LETTER });
+            log(`player posted a letter to ${to.id}: "${LETTER}" (${formatClock(s.time)})`);
+          }
+        }
+      }
+      if (letterTo && !keepRequested && s.time >= t('18:00')) {
+        keepRequested = true;
+        send({ type: 'player.enter', locationId: POST_OFFICE, requestId: 'live-enter' });
+        await sleep(500);
+        send({ type: 'keep.open', limit: 50, requestId: 'live-keep' });
+        await sleep(1000);
+        const err = messages.find((m) => m.type === 'error' && m.requestId?.startsWith('live-'));
+        if (err && err.type === 'error') keepError = err.message;
+        log(`opened the Keep inside the post office (${formatClock(s.time)})`);
+      }
+    }
     if (Date.now() - lastLog > 30_000) {
       lastLog = Date.now();
       log(
@@ -303,12 +382,13 @@ async function main(): Promise<void> {
 
   // The WebSocket is connected before 06:00, so its conversation.message stream has every line of the day.
   const wsLines = messages.filter((m): m is ConversationMessageMsg => m.type === 'conversation.message');
+  const dropNote = wsDrops.length ? ` (WebSocket dropped ${wsDrops.length}x at ${wsDrops.join(', ')})` : '';
   const gossipHits = factSource
     ? gossipMentions(wsLines, FACT_KEYWORD, factSource, t('08:00'), t('20:00'))
     : [];
   results.push(
     factSource
-      ? checkGossip(wsLines, FACT_KEYWORD, factSource, t('08:00'), t('20:00'))
+      ? withNote(checkGossip(wsLines, FACT_KEYWORD, factSource, t('08:00'), t('20:00')), dropNote)
       : { id: 'AC3', title: 'gossip', pass: false, detail: 'never reached 08:00' },
   );
 
@@ -324,6 +404,29 @@ async function main(): Promise<void> {
       ? checkInspector(inspections)
       : { id: 'AC6', title: 'inspector', pass: false, detail: 'never reached 12:00' },
   );
+  if (v2) {
+    results.push(checkVisitors(visitorsSeen, cfg.visitors.min, trainArrived));
+    const letters: Letter[] = last.letters ?? [];
+    results.push(checkLetter(letters, LETTER, letterTo));
+    const keep = messages.find(
+      (m): m is KeepDataMsg => m.type === 'keep.data' && m.requestId === 'live-keep',
+    );
+    const myLetter = letters.find((l) => l.to === letterTo && l.text === LETTER);
+    const refIds = [note?.id, myLetter?.id].filter((x): x is string => !!x);
+    results.push(
+      keepRequested
+        ? checkKeep(keep, refIds, keepError)
+        : {
+            id: 'AC22',
+            title: 'the Keep',
+            pass: false,
+            detail: 'never reached 18:00 after posting the letter',
+          },
+    );
+    results.push(checkButcherToasts(messages.filter((m): m is ToastMsg => m.type === 'toast')));
+    results.push(checkDates(last.romances ?? [], Math.ceil((last.time - start) / 1440)));
+  }
+  closing = true;
   ws.close();
   printDiagnostics(lastStats, messages);
   const stats = lastStats as StatsMsg | null;
@@ -358,14 +461,18 @@ function printDiagnostics(stats: StatsMsg | null, messages: readonly ServerMessa
 
 function finish(results: CheckResult[], args: Args, cleanup: () => void): void {
   cleanup();
-  const order = ['AC1', 'AC2', 'AC3', 'AC4', 'AC5', 'AC6', 'AC7'];
+  const order = ['AC1', 'AC2', 'AC3', 'AC4', 'AC5', 'AC6', 'AC7', 'AC10', 'AC12', 'AC15', 'AC20', 'AC22'];
   results.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
   console.log(`\n${formatReport(results)}`);
   if (args.report) {
     writeFileSync(args.report, JSON.stringify({ at: new Date().toISOString(), results }, null, 2));
     log(`report written to ${args.report}`);
   }
-  process.exit(results.every((r) => r.pass) ? 0 : 1);
+  process.exit(results.every((r) => r.pass || r.skipped) ? 0 : 1);
+}
+
+function withNote(r: CheckResult, note: string): CheckResult {
+  return note && !r.pass ? { ...r, detail: r.detail + note } : r;
 }
 
 main().catch((err: unknown) => {
