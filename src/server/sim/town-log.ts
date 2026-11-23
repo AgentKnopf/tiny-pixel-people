@@ -1,7 +1,7 @@
 import type { GameMinutes } from '../../shared/types.ts';
 import type { ObserverSaveData, TownLogEntry } from '../persistence/types.ts';
 
-/** Event types the town log records (observer API `GET /api/events`). */
+/** Event types the town log records (observer API `GET /api/events`, spec v2 §17). */
 export const TOWN_EVENT_TYPES = [
   'move',
   'chat',
@@ -11,8 +11,37 @@ export const TOWN_EVENT_TYPES = [
   'note_read',
   'gossip_spread',
   'event_start',
+  // romance; `romance` is the catch-all for other romance changes
+  'romance',
+  'crush',
+  'date_asked',
+  'date',
+  'date_missed',
+  'couple',
+  'romance_ended',
+  // post
+  'letter_sent',
+  'letter_delivered',
+  'letter_read',
+  'letter_replied',
+  'notice_posted',
+  'keep_logged',
+  // visitors and the train
+  'train_arrived',
+  'train_departed',
   'visitor_arrived',
+  'visitor_checked_in',
   'visitor_left',
+  // animals
+  'animal_born',
+  'animal_died',
+  'animal_butchered',
+  // interiors
+  'house_visit',
+  'snooping',
+  // rides and food
+  'ride',
+  'purchase',
 ] as const;
 export type TownEventType = (typeof TOWN_EVENT_TYPES)[number];
 

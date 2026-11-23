@@ -11,6 +11,21 @@ import { JsonSaveStore } from '../../src/server/persistence/json-store.ts';
 import { SAVE_SCHEMA_VERSION, type SaveData } from '../../src/server/persistence/types.ts';
 import { createTestWorld, type TestWorld } from '../helpers/world.ts';
 import { repoPath } from '../helpers/features.ts';
+import { FARM_SPECIES, ZOO_SPECIES } from '../../src/shared/types.ts';
+
+const V2_FIELDS = [
+  'animals',
+  'farm',
+  'train',
+  'visitors',
+  'hotel',
+  'romances',
+  'houseVisits',
+  'stock',
+  'letters',
+  'notices',
+  'keep',
+] as const satisfies readonly (keyof SaveData)[];
 
 const FIXTURE = repoPath('test/fixtures/save-v1');
 const rawWorld = JSON.parse(readFileSync(join(FIXTURE, 'world.json'), 'utf8')) as SaveData;
@@ -61,7 +76,8 @@ describe('v1 save fixture loads into v2', () => {
 
     await w.advance(24 * 60);
     expect(w.errors()).toEqual([]);
-    expect(w.state().villagers).toHaveLength(10);
+    // Train visitors come and go on the v2 map; the residents stay.
+    expect(w.state().villagers.filter((v) => !w!.profile(v.id).visitor)).toHaveLength(10);
   }, 120_000);
 
   it('writes the resumed world back as the current schema', async () => {
@@ -76,9 +92,50 @@ describe('v1 save fixture loads into v2', () => {
     expect(again.notes).toEqual(w.state().notes);
   });
 
-  // Needs WP2's restore of the v2 fields (spec v2 §15).
-  it.todo('seeds the farm and zoo, moves Laude and Franzi in and seeds their shy crush');
-  it.todo(
-    'round-trips animals, farm, train, visitors, hotel, romances, visits, stock, letters, notices and the Keep',
-  );
+  it('seeds the farm and zoo, moves Laude and Franzi in and seeds their shy crush', async () => {
+    const restore = (await copyFixture().load())!;
+    w = await createTestWorld({ villagers: 12, restore, embeddings: false });
+    await w.advance(1);
+    expect(w.errors()).toEqual([]);
+    const toast = w.of('toast').find((t) => /moved in/.test(t.text));
+    expect(toast?.text).toBe('Laude and Franzi moved in near the bakery!');
+    for (const id of ['laude', 'franzi']) {
+      const v = w.villager(id);
+      expect(w.profile(id).homeId).toBe(`house_${id}`);
+      expect(v.locationId === `house_${id}` || v.status === 'walking').toBe(true);
+    }
+    const save = w.engine.toSaveData();
+    expect(save.farm?.seeded).toBe(true);
+    const species = new Set((save.animals ?? []).map((a) => a.species));
+    for (const s of [...FARM_SPECIES, ...ZOO_SPECIES]) expect(species.has(s), s).toBe(true);
+    const shy = (save.romances ?? []).find((r) => r.pair.includes('laude') && r.pair.includes('franzi'));
+    expect(shy).toMatchObject({ stage: 'crush', shy: true });
+    expect([...shy!.crushFrom].sort()).toEqual(['franzi', 'laude']);
+    // The v1 residents and their memories are untouched by the move-in.
+    for (const v of rawWorld.villagers)
+      expect(w.memories(v.id).length).toBeGreaterThanOrEqual(
+        restore.minds.find((m) => m.villagerId === v.id)!.memories.length,
+      );
+  }, 120_000);
+
+  it('round-trips animals, farm, train, visitors, hotel, romances, visits, stock, letters, notices and the Keep', async () => {
+    const restore = (await copyFixture().load())!;
+    w = await createTestWorld({ villagers: 12, restore, embeddings: false });
+    w.command({ type: 'note.post', houseId: 'house_01', text: 'Round-trip note for the Keep' });
+    await w.advance(26 * 60);
+    expect(w.errors()).toEqual([]);
+    const first = w.engine.toSaveData();
+    expect(first.animals?.length).toBeGreaterThan(0);
+    expect(first.romances?.length).toBeGreaterThan(0);
+    expect(first.keep?.length).toBeGreaterThan(0);
+    expect(first.train).toBeTruthy();
+    expect(first.hotel).toBeTruthy();
+    w.dispose();
+    const store = copyFixture();
+    await store.save(first);
+    const loaded = (await store.load())!;
+    w = await createTestWorld({ villagers: 12, restore: loaded, embeddings: false });
+    const again = w.engine.toSaveData();
+    for (const key of V2_FIELDS) expect(again[key], key).toEqual(first[key]);
+  }, 180_000);
 });

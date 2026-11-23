@@ -143,13 +143,14 @@ describe('sim engine', () => {
 
   it('strangers arrive and leave with villagers.changed', async () => {
     const { engine, messages } = createSimTestWorld({ startAt: '10:00' });
-    const count = engine.profiles.length;
+    const residents = () => engine.profiles.filter((p) => !p.visitor).length;
+    const count = residents();
     expect(engine.handleCommand({ type: 'world.trigger', kind: 'stranger' })).toEqual([]);
-    expect(engine.profiles.length).toBe(count + 1);
+    expect(residents()).toBe(count + 1);
     const added = messages.find((m) => m.type === 'villagers.changed' && m.added.length > 0);
     expect(added).toBeTruthy();
     await engine.advance(13 * 60, { drainLlm: true });
-    expect(engine.profiles.length).toBe(count);
+    expect(residents()).toBe(count);
     expect(messages.some((m) => m.type === 'villagers.changed' && m.removed.length > 0)).toBe(true);
   }, 30_000);
 

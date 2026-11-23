@@ -112,6 +112,47 @@ describe('Mind planning', () => {
     expect(blockAt(v.worlds.get('ben')!.plan, minuteOfDay(v.time.now))!.activity).toBe('eat a snack at home');
   });
 
+  it('renews the food block when hunger is still critical as it ends, not after a cooldown', async () => {
+    const v = createTestVillage({ start: at(0, '05:59'), provider: provider() });
+    await v.advanceTo(at(0, '09:00'));
+    const ben = v.minds.get('ben')!;
+    const hunger = (n: number) => (v.states.get('ben')!.needs.hunger = n);
+    hunger(10);
+    ben.update(v.view('ben'));
+    const first = blockAt(v.worlds.get('ben')!.plan, 540)!;
+    expect(first).toMatchObject({ start: 540, end: 585, activity: 'eat a snack at home' });
+    // The block ends at 09:45 with Ben barely fed: he goes back to work...
+    await v.advanceTo(at(0, '09:30'));
+    hunger(30);
+    await v.advanceTo(at(0, '09:46'));
+    expect(ben.update(v.view('ben'))).toMatchObject({ activity: 'work hard' });
+    // ...and once critical again he eats at once instead of waiting out the old 2-hour cooldown.
+    await v.advanceTo(at(0, '09:50'));
+    hunger(15);
+    expect(ben.update(v.view('ben'))).toMatchObject({ activity: 'eat a snack at home' });
+    expect(blockAt(v.worlds.get('ben')!.plan, minuteOfDay(v.time.now))).toMatchObject({
+      start: 590,
+      end: 635,
+    });
+  });
+
+  it('renews at the exact end of a food block when hunger never left the critical range', async () => {
+    const v = createTestVillage({ start: at(0, '05:59'), provider: provider() });
+    await v.advanceTo(at(0, '09:00'));
+    const ben = v.minds.get('ben')!;
+    v.states.get('ben')!.needs.hunger = 10;
+    ben.update(v.view('ben'));
+    await v.advanceTo(at(0, '09:44'));
+    v.states.get('ben')!.needs.hunger = 10;
+    ben.update(v.view('ben'));
+    // Still inside the first block: no second block yet.
+    expect(blockAt(v.worlds.get('ben')!.plan, 584)).toMatchObject({ start: 540, end: 585 });
+    await v.advanceTo(at(0, '09:45'));
+    v.states.get('ben')!.needs.hunger = 10;
+    expect(ben.update(v.view('ben'))).toMatchObject({ activity: 'eat a snack at home' });
+    expect(blockAt(v.worlds.get('ben')!.plan, 585)).toMatchObject({ start: 585, end: 630 });
+  });
+
   it('moves outdoor activities indoors in the rain without rewriting the plan', async () => {
     const v = createTestVillage({ start: at(0, '05:59'), provider: provider() });
     await v.advanceTo(at(0, '09:00'));

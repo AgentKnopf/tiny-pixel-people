@@ -1,4 +1,5 @@
-import type { Location, Needs, PlanBlock, VillagerStatus } from '../../shared/types.ts';
+import { parseClock } from '../../shared/time.ts';
+import type { Location, Needs, PlanBlock, Point, VillagerStatus } from '../../shared/types.ts';
 import type { AppConfig } from '../config.ts';
 
 export type NeedKey = keyof Needs;
@@ -119,29 +120,64 @@ export interface NeedFix {
  * The deterministic override from spec §7.10: the most urgent need below NEED_LOW that the current
  * block does not address, with a short activity to fix it. `null` when nothing is urgent.
  */
+/** Where the villager is now; lets the hunger fix pick the nearest open food place. */
+export interface NeedFixFrom {
+  pos: Point;
+  /** Minute of the day, for opening hours. */
+  minute: number;
+}
+
 export function urgentNeedFix(
   needs: Needs,
   block: Pick<PlanBlock, 'activity' | 'locationId'> | null,
   locations: readonly Location[],
   homeId: string,
+  from?: NeedFixFrom,
 ): NeedFix | null {
   const byId = (id: string) => locations.find((l) => l.id === id) ?? null;
   const blockLoc = block ? byId(block.locationId) : null;
   const low = NEED_KEYS.filter((k) => needs[k] < NEED_LOW).sort((a, b) => needs[a] - needs[b]);
   for (const need of low) {
     if (block && addresses(need, block.activity, blockLoc)) continue;
-    return needFix(need, locations, homeId);
+    return needFix(need, locations, homeId, from);
   }
   return null;
 }
 
-export function needFix(need: NeedKey, locations: readonly Location[], homeId: string): NeedFix {
+const isOpenAt = (l: Location, minute: number) =>
+  !l.hours || (minute >= parseClock(l.hours.open) && minute < parseClock(l.hours.close));
+
+function hungerFix(locations: readonly Location[], homeId: string, from?: NeedFixFrom): NeedFix {
+  const home: NeedFix = { need: 'hunger', locationId: homeId, activity: 'eat a snack at home', emoji: '🍞' };
+  const food = locations.filter(
+    (l) => l.kind !== 'house' && (l.kind === 'food' || isFoodPlace(l)) && (!from || isOpenAt(l, from.minute)),
+  );
+  const at = (l: Location): NeedFix =>
+    l.id === 'bakery'
+      ? { need: 'hunger', locationId: l.id, activity: 'grab a bite at the café', emoji: '🥐' }
+      : { need: 'hunger', locationId: l.id, activity: 'grab a bite to eat', emoji: '🍔' };
+  if (!from) {
+    const bakery = food.find((l) => l.id === 'bakery');
+    return bakery ? at(bakery) : home;
+  }
+  const d = (p: Point) => Math.hypot(p.x - from.pos.x, p.y - from.pos.y);
+  let best: Location | null = null;
+  for (const l of food) if (!best || d(l.entry) < d(best.entry)) best = l;
+  const homeLoc = locations.find((l) => l.id === homeId);
+  if (!best || (homeLoc && d(homeLoc.entry) < d(best.entry))) return home;
+  return at(best);
+}
+
+export function needFix(
+  need: NeedKey,
+  locations: readonly Location[],
+  homeId: string,
+  from?: NeedFixFrom,
+): NeedFix {
   const has = (id: string) => locations.some((l) => l.id === id);
   switch (need) {
     case 'hunger':
-      return has('bakery')
-        ? { need, locationId: 'bakery', activity: 'grab a bite at the café', emoji: '🥐' }
-        : { need, locationId: homeId, activity: 'eat a snack at home', emoji: '🍞' };
+      return hungerFix(locations, homeId, from);
     case 'energy':
       return { need, locationId: homeId, activity: 'take a nap at home', emoji: '😴' };
     case 'social':

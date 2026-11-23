@@ -7,3 +7,4 @@ assets
 data/map/village.json
 # Saves written by older versions; kept byte-exact.
 test/fixtures
+data/map/village.json

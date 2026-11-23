@@ -57,7 +57,7 @@ describe('villager roster (data/villagers.json)', () => {
       expect(p.traits.length).toBeGreaterThan(0);
       expect(p.likes?.length).toBeGreaterThan(0);
       expect(parseClock(p.wakeTime)).toBeLessThan(parseClock(p.sleepTime));
-      expect(p.sprite).toMatch(/^characters\/villager-\d\d\.png$/);
+      expect(p.sprite).toMatch(/^characters\/(villager-\d\d|laude|franzi)\.png$/);
     }
     expect(new Set(profiles.map((p) => p.sprite)).size).toBe(profiles.length);
   });
