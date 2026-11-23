@@ -289,6 +289,7 @@ export class Engine implements SimEngine, SimHost {
   /** Villagers who boarded the ride an event is held at while that event was happening. */
   private eventRiders = new Map<string, Set<VillagerId>>();
 
+  /** Shared counter for engine ids: conversations `c<n>`, notes `n<n>` and rumor origins `fact_<t>_<n>`. */
   private seq = 0;
   private lastMinute: number;
   private interval: ReturnType<typeof setInterval> | null = null;
@@ -389,6 +390,7 @@ export class Engine implements SimEngine, SimHost {
       ...(restore ? { restore } : {}),
     });
     if (restore) {
+      this.seq = maxEngineSeq(restore);
       this.eventList = structuredClone(restore.events);
       this.noteList = structuredClone(restore.notes);
       this.history = structuredClone(restore.conversations).map((c) =>
@@ -2506,6 +2508,30 @@ export class Engine implements SimEngine, SimHost {
 }
 function settle(): Promise<void> {
   return new Promise((r) => setImmediate(r));
+}
+
+const ENGINE_ID = /^(?:c|n|fact_\d+_)(\d+)$/;
+
+/**
+ * The highest engine id number anywhere in a save, so ids made after a restore never repeat one
+ * that is still referenced (conversation history, notes, rumors, memory meta, minds). Saves do not
+ * store the counter itself.
+ */
+export function maxEngineSeq(save: unknown): number {
+  let max = 0;
+  const stack: unknown[] = [save];
+  while (stack.length) {
+    const v = stack.pop();
+    if (typeof v === 'string') {
+      const m = ENGINE_ID.exec(v);
+      if (m) max = Math.max(max, Number(m[1]));
+    } else if (Array.isArray(v)) {
+      for (const x of v) stack.push(x);
+    } else if (v && typeof v === 'object') {
+      for (const x of Object.values(v)) stack.push(x);
+    }
+  }
+  return max;
 }
 
 export const createSimEngine = (opts: EngineOptions): Engine => new Engine(opts);

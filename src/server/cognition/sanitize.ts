@@ -80,7 +80,7 @@ export function nearestFood(
   const home = locations.find((l) => l.id === homeId);
   const far = (l: Location) => Math.abs(l.entry.x - from.x) + Math.abs(l.entry.y - from.y);
   const best = [...venues, ...(home ? [home] : [])].sort(
-    (a, b) => far(a) - far(b) || a.id.localeCompare(b.id),
+    (a, b) => far(a) - far(b) || compareIds(a.id, b.id),
   )[0];
   if (!best || best.id === homeId)
     return { locationId: homeId, activity: 'eat a snack at home', emoji: '🍞' };

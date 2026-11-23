@@ -220,7 +220,8 @@ export class Mind implements VillagerMind {
   private lastLetterDay = -1;
   private keepWritingUntil = -Infinity;
   private lastKeepEmbedAt = -Infinity;
-  private lastKeepArchiveAt = -Infinity;
+  /** When the oldest Keep log memory still in retrieval is due for archiving. */
+  private nextKeepArchiveAt = -Infinity;
 
   constructor(
     readonly profile: VillagerProfile,
@@ -540,10 +541,8 @@ export class Mind implements VillagerMind {
       this.lastKeepEmbedAt = now;
       this.memory.flushEmbeddings();
     }
-    if (now - this.lastKeepArchiveAt >= 60) {
-      this.lastKeepArchiveAt = now;
-      this.memory.archiveLog(now, KEEP_FORGET_AFTER);
-    }
+    if (now >= this.nextKeepArchiveAt)
+      this.nextKeepArchiveAt = this.memory.archiveLog(now, KEEP_FORGET_AFTER);
   }
 
   /** A new Keep entry: Laude writes it down if he is at the post office with nothing else on. */
@@ -664,7 +663,10 @@ export class Mind implements VillagerMind {
     this.bookkeeping.importanceSinceReflection += logged
       ? m.importance * KEEP_REFLECTION_WEIGHT
       : m.importance;
-    if (logged) this.noteKeepEntry(m.createdAt);
+    if (logged) {
+      this.noteKeepEntry(m.createdAt);
+      this.nextKeepArchiveAt = Math.min(this.nextKeepArchiveAt, m.createdAt + KEEP_FORGET_AFTER);
+    }
     if (
       !explicit &&
       this.settings.importanceMode === 'llm' &&

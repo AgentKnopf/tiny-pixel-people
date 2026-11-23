@@ -14,7 +14,7 @@ import { asArray, asBool, asNumber, asRecord, asString, clamp, pick } from './js
 import { extractKeywords, keywordOverlap } from './keywords.ts';
 import { ask, loadTracker, type LoadLevel } from './llm.ts';
 import { Mind, PRIORITY, cleanLine } from './mind.ts';
-import { bestSentence, findMention, newsText } from './gossip.ts';
+import { bestSentence, findMention, newsText, retoldText } from './gossip.ts';
 import { keepLines, keepMeta } from './post.ts';
 import { convoSummarizePrompt, convoTurnPrompt } from './prompts/social.ts';
 import { settingsFromConfig } from './settings.ts';
@@ -346,7 +346,7 @@ export class LlmConversationRunner implements ConversationRunner {
       const mem = self.addMemory({
         kind: 'heard',
         at,
-        text: `${other.profile.name} told me: ${l.text}`.slice(0, 300),
+        text: `${other.profile.name} told me: ${retoldText(l.text)}`.slice(0, 300),
         importance,
         meta: {
           heardFrom: other.id,

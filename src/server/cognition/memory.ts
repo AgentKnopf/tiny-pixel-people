@@ -147,15 +147,18 @@ export class MemoryStore implements MemoryStream {
    * Nightly pruning (spec §7.9): observations older than 2 days with importance <= 3 are archived
    * (kept in the save, excluded from retrieval). Returns the number archived.
    */
-  /** Archive post office log memories (`meta.keepId`) older than `maxAge` game minutes. */
-  archiveLog(now: GameMinutes, maxAge: number): number {
-    let n = 0;
+  /**
+   * Archive post office log memories (`meta.keepId`) older than `maxAge` game minutes. Returns
+   * when the next remaining one is due (Infinity when none is left).
+   */
+  archiveLog(now: GameMinutes, maxAge: number): GameMinutes {
+    let next = Infinity;
     for (const m of this.memories) {
-      if (m.meta.archived || !m.meta.keepId || now - m.createdAt < maxAge) continue;
-      m.meta.archived = true;
-      n++;
+      if (m.meta.archived || !m.meta.keepId) continue;
+      if (now - m.createdAt < maxAge) next = Math.min(next, m.createdAt + maxAge);
+      else m.meta.archived = true;
     }
-    return n;
+    return next;
   }
 
   archiveOld(now: GameMinutes): number {
