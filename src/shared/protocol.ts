@@ -174,6 +174,14 @@ export interface LogMsg {
   time: GameMinutes;
 }
 
+/** Sent while the clock holds at day start waiting for day plans ('wakingUp'), and once when it resumes ('running'). */
+export interface SimStatusMsg {
+  type: 'sim.status';
+  phase: 'wakingUp' | 'running';
+  plansReady: number;
+  villagers: number;
+}
+
 export interface ErrorMsg {
   type: 'error';
   message: string;
@@ -197,6 +205,7 @@ export type ServerMessage =
   | ToastMsg
   | VillagersChangedMsg
   | LogMsg
+  | SimStatusMsg
   | ErrorMsg;
 
 // ---------- Client -> server ----------
