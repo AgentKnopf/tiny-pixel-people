@@ -61,4 +61,23 @@ describe('nearest food when hungry (real map)', () => {
     });
     expect(needOverride(needs, cur, LOCS, 'house_01', 600, () => false)!.block.locationId).toBe('bakery');
   });
+
+  it('a critical villager skips a planned meal that is farther than the nearest food, but keeps a close one', () => {
+    const needs: Needs = { hunger: 10, energy: 80, social: 80, fun: 80 };
+    const lunch = { start: 720, end: 780, locationId: 'bakery', activity: 'Having lunch' };
+    const at = (pos: { x: number; y: number }) => ({
+      food: () => nearestFood(LOCS, 'hotel', pos, 726, ZOO),
+      distance: (id: string) => far(entry(id), pos),
+    });
+    const fromHotel = at(entry('hotel'));
+    expect(
+      needOverride(needs, lunch, LOCS, 'hotel', 726, () => false, fromHotel.food, fromHotel.distance)!.block,
+    ).toMatchObject({ locationId: 'hotel', activity: 'eat a snack at home' });
+    const fromBakery = at(entry('bakery'));
+    expect(
+      needOverride(needs, lunch, LOCS, 'hotel', 726, () => false, fromBakery.food, fromBakery.distance),
+    ).toBeNull();
+    // Without a distance the planned meal still counts, as before.
+    expect(needOverride(needs, lunch, LOCS, 'hotel', 726, () => false, fromHotel.food)).toBeNull();
+  });
 });
