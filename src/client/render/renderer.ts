@@ -34,6 +34,17 @@ import {
   spriteTopLeft,
   type PlaceholderKind,
 } from './sprites.ts';
+import {
+  CAR_TILES,
+  TRAIN_CARS,
+  coasterCars,
+  rideFrame,
+  ridingIds,
+  traceLoop,
+  trackMasks,
+  trainPose,
+  type VehicleSheet,
+} from './rides.ts';
 import { TileLayers, tileSource } from './tiles.ts';
 
 export const WORLD_FONT = '"Departure Mono", ui-monospace, Menlo, Consolas, monospace';
@@ -98,6 +109,8 @@ export class WorldRenderer {
   followId: string | null = null;
   private ctx: CanvasRenderingContext2D;
   private layers: TileLayers | null = null;
+  private loops: Map<LocationId, Point[]> | null = null;
+  private loopsFor: TileLayers | null = null;
   private map: WorldMap | null = null;
   private tilesetsFor: WorldMap | null = null;
   private raf = 0;
@@ -312,6 +325,7 @@ export class WorldRenderer {
   private collect(now: number, map: WorldMap): Drawn[] {
     const out: Drawn[] = [];
     const homes = new Map(map.locations.map((l) => [l.id, l]));
+    const riding = ridingIds(this.store.rides.values());
     for (const e of this.store.villagers.values()) {
       const prof = this.store.profiles.get(e.id);
       const pos = entityPos(e, now);
@@ -323,7 +337,7 @@ export class WorldRenderer {
         name: prof?.name ?? e.id,
         sheet: this.assets.sheet(prof?.sprite ?? '', e.id, prof?.transient ? 'stranger' : 'villager'),
         kind: prof?.transient ? 'stranger' : 'villager',
-        hidden: e.status === 'sleeping' && !!home && inArea(pos, home, 1),
+        hidden: riding.has(e.id) || (e.status === 'sleeping' && !!home && inArea(pos, home, 1)),
       });
     }
     const pe = this.store.playerEntity;
@@ -456,18 +470,23 @@ export class WorldRenderer {
     this.drawItems(map, now);
     this.drawDoorNotes(map, now, 'paper');
 
-    const sorted: { y: number; c?: Drawn; a?: DrawnAnimal }[] = drawn.map((c) => ({ y: c.pos.y, c }));
+    const sorted: { y: number; c?: Drawn; a?: DrawnAnimal; fn?: () => void }[] = drawn.map((c) => ({
+      y: c.pos.y,
+      c,
+    }));
     for (const a of animals) if (!a.aerial) sorted.push({ y: a.pos.y, a });
+    this.pushVehicles(sorted, map, now, gameTime, ts);
     sorted.sort((p, q) => p.y - q.y);
     for (const s of sorted) {
       if (s.c) this.drawCharacter(s.c, now, ts);
       else if (s.a) this.drawAnimal(s.a, now, ts);
+      else s.fn?.();
     }
 
     this.drawLayer('above', lit, ts, budget);
     for (const d of decos) this.drawDecoration(d, 'overhead', lit, ts);
+    this.drawRideFrames(map, now, ts, lit);
     for (const a of animals) if (a.aerial) this.drawAnimal(a, now, ts);
-
     // Lighting and weather in screen px.
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     const raining = this.store.weather.state === 'rain';
@@ -491,8 +510,126 @@ export class WorldRenderer {
     this.drawBubbles(drawn, animals, now, ts);
   }
 
-  // ---------- Characters ----------
+  // ---------- Rides and the train ----------
 
+  /** Closed coaster loops per ride location, traced from the track tiles once tilesets load. */
+  private coasterLoops(map: WorldMap): Map<LocationId, Point[]> {
+    if (this.loops && this.loopsFor === this.layers) return this.loops;
+    const loops = new Map<LocationId, Point[]>();
+    const names = this.assets.tileNames();
+    if (names.size > 0) {
+      for (const loc of map.locations) {
+        if (loc.kind !== 'ride') continue;
+        const masks = trackMasks(map, names, loc.area);
+        const loop = masks.size > 0 ? traceLoop(masks, map.width, loc.entry) : null;
+        if (loop) loops.set(loc.id, loop);
+      }
+    }
+    this.loops = loops;
+    this.loopsFor = this.layers;
+    return loops;
+  }
+
+  /** Coaster cars and the train join the y-sort so villagers walk behind and in front of them. */
+  private pushVehicles(
+    sorted: { y: number; fn?: () => void }[],
+    map: WorldMap,
+    now: number,
+    gameTime: number,
+    ts: number,
+  ): void {
+    const { ctx } = this;
+    const vehicles = this.assets.vehicles;
+    const car = vehicles?.coasterCar;
+    const carImg = car ? this.assets.image(car.sprite) : null;
+    for (const [id, loop] of this.coasterLoops(map)) {
+      for (const c of coasterCars(loop, this.store.rides.get(id), now)) {
+        sorted.push({
+          y: c.pos.y,
+          fn: () => {
+            const x = Math.round(c.pos.x * ts);
+            const y = Math.round(c.pos.y * ts);
+            if (car && carImg) {
+              const col = Math.max(0, (car.columns ?? []).indexOf(c.heading));
+              ctx.drawImage(carImg, col * car.frameWidth, 0, car.frameWidth, car.frameHeight, x, y, ts, ts);
+            } else {
+              ctx.fillStyle = OUTLINE;
+              ctx.fillRect(x + 2, y + 4, ts - 4, ts - 7);
+              ctx.fillStyle = '#d6463a';
+              ctx.fillRect(x + 3, y + 5, ts - 6, ts - 9);
+            }
+          },
+        });
+      }
+    }
+    const pose = trainPose(this.store.train, gameTime, map);
+    if (!pose) return;
+    const train = vehicles?.train;
+    const img = train ? this.assets.image(train.sprite) : null;
+    sorted.push({
+      y: pose.row,
+      fn: () => {
+        const fh = train?.frameHeight ?? 2 * ts;
+        const fw = train?.frameWidth ?? CAR_TILES * ts;
+        const y = (pose.row + 1) * ts - fh;
+        const frames = train?.frames ?? 1;
+        const col = pose.moving ? Math.floor(now / 160) % frames : 0;
+        const rows = train?.rows ?? [];
+        const carRows = ['engine_left', 'carriage_red_left', 'carriage_green_left', 'carriage_blue_left'];
+        for (let k = 0; k < TRAIN_CARS; k++) {
+          const x = Math.round((pose.x + k * CAR_TILES) * ts);
+          if (x > map.width * ts || x + fw < 0) continue;
+          const row = rows.indexOf(carRows[k]!);
+          if (train && img && row >= 0) {
+            ctx.drawImage(img, col * fw, row * fh, fw, fh, x, y, fw, fh);
+          } else {
+            ctx.fillStyle = OUTLINE;
+            ctx.fillRect(x + 1, y + 8, fw - 2, fh - 10);
+            ctx.fillStyle = k === 0 ? '#3b3f5c' : ['#c8463a', '#4a8a4a', '#3a6ab0'][(k - 1) % 3]!;
+            ctx.fillRect(x + 2, y + 9, fw - 4, fh - 13);
+          }
+        }
+      },
+    });
+  }
+
+  /** Ferris wheel and carousel frames over their map objects while running. */
+  private drawRideFrames(map: WorldMap, now: number, ts: number, lit: boolean): void {
+    const v = this.assets.vehicles;
+    if (!v) return;
+    const anims: [VehicleSheet | undefined, number][] = [
+      [v.ferrisWheel, 4],
+      [v.carousel, 6],
+    ];
+    for (const [sheet, fps] of anims) {
+      if (!sheet?.object) continue;
+      const loc = map.locations.find((l) => l.id === sheet.object);
+      if (!loc) continue;
+      const frame = rideFrame(this.store.rides.get(loc.id), sheet.frames ?? 1, fps, now);
+      if (frame === null) continue;
+      const img = this.assets.image(sheet.sprite);
+      if (!img) continue;
+      const cols = Math.max(1, Math.floor(img.width / sheet.frameWidth));
+      const sx = (frame % cols) * sheet.frameWidth;
+      const sy = Math.floor(frame / cols) * sheet.frameHeight;
+      const { frameWidth: w, frameHeight: h } = sheet;
+      // The static object tiles would show through the frame's transparent parts (double gondolas), so
+      // the ground under the object is repainted first.
+      const { x: ax, y: ay } = loc.area;
+      const tw = Math.ceil(w / ts);
+      const th = Math.ceil(h / ts);
+      for (let y = ay; y < Math.min(map.height, ay + th); y++) {
+        for (let x = ax; x < Math.min(map.width, ax + tw); x++) {
+          const src = tileSource(this.assets.tilesets, map.layers.ground[y * map.width + x] ?? -1, lit);
+          if (src)
+            this.ctx.drawImage(src.ts.image, src.sx, src.sy, src.size, src.size, x * ts, y * ts, ts, ts);
+        }
+      }
+      this.ctx.drawImage(img, sx, sy, w, h, ax * ts, ay * ts, w, h);
+    }
+  }
+
+  // ---------- Characters ----------
   private drawCharacter(d: Drawn, now: number, ts: number): void {
     const { ctx } = this;
     const moving = isMoving(d.entity, now);
