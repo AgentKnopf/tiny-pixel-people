@@ -20,6 +20,8 @@ export interface CheckResult {
   title: string;
   pass: boolean;
   detail: string;
+  /** Live runs only: whether the result came from LLM output or a fallback (see provenance.ts). */
+  via?: { via: 'llm' | 'fallback' | 'mixed' | 'unknown' | 'n/a'; detail: string };
 }
 
 // ---------- AC2: plans followed ----------
@@ -234,8 +236,15 @@ export function checkInspector(results: { id: VillagerId; msg: InspectDataMsg | 
 
 export function formatReport(results: CheckResult[]): string {
   const lines = results.map(
-    (r) => `${r.pass ? 'PASS' : 'FAIL'}  ${r.id.padEnd(5)} ${r.title}\n        ${r.detail}`,
+    (r) =>
+      `${r.pass ? 'PASS' : 'FAIL'}  ${r.id.padEnd(5)} ${r.title}\n        ${r.detail}` +
+      (r.via && r.via.via !== 'n/a' ? `\n        via ${r.via.via}: ${r.via.detail}` : ''),
   );
   const passed = results.filter((r) => r.pass).length;
-  return `${lines.join('\n')}\n\n${passed}/${results.length} checks passed`;
+  const attributed = results.filter((r) => r.pass && r.via && r.via.via !== 'n/a');
+  const count = (v: string) => attributed.filter((r) => r.via!.via === v).length;
+  const tally = attributed.length
+    ? ` (model-output checks: ${count('llm')} via LLM, ${count('fallback') + count('mixed')} via fallback, ${count('unknown')} unknown)`
+    : '';
+  return `${lines.join('\n')}\n\n${passed}/${results.length} checks passed${tally}`;
 }
