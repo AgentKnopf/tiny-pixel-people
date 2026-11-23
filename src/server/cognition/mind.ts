@@ -381,6 +381,7 @@ export class Mind implements VillagerMind {
       villagerId: this.id,
       memories: this.memory.all().map((m) => ({ ...m, meta: { ...m.meta }, keywords: [...m.keywords] })),
       bookkeeping: { ...this.bookkeeping },
+      romance: this.romance.serialize(),
     };
   }
 

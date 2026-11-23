@@ -114,6 +114,124 @@ describe('nightly crushes (v2 §7)', () => {
   });
 });
 
+describe('the crush guarantee (v2 §7, AC15)', () => {
+  const hasCrush = (m: Mind, name = 'Ben') =>
+    m.memory.all().some((x) => x.text === `I think I have a crush on ${name}.`);
+
+  function village(night: number, snapshots?: Parameters<typeof createTestVillage>[0]['snapshots']) {
+    const v = createTestVillage({
+      start: at(night, '01:50'),
+      locations: V2_LOCATIONS,
+      ...(snapshots ? { snapshots } : {}),
+    });
+    mutual(v, 'mia', 'ben', 7);
+    for (const id of ['ben', 'cleo', 'dan']) forceRandom(v.minds.get(id)!, 0.99);
+    return v;
+  }
+
+  /** Runs the 02:00 draw of `night`; the clock jumps there from the previous one. */
+  async function draw(v: TestVillage, night: number): Promise<boolean> {
+    if (v.time.now < at(night, '01:50')) v.time.now = at(night, '01:50');
+    await v.advanceTo(at(night, '02:05'));
+    return hasCrush(v.minds.get('mia')!);
+  }
+
+  it('nights 1 and 2 use the 0.3 draw: below it is a crush, at or above it is not', async () => {
+    for (const [value, crush] of [
+      [0.29, true],
+      [0.3, false],
+      [0.99, false],
+    ] as const) {
+      const v = village(1);
+      const mia = v.minds.get('mia')!;
+      talked(mia, 'Ben', 2, at(0, '15:00'));
+      forceRandom(mia, value);
+      expect(await draw(v, 1), `night 1 at ${value}`).toBe(crush);
+      if (crush) continue;
+      expect(await draw(v, 2), `night 2 at ${value}`).toBe(false);
+    }
+  });
+
+  it('is certain on the 3rd eligible night in a row, whatever the draw', async () => {
+    const v = village(1);
+    const mia = v.minds.get('mia')!;
+    talked(mia, 'Ben', 2, at(0, '15:00'));
+    forceRandom(mia, 0.99);
+    expect(await draw(v, 1)).toBe(false);
+    expect(await draw(v, 2)).toBe(false);
+    expect(await draw(v, 3)).toBe(true);
+    expect(mia.town.romances.get(romanceId('mia', 'ben'))).toMatchObject({ stage: 'crush', crushFrom: ['mia'] });
+  });
+
+  it('goes to the best-affinity candidate on the guaranteed night', async () => {
+    const v = village(1);
+    mutual(v, 'mia', 'cleo', 8);
+    const mia = v.minds.get('mia')!;
+    talked(mia, 'Ben', 2, at(0, '15:00'));
+    talked(mia, 'Cleo', 2, at(0, '18:00'));
+    forceRandom(mia, 0.99);
+    for (let night = 1; night <= 3; night++) await draw(v, night);
+    expect(hasCrush(mia, 'Cleo')).toBe(true);
+    expect(hasCrush(mia, 'Ben')).toBe(false);
+  });
+
+  it('never fires while the conditions do not hold (one talk), even with a winning draw', async () => {
+    const v = village(1);
+    const mia = v.minds.get('mia')!;
+    talked(mia, 'Ben', 1, at(0, '15:00'));
+    forceRandom(mia, 0);
+    for (let night = 1; night <= 4; night++) expect(await draw(v, night), `night ${night}`).toBe(false);
+  });
+
+  it('an ineligible night resets the count, so the 3rd night is a plain draw again', async () => {
+    const v = village(1);
+    const mia = v.minds.get('mia')!;
+    talked(mia, 'Ben', 2, at(0, '15:00'));
+    forceRandom(mia, 0.99);
+    expect(await draw(v, 1)).toBe(false);
+    mutual(v, 'mia', 'ben', 5);
+    expect(await draw(v, 2)).toBe(false);
+    mutual(v, 'mia', 'ben', 7);
+    // Talks are counted over 3 days: keep two in the window for the later nights.
+    talked(mia, 'Ben', 2, at(2, '15:00'));
+    expect(await draw(v, 3)).toBe(false);
+    expect(await draw(v, 4)).toBe(false);
+    expect(await draw(v, 5)).toBe(true);
+  });
+
+  it('a night without a draw breaks the run too', async () => {
+    const v = village(1);
+    const mia = v.minds.get('mia')!;
+    talked(mia, 'Ben', 2, at(0, '15:00'));
+    forceRandom(mia, 0.99);
+    expect(await draw(v, 1)).toBe(false);
+    // Night 2 is skipped (the clock jumps from night 1 to night 3).
+    expect(await draw(v, 3)).toBe(false);
+    expect(mia.serialize().romance).toEqual({ crushStreak: 1, crushStreakNight: 3 });
+  });
+
+  it('the count is saved with the mind state and survives a restore', async () => {
+    const v = village(1);
+    const mia = v.minds.get('mia')!;
+    talked(mia, 'Ben', 2, at(0, '15:00'));
+    forceRandom(mia, 0.99);
+    expect(await draw(v, 1)).toBe(false);
+    expect(await draw(v, 2)).toBe(false);
+    const saved = JSON.parse(JSON.stringify(Object.fromEntries([...v.minds].map(([id, m]) => [id, m.serialize()]))));
+    expect(saved.mia.romance).toEqual({ crushStreak: 2, crushStreakNight: 2 });
+
+    const restored = village(3, saved);
+    forceRandom(restored.minds.get('mia')!, 0.99);
+    expect(await draw(restored, 3)).toBe(true);
+
+    // Without the count (a save from before the guarantee) night 3 is a plain draw.
+    const old = structuredClone(saved);
+    delete old.mia.romance;
+    const fresh = village(3, old);
+    forceRandom(fresh.minds.get('mia')!, 0.99);
+    expect(await draw(fresh, 3)).toBe(false);
+  });
+});
 describe('dates (v2 §7)', () => {
   it('asks after a chat with a crush; the partner accepts and a 90-minute date is scheduled', async () => {
     const v = createTestVillage({ start: at(1, '10:00'), locations: V2_LOCATIONS });

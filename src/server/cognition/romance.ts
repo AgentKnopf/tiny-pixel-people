@@ -15,7 +15,7 @@ import type {
   VillageEvent,
   VillagerId,
 } from '../../shared/types.ts';
-import type { WorldView } from './types.ts';
+import type { RomanceSnapshot, WorldView } from './types.ts';
 import { asBool, asRecord, asString, parseClockLoose, pick } from './json.ts';
 import { lines, memoryLines, systemFor } from './prompts/common.ts';
 import { isOpenFor } from './sanitize.ts';
@@ -25,6 +25,8 @@ export const DATE_MINUTES = 90;
 export const DATE_TTL = 120;
 const CRUSH_AT = 2 * 60;
 const CRUSH_CHANCE = 0.3;
+/** The eligible night in a row on which the crush is certain. */
+const CRUSH_SURE_NIGHT = 3;
 const CRUSH_TALKS = 2;
 const CRUSH_WINDOW = 3 * MINUTES_PER_DAY;
 const DATE_DONE_AFFINITY = 2;
@@ -163,6 +165,9 @@ export function dateDecidePrompt(
 /** The romance side of one villager's mind. */
 export class RomanceAgent {
   private crushNight = -1;
+  /** Eligible nights in a row without a crush, as of `crushStreakNight` (a day number). */
+  private crushStreak: number;
+  private crushStreakNight: number;
   private askedDay = -1;
   private readonly settled = new Set<string>();
   private readonly witnessed = new Set<string>();
@@ -172,6 +177,9 @@ export class RomanceAgent {
   private lastNight = -1;
 
   constructor(private readonly mind: Mind) {
+    const saved = mind.deps.snapshot?.romance;
+    this.crushStreak = saved?.crushStreak ?? 0;
+    this.crushStreakNight = saved?.crushStreakNight ?? -1;
     for (const m of mind.memory.all()) {
       if (m.meta.eventId && m.kind === 'event' && /date/.test(m.text)) this.settled.add(m.meta.eventId);
       if (m.text.startsWith('I think I have a crush on'))
@@ -272,11 +280,38 @@ export class RomanceAgent {
     }
   }
 
+  /**
+   * The nightly draw: 0.3 toward the best candidate, certain on the 3rd eligible night in a row
+   * (spec v2 §7 guarantee). An ineligible night, or a night without a draw, restarts the count.
+   */
   private maybeCrush(view: WorldView): void {
+    const day = dayOf(view.now);
+    const best = this.crushCandidate(view);
+    if (!best) {
+      this.crushStreak = 0;
+      this.crushStreakNight = day;
+      return;
+    }
+    const streak = this.crushStreakNight === day - 1 ? this.crushStreak + 1 : 1;
+    this.crushStreakNight = day;
+    if (streak < CRUSH_SURE_NIGHT && this.mind.deps.random() >= CRUSH_CHANCE) {
+      this.crushStreak = streak;
+      return;
+    }
+    this.crushStreak = 0;
+    this.crushOn(view, best.id);
+  }
+
+  /** Romance state that is not in the memory stream (saved with the mind). */
+  serialize(): RomanceSnapshot {
+    return { crushStreak: this.crushStreak, crushStreakNight: this.crushStreakNight };
+  }
+
+  private crushCandidate(view: WorldView): { id: VillagerId; a: number } | null {
     const me = this.mind.id;
-    if (!this.eligible(me)) return;
+    if (!this.eligible(me)) return null;
     const mine = this.records(view).filter(isActive);
-    if (mine.some((r) => r.stage === 'couple' || r.crushFrom.includes(me))) return;
+    if (mine.some((r) => r.stage === 'couple' || r.crushFrom.includes(me))) return null;
     const since = view.now - CRUSH_WINDOW;
     let best: { id: VillagerId; a: number } | null = null;
     for (const [id, rel] of Object.entries(view.self.relationships)) {
@@ -288,16 +323,20 @@ export class RomanceAgent {
       if (!best || rel.affinity > best.a || (rel.affinity === best.a && id < best.id))
         best = { id, a: rel.affinity };
     }
-    if (!best || this.mind.deps.random() >= CRUSH_CHANCE) return;
-    const id = romanceId(me, best.id);
-    const old = this.book.pair(me, best.id);
+    return best;
+  }
+
+  private crushOn(view: WorldView, other: VillagerId): void {
+    const me = this.mind.id;
+    const id = romanceId(me, other);
+    const old = this.book.pair(me, other);
     const now = view.now;
     const rec: Romance =
       old && isActive(old)
         ? { ...old, crushFrom: [...new Set([...old.crushFrom, me])] }
         : {
             id,
-            pair: [me, best.id].sort() as [VillagerId, VillagerId],
+            pair: [me, other].sort() as [VillagerId, VillagerId],
             stage: 'crush',
             since: now,
             crushFrom: [me],
@@ -308,7 +347,7 @@ export class RomanceAgent {
     this.mind.addMemory({
       kind: 'reflection',
       at: now,
-      text: `I think I have a crush on ${this.mind.nameOf(best.id, view)}.`,
+      text: `I think I have a crush on ${this.mind.nameOf(other, view)}.`,
       importance: 7,
     });
   }
