@@ -83,16 +83,18 @@ Calls are retried up to twice with backoff, honouring `retry-after`. If it happe
 (`sim.dayLengthMinutes`) or a lower speed.
 
 **Timeouts.**
-A call that takes longer than `llm.timeoutMs` (2 minutes by default) is cancelled and retried up to
-twice; then the villager uses its fallback. Large models on slow hardware may need more time, but usually a smaller model is
-the better fix.
+A call that takes longer than `llm.timeoutMs` (2 minutes by default) is cancelled, not retried, and
+the villager uses its fallback. Large models on slow hardware may need more time, but usually a
+smaller model is the better fix. See [Performance and slow hardware](setup/performance.md).
 
 ## Villagers
 
 **Villagers walk around but never talk, or follow the same simple routine every day.**
 The model isn't answering (see above), or is too slow for the day length. Look at the stats card:
-if the call count barely moves, the model is offline or slow. Use a smaller model, set
-`sim.dayLengthMinutes` to 30–60, play at 1×, or lower `sim.villagers`.
+if the call count barely moves or the queue keeps growing, the model is offline or slow, and
+background jobs expire and fall back to defaults. Use a smaller model, set
+`sim.dayLengthMinutes` to 60–120, play at 1×, or lower `sim.villagers`. See
+[Performance and slow hardware](setup/performance.md).
 
 **Replies to my messages take a long time.**
 Your messages have the highest priority, but each one waits for a free model slot. With a slow

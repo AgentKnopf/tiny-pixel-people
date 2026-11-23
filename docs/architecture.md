@@ -154,10 +154,14 @@ _Generative Agents_ (Park et al., 2023), scaled down to small local models:
 - Every call names a **task** (`plan.day`, `convo.turn`, `note.reply`, `player.reply`, …). The
   **LlmQueue** runs at most `llm.concurrency` calls at once, ordered by priority (the player's
   replies first, then conversation turns, note replies, decisions, plans, summaries, reflections,
-  importance ratings and day summaries last). Duplicate jobs are coalesced, and jobs whose
-  `expiresAt` game time has passed before they start are dropped. Retryable errors (408, 409, 429,
-  5xx, network, timeout) are retried twice with jittered exponential backoff from 500 ms, honouring
-  `retry-after` up to 30 s. Errors are `LlmError`s of kind `network`, `http`, `timeout`, `parse`,
+  importance ratings and day summaries last). Waiting jobs gain +1 priority per 2 s of real
+  waiting (at most +50). Duplicate jobs are coalesced. Jobs whose `expiresAt` game time has passed
+  before they start are dropped; without an explicit `expiresAt`, background tasks get a default
+  lifetime (`DEFAULT_TASK_TTL_MINUTES` in `queue.ts`, e.g. 30 game minutes for `convo.turn`, 360
+  for `plan.day`), while player-facing tasks never expire. At most 64 jobs wait; beyond that the
+  lowest-priority one is dropped. Retryable errors (408, 409, 429, 5xx, network) are retried twice
+  with jittered exponential backoff from 500 ms, honouring `retry-after` up to 30 s; timeouts are
+  not retried. Errors are `LlmError`s of kind `network`, `http`, `timeout`, `parse`,
   `config`, `expired` (dropped before it started) or `aborted` (cancelled by the caller).
   Embeddings run in their own lane (batches of up to 16 texts, `embeddings.concurrency` in
   parallel); a permanent embeddings error (unknown model, bad key) switches retrieval to keywords

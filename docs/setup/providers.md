@@ -215,7 +215,8 @@ and memories without a matching embedding fall back to keyword recall.
 
 A game day with 10 villagers makes roughly 200 short calls (a few hundred tokens each), plus your
 own chats. At 8× speed that's a day every couple of minutes. With a paid API, watch the call
-counter on the stats card. Rate-limit errors (HTTP 429), server errors (5xx), timeouts and network
-errors are retried up to twice with backoff, honouring the server's `retry-after` (capped at 30
-seconds). Villagers fall back to simple behaviour while the model is unavailable. Lower `llm.concurrency` if you hit
-limits often.
+counter on the stats card. Rate-limit errors (HTTP 429), server errors (5xx) and network errors are
+retried up to twice with backoff, honouring the server's `retry-after` (capped at 30 seconds);
+timeouts are not retried. Villagers fall back to simple behaviour while the model is unavailable.
+Lower `llm.concurrency` if you hit limits often. See [Performance](performance.md) for what the
+stats card numbers mean.
