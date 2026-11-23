@@ -1259,6 +1259,10 @@ export class Mind implements VillagerMind {
         // villager went back to work half fed) gets a fresh override at once.
         (need) => view.now < (this.needFixUntil[need] ?? -Infinity),
         () => nearestFood(view.locations, this.profile.homeId, view.self.pos, mod, this.zooHours()),
+        (id) => {
+          const l = view.locations.find((x) => x.id === id);
+          return l ? Math.abs(l.entry.x - view.self.pos.x) + Math.abs(l.entry.y - view.self.pos.y) : Infinity;
+        },
       );
       if (o) {
         this.needFixUntil[o.need] = view.now - mod + o.block.end;
