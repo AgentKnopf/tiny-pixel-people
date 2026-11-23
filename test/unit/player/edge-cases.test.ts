@@ -111,6 +111,9 @@ describe('save / restore of all player state', () => {
       weather: saved.weather,
       items: saved.items,
       worldEvents: saved.worldEvents,
+      stock: saved.stock,
+      hotel: saved.hotel,
+      visitors: saved.visitors,
     });
   });
 
