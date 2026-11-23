@@ -2,6 +2,8 @@ import {
   PLAYER_HOME_ID,
   PLAYER_ID,
   type AnimalId,
+  type Facing,
+  type InteriorTemplate,
   type Location,
   type LocationId,
   type Point,
@@ -22,7 +24,16 @@ import { Assets, type Drawable, type LightSpot, type TileObject, type LoadedTile
 import { layoutBubbles, bubbleAlpha, wrapText } from './bubbles.ts';
 import { Camera, fitZoom } from './camera.ts';
 import { drawConfetti, drawRain, eventEmoji, isFestive } from './effects.ts';
-import { hitTest, type HitResult } from './hit.ts';
+import { hitTest, spriteHitBox, type HitResult } from './hit.ts';
+import {
+  interiorBlocked,
+  interiorFor,
+  interiorLayout,
+  objectAt,
+  residentSpots,
+  toInterior,
+  type InteriorLayout,
+} from './interior.ts';
 import { nightFactor, tintColor, useLitTiles } from './lighting.ts';
 import { DEFAULT_SCENE_ID, OVERVIEW_SCENE_ID, findScene, sceneRectPx } from './scenes.ts';
 import {
@@ -62,6 +73,9 @@ export interface RendererEvents {
   animal: AnimalId;
   /** `canEnter`: the location has an interior (houses, hotel, post office). */
   door: { houseId: LocationId; canEnter: boolean };
+  /** Clickable interior furniture, e.g. `keep_cupboard` in the post office. */
+  object: { id: string; locationId: LocationId };
+  noticeBoard: null;
   ground: { tile: Point; blocked: boolean };
   player: null;
   scene: string;
@@ -110,6 +124,7 @@ export class WorldRenderer {
   private ctx: CanvasRenderingContext2D;
   private layers: TileLayers | null = null;
   private loops: Map<LocationId, Point[]> | null = null;
+  private insideGlide: Glide | null = null;
   private loopsFor: TileLayers | null = null;
   private map: WorldMap | null = null;
   private tilesetsFor: WorldMap | null = null;
@@ -254,7 +269,10 @@ export class WorldRenderer {
     if (!map) return { kind: 'none' };
     const r = this.canvas.getBoundingClientRect();
     const scale = this.canvas.width / Math.max(1, r.width);
-    const world = this.camera.screenToWorld({ x: (clientX - r.left) * scale, y: (clientY - r.top) * scale });
+    const device = { x: (clientX - r.left) * scale, y: (clientY - r.top) * scale };
+    const interior = this.interiorView(map);
+    if (interior) return this.interiorHit(map, interior, device);
+    const world = this.camera.screenToWorld(device);
     const now = performance.now();
     const villagers = this.collect(now, map)
       .filter((d) => !d.hidden && d.kind !== 'pet' && d.id !== PLAYER_ID)
@@ -504,10 +522,15 @@ export class WorldRenderer {
 
     // Overlays (crisp text) in screen px.
     this.drawDoorNotes(map, now, 'icon');
+    this.drawDoorLetters(map, now);
     this.drawEventMarkers(map, now);
     this.drawSleepers(map, now);
     for (const d of drawn) this.drawLabels(d, now, ts);
     this.drawBubbles(drawn, animals, now, ts);
+
+    const interior = this.interiorView(map);
+    if (interior) this.drawInterior(map, interior, now, lit);
+    else this.insideGlide = null;
   }
 
   // ---------- Rides and the train ----------
@@ -627,6 +650,223 @@ export class WorldRenderer {
       }
       this.ctx.drawImage(img, sx, sy, w, h, ax * ts, ay * ts, w, h);
     }
+  }
+
+  // ---------- Interiors ----------
+
+  /** Interior view state while the player is inside, else null. */
+  private interiorView(
+    map: WorldMap,
+  ): { tpl: InteriorTemplate; loc: Location; layout: InteriorLayout } | null {
+    const inside = this.store.player?.inside;
+    if (!inside) return null;
+    const tpl = interiorFor(map, inside.locationId);
+    const loc = map.locations.find((l) => l.id === inside.locationId);
+    if (!tpl || !loc) return null;
+    return { tpl, loc, layout: interiorLayout(tpl, map.tileSize, this.canvas.width, this.canvas.height) };
+  }
+
+  /** Villagers who are in the building: standing (not walking) at it, and at home or in a public one. */
+  private residentsOf(loc: Location, now: number): VillagerId[] {
+    const out: VillagerId[] = [];
+    const isHome = loc.kind === 'house';
+    for (const e of this.store.villagers.values()) {
+      if (e.status === 'walking' || isMoving(e, now)) continue;
+      const prof = this.store.profiles.get(e.id);
+      if (isHome && prof?.homeId !== loc.id) continue;
+      if (!isHome && loc.id === 'hotel' && !prof?.visitor && !this.store.visitors.has(e.id)) continue;
+      if (inArea(entityPos(e, now), loc, 1)) out.push(e.id);
+    }
+    return out;
+  }
+
+  /** Player position inside, gliding between `inside.pos` updates. */
+  private insidePos(now: number): { pos: Point; moving: boolean; facing: Facing } {
+    const target = this.store.player?.inside?.pos ?? { x: 0, y: 0 };
+    const g = this.insideGlide;
+    if (!g || g.to.x !== target.x || g.to.y !== target.y) {
+      const from = g ? glideAt(g, now) : target;
+      const dx = target.x - from.x;
+      const dy = target.y - from.y;
+      const facing: Facing =
+        dx === 0 && dy === 0
+          ? (g?.facing ?? 'up')
+          : Math.abs(dx) >= Math.abs(dy)
+            ? dx > 0
+              ? 'right'
+              : 'left'
+            : dy > 0
+              ? 'down'
+              : 'up';
+      this.insideGlide = {
+        from,
+        to: { ...target },
+        t0: now,
+        durMs: Math.min(1500, Math.hypot(dx, dy) * 220),
+        facing,
+      };
+    }
+    const cur = this.insideGlide!;
+    return { pos: glideAt(cur, now), moving: now - cur.t0 < cur.durMs, facing: cur.facing };
+  }
+
+  private interiorHit(
+    map: WorldMap,
+    view: { tpl: InteriorTemplate; loc: Location; layout: InteriorLayout },
+    device: Point,
+  ): HitResult {
+    const p = toInterior(view.layout, device);
+    if (!p) return { kind: 'none' };
+    const ts = map.tileSize;
+    const spots = residentSpots(view.tpl, this.residentsOf(view.loc, performance.now()));
+    const byY = [...spots].sort((a, b) => b[1].y - a[1].y);
+    for (const [id, pos] of byY) if (inRect(p, spriteHitBox(pos, ts))) return { kind: 'villager', id };
+    const tile = { x: Math.floor(p.x / ts), y: Math.floor(p.y / ts) };
+    const obj = objectAt(view.tpl, tile);
+    if (obj) return { kind: 'object', id: obj, locationId: view.loc.id };
+    return { kind: 'ground', tile, blocked: interiorBlocked(view.tpl, tile) };
+  }
+
+  private drawInteriorTiles(
+    tpl: InteriorTemplate,
+    layer: 'ground' | 'decor' | 'overhead',
+    lit: boolean,
+    ts: number,
+  ): void {
+    const tilesets = this.assets.tilesets;
+    const data = tpl.layers[layer];
+    for (let y = 0; y < tpl.height; y++) {
+      for (let x = 0; x < tpl.width; x++) {
+        const src = tileSource(tilesets, data[y * tpl.width + x] ?? -1, lit);
+        if (src) this.ctx.drawImage(src.ts.image, src.sx, src.sy, src.size, src.size, x * ts, y * ts, ts, ts);
+        else if (layer === 'ground' && tilesets.length === 0) {
+          this.ctx.fillStyle = tpl.collision[y * tpl.width + x] === 1 ? '#7a5a3a' : '#d8b48a';
+          this.ctx.fillRect(x * ts, y * ts, ts, ts);
+        }
+      }
+    }
+  }
+
+  /** The interior as its own view over the dimmed world (spec v2 §13). */
+  private drawInterior(
+    map: WorldMap,
+    view: { tpl: InteriorTemplate; loc: Location; layout: InteriorLayout },
+    now: number,
+    lit: boolean,
+  ): void {
+    const { ctx, canvas } = this;
+    const { tpl, loc, layout } = view;
+    const ts = map.tileSize;
+    const z = layout.zoom;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = 'rgba(16, 14, 24, 0.62)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const b = Math.max(2, Math.round(2 * z));
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+    ctx.fillRect(layout.x, layout.y + b, layout.w + b * 2, layout.h + b * 2);
+    ctx.fillStyle = OUTLINE;
+    ctx.fillRect(layout.x - b, layout.y - b, layout.w + b * 2, layout.h + b * 2);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(layout.x, layout.y, layout.w, layout.h);
+    ctx.clip();
+    ctx.setTransform(z, 0, 0, z, layout.x, layout.y);
+    ctx.imageSmoothingEnabled = false;
+    this.drawInteriorTiles(tpl, 'ground', lit, ts);
+    this.drawInteriorTiles(tpl, 'decor', lit, ts);
+
+    const people: Drawn[] = [];
+    for (const [id, pos] of residentSpots(tpl, this.residentsOf(loc, now))) {
+      const e = this.store.villagers.get(id);
+      if (!e) continue;
+      const prof = this.store.profiles.get(id);
+      const still: Entity = {
+        ...e,
+        fromX: pos.x,
+        toX: pos.x,
+        fromY: pos.y,
+        toY: pos.y,
+        t0: 0,
+        durMs: 0,
+        facing: 'down',
+        lastMovedAt: 0,
+        status: e.status === 'sleeping' ? 'sleeping' : 'idle',
+      };
+      const kind: PlaceholderKind = prof?.transient ? 'stranger' : 'villager';
+      people.push({
+        id,
+        pos,
+        entity: still,
+        name: prof?.name ?? id,
+        sheet: this.assets.sheet(prof?.sprite ?? '', id, kind),
+        kind,
+        hidden: false,
+      });
+    }
+    const pe = this.store.playerEntity;
+    const player = this.store.player;
+    if (pe && player) {
+      const me = this.insidePos(now);
+      // A glide that is still under way, so drawCharacter picks the walk cycle.
+      const walker: Entity = {
+        ...pe,
+        fromX: me.pos.x,
+        toX: me.pos.x,
+        fromY: me.pos.y,
+        toY: me.pos.y,
+        t0: me.moving ? now - 1 : 0,
+        durMs: me.moving ? 1000 : 0,
+        lastMovedAt: me.moving ? now : 0,
+        facing: me.facing,
+        status: me.moving ? 'walking' : 'idle',
+      };
+      people.push({
+        id: PLAYER_ID,
+        pos: me.pos,
+        entity: walker,
+        name: `★ ${player.name}`,
+        sheet: this.assets.sheet('characters/player.png', PLAYER_ID, 'player'),
+        kind: 'player',
+        hidden: false,
+      });
+    }
+    people.sort((p, q) => p.pos.y - q.pos.y);
+    for (const d of people) this.drawCharacter(d, now, ts);
+    this.drawInteriorTiles(tpl, 'overhead', lit, ts);
+    ctx.restore();
+
+    // Labels and markers in screen px.
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const toScreen = (p: Point) => ({ x: layout.x + p.x * z, y: layout.y + p.y * z });
+    for (const o of tpl.objects ?? []) {
+      const p = toScreen({ x: o.pos.x * ts + ts / 2, y: (o.pos.y - 1) * ts });
+      const bounce = Math.round(Math.abs(Math.sin(now / 300)) * 2 * z);
+      const size = Math.round(10 * z);
+      if (!this.drawIcon(o.id === 'keep_cupboard' ? 'keep' : 'star', p.x, p.y - bounce, size))
+        this.emojiAt('📒', p.x, p.y - bounce, size);
+    }
+    const px = Math.max(Math.round(11 * this.dpr()), Math.round(5.5 * z));
+    ctx.font = `${px}px ${WORLD_FONT}`;
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'center';
+    for (const d of people) {
+      const feet = toScreen(feetPoint(d.pos, ts));
+      const w = Math.ceil(ctx.measureText(d.name).width) + Math.round(px * 0.6);
+      const hh = Math.round(px * 1.35);
+      const x = Math.round(feet.x - w / 2);
+      const y = Math.round(feet.y + z);
+      const selected = this.store.selectedId === d.id;
+      pill(ctx, x, y, w, hh, Math.round(px / 3), selected ? ACCENT : TAG_FILL);
+      ctx.fillStyle = selected ? OUTLINE : TAG_TEXT;
+      ctx.fillText(d.name, x + w / 2, y + hh / 2 + 1);
+    }
+    const tw = Math.ceil(ctx.measureText(loc.name).width) + px;
+    const th = Math.round(px * 1.6);
+    const ty = layout.y - b - th - Math.round(z);
+    pill(ctx, Math.round(layout.x + layout.w / 2 - tw / 2), ty, tw, th, Math.round(px / 3), TAG_FILL);
+    ctx.fillStyle = TAG_TEXT;
+    ctx.fillText(loc.name, Math.round(layout.x + layout.w / 2), ty + th / 2 + 1);
   }
 
   // ---------- Characters ----------
@@ -912,8 +1152,38 @@ export class WorldRenderer {
     }
   }
 
-  /** Door markers: `paper` = the note pinned on the door (world pass), `icon` = the floating marker. */
-  private drawDoorNotes(map: WorldMap, now: number, pass: 'paper' | 'icon'): void {
+  /**
+   * Letter markers over doors: a bouncing "new mail" icon on mailboxes with delivered, unread letters
+   * and a letter icon at the post office while letters wait to be delivered.
+   */
+  private drawDoorLetters(map: WorldMap, now: number): void {
+    const ts = map.tileSize;
+    const z = this.camera.zoom;
+    const marks = new Map<LocationId, 'mail_new' | 'letter'>();
+    for (const box of this.store.lettersByMailbox().keys()) marks.set(box, 'mail_new');
+    if (this.store.undeliveredLetters().length > 0 && !marks.has('post_office'))
+      marks.set('post_office', 'letter');
+    for (const [id, icon] of marks) {
+      const loc = map.locations.find((l) => l.id === id);
+      if (!loc?.door) continue;
+      const hasNote = this.store
+        .notesForHouse(id)
+        .some((n) => n.status === 'unread' || n.status === 'replied');
+      const bounce = icon === 'mail_new' ? Math.round(Math.abs(Math.sin(now / 250 + 1)) * 2 * z) : 0;
+      const p = this.camera.worldToScreen({
+        x: loc.door.x * ts + ts / 2 + (hasNote ? ts * 0.75 : 0),
+        y: (loc.door.y - 1) * ts,
+      });
+      const size = Math.round(10 * z);
+      if (!this.drawIcon(icon, p.x, p.y - bounce, size)) this.emojiAt('✉', p.x, p.y - bounce, size);
+    }
+  }
+
+  /** Door markers: `paper` = the note pinned on the door (world pass), `icon` = the floating marker. */ private drawDoorNotes(
+    map: WorldMap,
+    now: number,
+    pass: 'paper' | 'icon',
+  ): void {
     const ts = map.tileSize;
     for (const loc of map.locations) {
       if (!loc.door) continue;
@@ -1105,7 +1375,7 @@ export class WorldRenderer {
       }
       this.hover = this.hitAt(ev.clientX, ev.clientY);
       const k = this.hover.kind;
-      c.style.cursor = k === 'villager' || k === 'animal' || k === 'door' ? 'pointer' : 'default';
+      c.style.cursor = ['villager', 'animal', 'door', 'object', 'notice'].includes(k) ? 'pointer' : 'default';
     };
     const up = (ev: PointerEvent) => {
       const p = this.pointer;
@@ -1129,6 +1399,12 @@ export class WorldRenderer {
           break;
         case 'player':
           this.emit('player', null);
+          break;
+        case 'object':
+          this.emit('object', { id: hit.id, locationId: hit.locationId });
+          break;
+        case 'notice':
+          this.emit('noticeBoard', null);
           break;
       }
     };
@@ -1163,6 +1439,23 @@ export class WorldRenderer {
       this.ro.observe(c);
     }
   }
+}
+
+interface Glide {
+  from: Point;
+  to: Point;
+  t0: number;
+  durMs: number;
+  facing: Facing;
+}
+
+function glideAt(g: Glide, now: number): Point {
+  const t = g.durMs > 0 ? Math.min(1, (now - g.t0) / g.durMs) : 1;
+  return { x: g.from.x + (g.to.x - g.from.x) * t, y: g.from.y + (g.to.y - g.from.y) * t };
+}
+
+function inRect(p: Point, b: { x: number; y: number; w: number; h: number }): boolean {
+  return p.x >= b.x && p.x < b.x + b.w && p.y >= b.y && p.y < b.y + b.h;
 }
 
 function inArea(p: Point, loc: Location, pad: number): boolean {
