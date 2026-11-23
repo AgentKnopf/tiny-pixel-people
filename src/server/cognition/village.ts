@@ -7,6 +7,7 @@ import type { GameMinutes, Memory, VillagerId, VillagerProfile } from '../../sha
 import type { LlmQueue } from '../llm/types.ts';
 import type { Embedder } from './memory.ts';
 import { LetterBudget } from './post.ts';
+import { compareIds } from './rng.ts';
 
 interface MindLike {
   readonly id: VillagerId;
@@ -17,9 +18,15 @@ interface MindLike {
 const HOSTY =
   /bak|cook|chef|host|party|social|organi|festiv|cheer|outgoing|friendly|mayor|music|baker|caf|garden|teacher|event|fun/gi;
 
+const hostScores = new WeakMap<VillagerProfile, number>();
+
 export function hostScore(p: VillagerProfile): number {
+  const hit = hostScores.get(p);
+  if (hit !== undefined) return hit;
   const text = `${p.occupation} ${p.occupation} ${p.bio} ${p.traits.join(' ')}`;
-  return (text.match(HOSTY) ?? []).length;
+  const s = (text.match(HOSTY) ?? []).length;
+  hostScores.set(p, s);
+  return s;
 }
 
 export class Village<M extends MindLike = MindLike> {
@@ -30,6 +37,7 @@ export class Village<M extends MindLike = MindLike> {
   private proposals = new Map<number, number>();
   private claims = new Map<number, VillagerId>();
   private statsLogged = new Set<number>();
+  private host: { id: VillagerId | null } | null = null;
 
   constructor(queue: LlmQueue) {
     this.embedder = new QueueEmbedder(queue);
@@ -37,17 +45,21 @@ export class Village<M extends MindLike = MindLike> {
 
   register(mind: M): void {
     this.minds.set(mind.id, mind);
+    this.host = null;
   }
 
   /** Who should make sure a daily event exists (most "hosty" resident; ties by id). */
   bestHost(): VillagerId | null {
+    // Every awake mind asks this each minute of the morning; the roster only changes on register.
+    if (this.host) return this.host.id;
     let best: { id: VillagerId; s: number } | null = null;
-    for (const m of [...this.minds.values()].sort((a, b) => a.id.localeCompare(b.id))) {
+    for (const m of [...this.minds.values()].sort((a, b) => compareIds(a.id, b.id))) {
       if (m.profile.transient) continue;
       const s = hostScore(m.profile);
       if (!best || s > best.s) best = { id: m.id, s };
     }
-    return best?.id ?? null;
+    this.host = { id: best?.id ?? null };
+    return this.host.id;
   }
 
   /** Some villager is still waiting for this morning's plan: other LLM work stands aside. */

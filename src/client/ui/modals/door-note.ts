@@ -33,7 +33,8 @@ function goInsideButton(ctx: UiContext, locationId: LocationId): HTMLButtonEleme
       class: 'btn btn-accent',
       'data-testid': 'door-enter',
       onclick: () => {
-        ctx.host.send({ type: 'player.enter', locationId });
+        const loc = ctx.store.location(locationId);
+        if (loc) ctx.walkIn.enter(loc);
         ctx.closeModal();
       },
     },
@@ -130,7 +131,7 @@ function composeView(ctx: UiContext, houseId: LocationId): ModalView {
   textarea.addEventListener('input', () => setText(counter, `${textarea.value.length} / ${NOTE_MAX_LENGTH}`));
   textarea.addEventListener('keydown', (ev) => {
     if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) pin();
-    ev.stopPropagation();
+    if (ev.key !== 'Escape') ev.stopPropagation();
   });
 
   const form = h(

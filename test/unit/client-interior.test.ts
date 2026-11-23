@@ -6,6 +6,7 @@ import {
   interiorFor,
   interiorLayout,
   objectAt,
+  objectRects,
   residentSpots,
   toInterior,
 } from '../../src/client/render/interior.ts';
@@ -32,10 +33,24 @@ describe('interior view', () => {
     expect(toInterior(l, { x: l.x + 16 * l.zoom * 3, y: l.y + 16 * l.zoom * 2 })).toEqual({ x: 48, y: 32 });
   });
 
-  it('finds the keep cupboard and the walls', () => {
+  it('finds the keep cupboard over its whole 2×2 sprite and the walls', () => {
     const tpl = interiorFor(map, 'post_office')!;
+    const tiles = JSON.parse(readFileSync('assets/tiles/village.json', 'utf8')) as {
+      tiles: Record<string, number>;
+    };
+    const names = new Map(Object.entries(tiles.tiles).map(([k, v]) => [v, k]));
+    expect(objectRects(tpl, names).get('keep_cupboard')).toEqual({ x: 11, y: 1, w: 2, h: 2 });
+    for (const t of [
+      { x: 11, y: 1 },
+      { x: 12, y: 1 },
+      { x: 11, y: 2 },
+      { x: 12, y: 2 },
+    ])
+      expect(objectAt(tpl, t, names)).toBe('keep_cupboard');
+    expect(objectAt(tpl, { x: 11, y: 3 }, names)).toBeNull();
+    expect(objectAt(tpl, { x: 5, y: 5 }, names)).toBeNull();
+    // Without tile names: the pos tile and the one above.
     expect(objectAt(tpl, { x: 11, y: 2 })).toBe('keep_cupboard');
-    expect(objectAt(tpl, { x: 5, y: 5 })).toBeNull();
     expect(interiorBlocked(tpl, { x: -1, y: 0 })).toBe(true);
     expect(interiorBlocked(tpl, tpl.entry)).toBe(false);
   });

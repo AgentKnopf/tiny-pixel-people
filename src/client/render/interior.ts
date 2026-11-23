@@ -64,15 +64,54 @@ export function residentSpots(tpl: InteriorTemplate, ids: string[]): Map<string,
   return out;
 }
 
-/** Clickable furniture under an interior tile (objects cover their tile and the one above). */
-export function objectAt(tpl: InteriorTemplate, tile: Point): string | null {
+/**
+ * Click rect (tiles) of each interior object: the bounding box of the template tiles named
+ * `<id>_…` (a 2×2 cupboard spans x 11–12, y 1–2). Without tile names: the `pos` tile and the one
+ * above it.
+ */
+export function objectRects(
+  tpl: InteriorTemplate,
+  names: Map<number, string>,
+): Map<string, { x: number; y: number; w: number; h: number }> {
+  const out = new Map<string, { x: number; y: number; w: number; h: number }>();
   for (const o of tpl.objects ?? []) {
-    if (tile.x === o.pos.x && (tile.y === o.pos.y || tile.y === o.pos.y - 1 || tile.y === o.pos.y + 1))
-      return o.id;
+    let x0 = Infinity;
+    let y0 = Infinity;
+    let x1 = -Infinity;
+    let y1 = -Infinity;
+    for (const layer of [tpl.layers.decor, tpl.layers.overhead, tpl.layers.ground]) {
+      for (let i = 0; i < layer.length; i++) {
+        const name = names.get(layer[i] ?? -1);
+        if (!name?.startsWith(`${o.id}_`)) continue;
+        const x = i % tpl.width;
+        const y = Math.floor(i / tpl.width);
+        x0 = Math.min(x0, x);
+        y0 = Math.min(y0, y);
+        x1 = Math.max(x1, x);
+        y1 = Math.max(y1, y);
+      }
+    }
+    out.set(
+      o.id,
+      x1 >= x0
+        ? { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 }
+        : { x: o.pos.x, y: o.pos.y - 1, w: 1, h: 2 },
+    );
+  }
+  return out;
+}
+
+/** Clickable furniture under an interior tile. */
+export function objectAt(
+  tpl: InteriorTemplate,
+  tile: Point,
+  names: Map<number, string> = new Map(),
+): string | null {
+  for (const [id, r] of objectRects(tpl, names)) {
+    if (tile.x >= r.x && tile.x < r.x + r.w && tile.y >= r.y && tile.y < r.y + r.h) return id;
   }
   return null;
 }
-
 export function interiorBlocked(tpl: InteriorTemplate, tile: Point): boolean {
   if (tile.x < 0 || tile.y < 0 || tile.x >= tpl.width || tile.y >= tpl.height) return true;
   return tpl.collision[tile.y * tpl.width + tile.x] === 1;
