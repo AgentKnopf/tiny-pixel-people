@@ -1,0 +1,57 @@
+[
+  {
+    "id": "wren",
+    "name": "Wren",
+    "age": 34,
+    "occupation": "travelling cartographer",
+    "bio": "Wren maps little villages for a guild of travellers. She is curious, chatty and always has ink on her fingers.",
+    "traits": ["curious", "talkative", "observant"],
+    "sprite": "characters/stranger.png",
+    "likes": ["flower", "seed"],
+    "news": "A new bridge is being built over the river to the north, so traders will reach the village faster next season."
+  },
+  {
+    "id": "bram",
+    "name": "Bram",
+    "age": 52,
+    "occupation": "wandering tinker",
+    "bio": "Bram fixes kettles, clocks and music boxes in exchange for a warm meal. He hums old songs and loves a good story.",
+    "traits": ["gentle", "handy", "nostalgic"],
+    "sprite": "characters/stranger.png",
+    "likes": ["bread", "gem"],
+    "news": "The big town fair over the hills was cancelled this year because a storm flattened the tents."
+  },
+  {
+    "id": "suki",
+    "name": "Suki",
+    "age": 27,
+    "occupation": "seed merchant",
+    "bio": "Suki sells rare seeds from far-away gardens. She is cheerful, a bit pushy, and very proud of her giant pumpkins.",
+    "traits": ["cheerful", "ambitious", "friendly"],
+    "sprite": "characters/stranger.png",
+    "likes": ["seed", "flower"],
+    "news": "Someone found a patch of glowing blue mushrooms in the old forest east of the village."
+  },
+  {
+    "id": "otis",
+    "name": "Otis",
+    "age": 41,
+    "occupation": "retired sailor",
+    "bio": "Otis sailed the seas for twenty years and now walks from village to village. He tells tall tales and laughs loudly.",
+    "traits": ["boisterous", "kind", "storyteller"],
+    "sprite": "characters/stranger.png",
+    "likes": ["apple", "honey"],
+    "news": "A famous travelling circus is heading this way and might stop here before the end of the month."
+  },
+  {
+    "id": "linnea",
+    "name": "Linnea",
+    "age": 63,
+    "occupation": "herbalist",
+    "bio": "Linnea gathers herbs and brews teas that she swears cure everything. She is calm, wise and a little mysterious.",
+    "traits": ["calm", "wise", "mysterious"],
+    "sprite": "characters/stranger.png",
+    "likes": ["honey", "flower"],
+    "news": "The old well on the hill road has gone dry, and people say it means a long hot summer is coming."
+  }
+]
