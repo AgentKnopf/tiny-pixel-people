@@ -19,6 +19,28 @@ export interface PlayerWorldConfig {
   post?: AppConfig['post'];
 }
 
+const COUNTER_ID = /^[a-z][a-z_]*_\d+_(\d+)$/;
+
+/**
+ * Highest counter suffix among ids shaped `<prefix>_<minute>_<n>` anywhere in `value`. Restored
+ * counters start above it: the minute alone does not separate ids made in the minute a save was taken.
+ */
+export function maxIdSuffix(value: unknown): number {
+  let max = 0;
+  const walk = (v: unknown): void => {
+    if (typeof v === 'string') {
+      const m = COUNTER_ID.exec(v);
+      if (m) max = Math.max(max, Number(m[1]));
+    } else if (Array.isArray(v)) {
+      for (const x of v) walk(x);
+    } else if (v && typeof v === 'object') {
+      for (const x of Object.values(v)) walk(x);
+    }
+  };
+  walk(value);
+  return max;
+}
+
 /** Shared plumbing for the WP8 controllers. */
 export class Ctx {
   private seq = 0;
@@ -57,7 +79,12 @@ export class Ctx {
     return this.cfg.maxVillagers ?? 20;
   }
 
-  /** Unique across restarts because it embeds the game time. */
+  /** Continue the id counter above every id in a restored save. */
+  continueIdsAfter(restored: unknown): void {
+    this.seq = Math.max(this.seq, maxIdSuffix(restored));
+  }
+
+  /** Unique across restarts: embeds the game time, and the counter continues after a restore. */
   id(prefix: string): string {
     return `${prefix}_${Math.floor(this.host.now())}_${++this.seq}`;
   }

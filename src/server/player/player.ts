@@ -146,6 +146,7 @@ export class PlayerWorld implements PlayerService {
   constructor(opts: CreatePlayerWorldOptions) {
     const { host, config, restore = {} } = opts;
     this.ctx = new Ctx(host, config, opts.catalogs ?? loadCatalogs());
+    this.ctx.continueIdsAfter(restore);
     this.player = restore.player ? structuredClone(restore.player) : this.initialPlayer();
     this.log = new WorldEventLog(this.ctx, restore.worldEvents);
     this.rumors = new Rumors(this.ctx, restore.rumors, (rumor, hop) =>

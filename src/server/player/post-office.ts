@@ -14,7 +14,7 @@ import {
   type VillageEvent,
   type VillagerId,
 } from '../../shared/types.ts';
-import type { Ctx } from './context.ts';
+import { maxIdSuffix, type Ctx } from './context.ts';
 import { distance, distanceToRect } from './geometry.ts';
 import { POST_OFFICE_ID } from './house-visits.ts';
 import type { CommandResult, KeepArchive, PostLogEvent, PostOfficeService } from './types.ts';
@@ -55,8 +55,10 @@ export class Keep implements KeepArchive {
     private readonly max: number,
     restored?: KeepEntry[],
   ) {
-    this.entries = structuredClone(restored ?? []).slice(-max);
-    this.seq = this.entries.length;
+    const all = restored ?? [];
+    this.entries = structuredClone(all).slice(-max);
+    // Trimmed ids live on in Laude's memories (meta.keepId), so the count of kept entries is not enough.
+    this.seq = Math.max(all.length, maxIdSuffix(all.map((e) => e.id)));
   }
 
   add(entry: Omit<KeepEntry, 'id'>): KeepEntry {
