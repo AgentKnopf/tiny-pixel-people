@@ -7,7 +7,9 @@ gossip less.
 
 ## How much the model has to do
 
-A game day with 10 villagers can make up to roughly 200 model calls, plus your own chats. On a slow
+A game day with 10 villagers can make up to roughly 200 model calls, plus your own chats (the
+v2 default of 12 residents plus visitors makes more; see
+[The bigger village and the model](#the-bigger-village-and-the-model)). On a slow
 model the game cuts back on optional work, so it makes fewer (about 100 in the measured run below). At 200 calls
 and the default 15-minute day at 1×, that is one call every 4.5 real seconds. With Ollama the game sends one call at
 a time by default (`llm.concurrency` 1; hosted providers default to 2). On a GPU or Apple Silicon
@@ -44,6 +46,45 @@ is 1. Two calls at once made each call about twice as slow (`plan.day` 48 s inst
 so on a CPU like this it does worse than `qwen2.5:1.5b`. The game never crashed, and every late
 answer fell back cleanly. A 7B model on an Apple Silicon Mac or a GPU answers in a few seconds.
 
+## The bigger village and the model
+
+The default village has 12 residents (the ten originals plus Laude and Franzi) and, once the first
+train has come, 2–4 visitors. That is about 230–300 model calls a day instead of 120–200: the
+extra minds plan, talk and summarise like everyone else, and visitors, dates, letters and house
+greetings add a few calls each.
+
+Everything else in the bigger village never waits for the model: the animals, the farm, rides, the
+train, the hotel, letter delivery and the notice board run on fixed rules. On a slow model they
+work exactly as on a fast one.
+
+The new model tasks give way first when the model can't keep up:
+
+| Task                              | Busy               | Overloaded                                  |
+| --------------------------------- | ------------------ | ------------------------------------------- |
+| Greeting you in a house           | model              | model (a simple greeting after 60 game min) |
+| A villager's reply to your letter | model              | model (a simple reply if it fails)          |
+| Answering a date invitation       | model              | simple rule, no call                        |
+| Inventing a train visitor         | model              | ready-made visitor, no call                 |
+| Asking someone on a date          | model, 1 a day max | skipped                                     |
+| A villager writing a letter       | model              | skipped                                     |
+
+To save model calls on a slow machine, turn off the parts that add minds or optional calls:
+
+```json
+{
+  "visitors": { "enabled": false },
+  "romance": { "enabled": false },
+  "world": { "llmVisitors": false }
+}
+```
+
+- `visitors.enabled: false` saves the most: no visitor minds at all. With visitors on,
+  `world.llmVisitors: false` still saves the call that invents each one.
+- `sim.villagers: 11` leaves out Franzi, and 10 or fewer leaves out Laude too; the post office
+  and the Keep keep working without them.
+- The zoo, farm, forest and train cost no model calls, so there is nothing to gain by turning them
+  off.
+
 ## Choose a model for your hardware
 
 | Hardware                                             | Chat model (`llm.model`)                       |
@@ -69,7 +110,7 @@ more options. Hosted APIs (see [Providers](providers.md)) are usually fast enoug
   sending more only makes each one slower and makes timeouts more likely. It also means one
   villager conversation at a time.
 - `sim.dayLengthMinutes` 60–120: a longer day gives each call more real time. Play at 1×.
-- `sim.villagers`: fewer villagers make fewer calls.
+- `sim.villagers`: fewer villagers make fewer calls. Below 12, Laude and Franzi stay away.
 - `cognition.importanceMode: "heuristic"`: rates memories with a rule instead of a model call.
 - `cognition.maxConversationTurns` (default 6): shorter conversations need fewer calls.
 - Keep `nomic-embed-text` for embeddings; it is small and fast even on a CPU.

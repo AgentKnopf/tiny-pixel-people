@@ -18,6 +18,8 @@ Invalid configuration in /path/config.json:
 ```
 
 `config.example.json` contains every key with its default. Restart the server after any change.
+Config files from v1 keep working: every v2 section has defaults. The one changed default is
+`sim.villagers` (10 → 12).
 
 ## `llm`: the chat model
 
@@ -48,16 +50,16 @@ Invalid configuration in /path/config.json:
 
 ## `sim`: the simulation
 
-| Key                    | Default   | Meaning                                                                                                                         |
-| ---------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `villagers`            | `10`      | Number of villagers, 1–20: the first N profiles in `data/villagers.json`, which ships 16. Strangers count toward a cap of 20.   |
-| `dayLengthMinutes`     | `15`      | Real minutes for one 24-hour game day at 1×.                                                                                    |
-| `startTime`            | `"06:00"` | Game clock at the start of a new village (`HH:MM`).                                                                             |
-| `speed`                | `1`       | Starting speed. The UI offers 0 (pause), 1, 2, 4 and 8.                                                                         |
-| `nightSpeedMultiplier` | `6`       | Extra speed-up while every villager is asleep (at least 1).                                                                     |
-| `tickMs`               | `100`     | Real milliseconds between simulation steps (at least 10).                                                                       |
-| `seed`                 | `42`      | Random seed. The same seed and the mock provider give the same day.                                                             |
-| `wakeUpTimeoutSec`     | `300`     | At 06:00 each day the clock waits until the villagers' plans are ready, at most this many real seconds. `0` turns the wait off. |
+| Key                    | Default   | Meaning                                                                                                                                                                                                              |
+| ---------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `villagers`            | `12`      | Number of villagers, 1–20: the first N profiles in `data/villagers.json`, which ships 18. The first ten are the original villagers; 11 and 12 are Laude and Franzi. Strangers and visitors count toward a cap of 20. |
+| `dayLengthMinutes`     | `15`      | Real minutes for one 24-hour game day at 1×.                                                                                                                                                                         |
+| `startTime`            | `"06:00"` | Game clock at the start of a new village (`HH:MM`).                                                                                                                                                                  |
+| `speed`                | `1`       | Starting speed. The UI offers 0 (pause), 1, 2, 4 and 8.                                                                                                                                                              |
+| `nightSpeedMultiplier` | `6`       | Extra speed-up while every villager is asleep (at least 1).                                                                                                                                                          |
+| `tickMs`               | `100`     | Real milliseconds between simulation steps (at least 10).                                                                                                                                                            |
+| `seed`                 | `42`      | Random seed. The same seed and the mock provider give the same day.                                                                                                                                                  |
+| `wakeUpTimeoutSec`     | `300`     | At 06:00 each day the clock waits until the villagers' plans are ready, at most this many real seconds. `0` turns the wait off.                                                                                      |
 
 ## `cognition`: how villagers think
 
@@ -124,6 +126,98 @@ Invalid configuration in /path/config.json:
 | --------------- | ------- | ----------------------------------------------------------------------------------------- |
 | `randomWeather` | `false` | Rain may start on its own during the day (about a 6 % chance per game hour, 07:00–19:00). |
 | `llmStrangers`  | `false` | The model invents each stranger. Off: strangers come from `data/strangers.json`.          |
+| `llmVisitors`   | `true`  | The model invents each train visitor. Off: visitors come from `data/visitors.json`.       |
+
+## `zoo`
+
+| Key         | Default   | Meaning                                                             |
+| ----------- | --------- | ------------------------------------------------------------------- |
+| `openTime`  | `"08:00"` | When the zoo, its enclosures and its rides open.                    |
+| `closeTime` | `"21:00"` | When they close. Plan blocks at a closed place move to an open one. |
+
+## `farm`
+
+| Key              | Default   | Meaning                                                                                                      |
+| ---------------- | --------- | ------------------------------------------------------------------------------------------------------------ |
+| `enabled`        | `true`    | Cows, sheep and chickens with their lifecycle.                                                               |
+| `capPerSpecies`  | `10`      | Most animals of one kind alive at a time, 1–10. It can be lowered but never raised above 10.                 |
+| `breedChance`    | `0.5`     | Daily chance of a birth for a kind that can breed, 0–1.                                                      |
+| `butcherTime`    | `"16:00"` | When at most one animal a day goes to the butcher (off-screen).                                              |
+| `butcherAtCount` | `8`       | A kind with this many animals or more sends one to the butcher, 1–10. A low burger stock can trigger it too. |
+
+## `train`
+
+| Key            | Default              | Meaning                                            |
+| -------------- | -------------------- | -------------------------------------------------- |
+| `enabled`      | `true`               | Trains stop at the station.                        |
+| `arrivals`     | `["10:00", "16:00"]` | Arrival times each day (at least one).             |
+| `dwellMinutes` | `20`                 | Game minutes a train waits at the platform, 1–120. |
+
+## `visitors`
+
+| Key        | Default  | Meaning                                                                                      |
+| ---------- | -------- | -------------------------------------------------------------------------------------------- |
+| `enabled`  | `true`   | Trains bring visitors who stay at the hotel.                                                 |
+| `min`      | `2`      | Fewest visitors in town once the first train has come, 0–10. Must be at most `max`.          |
+| `max`      | `4`      | Most visitors at once, 0–10. Must be at most `hotel.rooms`. The total stays at 20 villagers. |
+| `stayDays` | `[1, 3]` | Shortest and longest stay in game days (`[min, max]`, min ≤ max).                            |
+
+## `hotel`
+
+| Key     | Default | Meaning            |
+| ------- | ------- | ------------------ |
+| `rooms` | `6`     | Hotel rooms, 1–20. |
+
+## `romance`
+
+| Key              | Default | Meaning                                                                    |
+| ---------------- | ------- | -------------------------------------------------------------------------- |
+| `enabled`        | `true`  | Crushes, dates and couples.                                                |
+| `minAge`         | `18`    | Youngest age that takes part (at least 18).                                |
+| `crushAffinity`  | `6`     | Affinity (−10 to 10) a villager needs toward someone to develop a crush.   |
+| `coupleAffinity` | `7`     | Affinity both need toward each other to become a couple.                   |
+| `datesForCouple` | `2`     | Good dates before two villagers become a couple.                           |
+| `shyMinDays`     | `5`     | A shy pair (Laude and Franzi) doesn't ask for a date before this game day. |
+| `shyVisitChance` | `0.7`   | Daily chance that Franzi drops by the post office, 0–1.                    |
+| `shyMaxTurns`    | `3`     | Longest conversation of a shy pair, 2–20 lines.                            |
+
+## `interiors`
+
+| Key             | Default | Meaning                                                                    |
+| --------------- | ------- | -------------------------------------------------------------------------- |
+| `visitAffinity` | `1`     | Affinity change when you visit an owner who is home and awake (−10 to 10). |
+| `snoopAffinity` | `-2`    | Affinity change when the owner finds out you were inside while it was out. |
+
+## `post`
+
+| Key                        | Default              | Meaning                                                           |
+| -------------------------- | -------------------- | ----------------------------------------------------------------- |
+| `enabled`                  | `true`               | Post office, letters, notice board and the Keep.                  |
+| `deliveryTimes`            | `["11:00", "17:00"]` | When posted letters are delivered (at least one time).            |
+| `maxVillagerLettersPerDay` | `3`                  | Letters villagers write per day, for the whole village.           |
+| `noticeTtlDays`            | `3`                  | Game days a notice stays on the board.                            |
+| `maxNotices`               | `12`                 | Most notices on the board at once; a new one replaces the oldest. |
+| `keepMax`                  | `2000`               | Entries the Keep holds, 1–5000; the oldest are dropped first.     |
+
+## `forest`
+
+| Key       | Default | Meaning                                   |
+| --------- | ------- | ----------------------------------------- |
+| `enabled` | `true`  | The forest animals and forest activities. |
+
+## `observer`
+
+The read-only [observer API](../observer-api.md).
+
+| Key           | Default | Meaning                                                                                              |
+| ------------- | ------- | ---------------------------------------------------------------------------------------------------- |
+| `enabled`     | `true`  | Serve the observer endpoints.                                                                        |
+| `host`        | –       | With `port`: address of a separate observer listener. Otherwise the endpoints share the game server. |
+| `port`        | –       | If set, the observer API gets its own listener on this port.                                         |
+| `allowRemote` | `false` | Accept observer requests from other machines. Works only together with `OBSERVER_TOKEN`.             |
+
+The token itself is never in the config file: set the environment variable `OBSERVER_TOKEN`, and
+every observer request then needs `Authorization: Bearer <token>`.
 
 ## `debug`
 
@@ -148,6 +242,7 @@ Invalid configuration in /path/config.json:
 | `TPP_DAY_LENGTH_MINUTES` | `sim.dayLengthMinutes`                    |
 | `TPP_VILLAGERS`          | `sim.villagers`                           |
 | `TPP_DEBUG`              | `debug` (`1`, `true` or `yes` turn it on) |
+| `OBSERVER_TOKEN`         | Bearer token for the observer API         |
 
 Empty variables are ignored. Any other variable can hold an API key and be referenced with
 `llm.apiKeyEnv` / `embeddings.apiKeyEnv`, for example `OPENROUTER_API_KEY`. Without
@@ -159,10 +254,14 @@ Empty variables are ignored. Any other variable can hold an API key and be refer
 The village itself is described by JSON files in `data/` and `assets/`. Edit them to change the
 village; restart and start a new village (`--new`) to see the changes.
 
-| File                    | Contents                                                                                          |
-| ----------------------- | ------------------------------------------------------------------------------------------------- |
-| `data/villagers.json`   | Villager profiles: name, age, occupation, bio, traits, home, sprite, wake and sleep times, likes. |
-| `data/map/village.json` | The tile map, locations, doors and scenes.                                                        |
-| `data/items.json`       | Items you can pick up and give away.                                                              |
-| `data/decorations.json` | Decorations for your cottage, with their cost and slot.                                           |
-| `data/strangers.json`   | Travellers for the Stranger event, each with a piece of news.                                     |
+| File                    | Contents                                                                                           |
+| ----------------------- | -------------------------------------------------------------------------------------------------- |
+| `data/villagers.json`   | Villager profiles: name, age, occupation, bio, traits, home, sprite, wake and sleep times, likes.  |
+| `data/map/village.json` | The tile map, locations, doors and scenes.                                                         |
+| `data/items.json`       | Items you can pick up and give away.                                                               |
+| `data/decorations.json` | Decorations for your cottage, with their cost and slot.                                            |
+| `data/strangers.json`   | Travellers for the Stranger event, each with a piece of news.                                      |
+| `data/visitors.json`    | Ready-made train visitors, used when the model doesn't invent one (or `world.llmVisitors` is off). |
+| `data/romance.json`     | Romances that exist from the start (Laude and Franzi's shy crush).                                 |
+| `data/zoo.json`         | Zoo animals per enclosure.                                                                         |
+| `data/ambient.json`     | Forest animals and the crow.                                                                       |

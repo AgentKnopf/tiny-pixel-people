@@ -22,6 +22,35 @@ There are two ways to check that the village works:
 The extended scope (rumor tracker, scenes, world events, speeds, needs, gold, backpack, pet,
 decorating, saving) has its own tests; see [spec §14.1](spec/technical-spec.md).
 
+### v2: the bigger village
+
+AC1–AC7 still hold with every v2 feature on. The v2 criteria:
+
+| #    | Criterion                                                                                  |
+| ---- | ------------------------------------------------------------------------------------------ |
+| AC8  | One 128×60 map with seven districts, all reachable; the v1 town is unchanged.              |
+| AC9  | A zoo with 12 species, rides, a burger joint and ice cream; villagers go on outings.       |
+| AC10 | Farm animals are born, produce, die of old age and go to the butcher; at most 10 per kind. |
+| AC11 | Animals and the other rule-based systems never wait on the model.                          |
+| AC12 | Visitors arrive by train, stay at the hotel for 1–3 days, join town life and leave.        |
+| AC13 | Visitors gossip.                                                                           |
+| AC14 | You can walk into houses; owners greet and remember you; snooping lowers affinity.         |
+| AC15 | Crushes, dates at fun places and couples; dates become gossip; the inspector shows them.   |
+| AC16 | Slow-model behaviour covers the new model tasks.                                           |
+| AC17 | v1 saves load into v2.                                                                     |
+| AC18 | The performance budgets hold.                                                              |
+| AC19 | The UI shows the new world.                                                                |
+| AC20 | Letters between villagers and you.                                                         |
+| AC21 | The notice board.                                                                          |
+| AC22 | Laude learns every note, letter, notice and rumor at once; the Keep archives them.         |
+| AC23 | The crow on the post office roof.                                                          |
+| AC24 | Laude and Franzi live near the bakery; Laude goes to bake-offs.                            |
+| AC25 | Laude and Franzi's slow, shy crush.                                                        |
+| AC26 | The forest with a grove, a lake and small animals.                                         |
+| AC27 | The observer API shows the v2 world.                                                       |
+
+The exact checks are in [spec v2 §18](spec/technical-spec-v2.md#18-acceptance-criteria-ac8-verification-on-the-mock).
+
 ## Automated suite (mock provider)
 
 ```sh
@@ -46,6 +75,27 @@ npm run check            # lint, typecheck, tests and build
 | `player.test.ts`            | Gold, tasks, backpack, gifts, pet, decorating.                                                               |
 | `save.test.ts`              | Save and reload round trip, replay log.                                                                      |
 | `map-data.test.ts`          | Map locations, doors and scenes.                                                                             |
+| `map-v2.test.ts`            | AC8: size, districts, location ids, reachability, the unchanged v1 town, scenes, interiors.                  |
+| `zoo.test.ts`               | AC9: species, animals stay in their pens, ride queues and cycles, closing time, outings.                     |
+| `farm.test.ts`              | AC10: 60 game days of births, deaths and butcher trips, the cap of 10, products, toast wording.              |
+| `determinism-v2.test.ts`    | AC11: animals, farm, stock, train, hotel and post are identical with a fast and a silent mock.               |
+| `visitors.test.ts`          | AC12: trains, visitor counts, check-in, conversations, departure; fallback profiles.                         |
+| `visitor-gossip.test.ts`    | AC13: a fact told to a visitor reaches residents.                                                            |
+| `interiors.test.ts`         | AC14: visits, greetings, snooping, witnesses, exit, public interiors, fallback greeting, door notes.         |
+| `romance.test.ts`           | AC15: crush, date invitation and answer, the date, gossip about it, couple, eligibility.                     |
+| `slow-model-v2.test.ts`     | AC16: 30 s per call; new tasks fall back or are skipped as documented.                                       |
+| `save-migration.test.ts`    | AC17: a v1 save fixture loads and runs; Laude and Franzi move in; v2 round trip.                             |
+| `perf-v2.test.ts`           | AC18: sim step time, A\* and message sizes.                                                                  |
+| `letters.test.ts`           | AC20: posting, delivery rounds, reading, replies, caps, thank-you letters.                                   |
+| `notice-board.test.ts`      | AC21: event and player notices, reading, gossip, expiry.                                                     |
+| `laude-keep.test.ts`        | AC22: Laude's instant memories, the Keep, search, archiving, no extra rating calls.                          |
+| `crow.test.ts`              | AC23: perch, flights, sleep, caws and cooldown.                                                              |
+| `new-residents.test.ts`     | AC24: Laude's and Franzi's homes, the v1 set with 10 villagers, the bake-off.                                |
+| `shy-romance.test.ts`       | AC25: seven days of the shy crush: post office visits, short chats, gossip, the first date.                  |
+| `forest.test.ts`            | AC26: forest locations, animals and their hours, shyness, forest outings.                                    |
+| `observer-v2.test.ts`       | AC27: new event types and endpoints, GET only, no change to the village.                                     |
+
+AC19 (the UI) is covered by the client's DOM tests and a check in the browser.
 
 AC6 (inspector) is covered by the `inspect.data` checks in the acceptance suites and the client's
 inspector tests.

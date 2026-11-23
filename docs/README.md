@@ -20,9 +20,11 @@ Start with the [README](../README.md) for the one-command quick start.
 
 ## For developers
 
+- [Observer API](observer-api.md): the read-only HTTP API for following the village from another
+  program.
 - [Architecture](architecture.md): how the parts fit together.
 - [Acceptance tests](acceptance.md): the automated suite and the live check against a real model.
-- [Specs](spec/): the original spec with the binding decisions, the technical spec and the visual
-  style guide.
+- [Specs](spec/): the original spec with the binding decisions, the technical spec (v1 and the v2
+  expansion) and the visual style guide.
 - [Art](art/README.md): how the pixel art is generated and laid out.
 - [Reference](reference/README.md): the reference video and key frames.

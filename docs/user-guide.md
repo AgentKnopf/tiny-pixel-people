@@ -1,10 +1,12 @@
 # User guide
 
-Tiny Pixel People is a small village that lives on its own. Ten villagers (up to sixteen with the
-bundled profiles) wake up, plan their day with a language model, go to work, eat, chat, gossip,
-throw parties and go to bed. You live there too: you have a cottage, a cat called Pip, a backpack
-and some gold. You can talk to villagers, leave notes on their doors, start rumors, and stir things
-up with rain or a party.
+Tiny Pixel People is a small village that lives on its own. Twelve villagers (up to eighteen with
+the bundled profiles) wake up, plan their day with a language model, go to work, eat, chat, gossip,
+fall in love, throw parties and go to bed. Around the old town there is a zoo with rides, a farm
+whose animals are born and grow old, a forest, a post office, and a station where visitors arrive
+by train and stay at the hotel. You live there too: you have a cottage, a cat called Pip, a
+backpack and some gold. You can talk to villagers, leave notes on their doors, write letters, walk
+into their houses, start rumors, and stir things up with rain or a party.
 
 This guide assumes the game is running. If it isn't, see the [README](../README.md) quick start or
 [Installation](setup/installation.md).
@@ -25,22 +27,33 @@ This guide assumes the game is running. If it isn't, see the [README](../README.
 - [Backpack and gifts](#backpack-and-gifts)
 - [Pip, your pet](#pip-your-pet)
 - [Decorating your cottage](#decorating-your-cottage)
-- [Mail](#mail)
+- [The bigger village](#the-bigger-village)
+- [The zoo](#the-zoo)
+- [The farm](#the-farm)
+- [The train, visitors and the hotel](#the-train-visitors-and-the-hotel)
+- [Going inside houses](#going-inside-houses)
+- [The post office](#the-post-office)
+- [Laude and Franzi](#laude-and-franzi)
+- [Romance and dates](#romance-and-dates)
+- [The forest](#the-forest)
 - [Saving and loading](#saving-and-loading)
+- [When the model is slow](#when-the-model-is-slow)
+- [Watching from another program](#watching-from-another-program)
 - [Tips](#tips)
 
 ## The screen
 
 The village fills the window. A dark, see-through interface floats on top of it:
 
-| Where        | What                                                                                                                                                                                                                                                                                        |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Top left     | The HUD: `TINY PIXEL PEOPLE`, a status badge (`LIVE`, `PAUSED`, or `CONNECTING` / `OFFLINE` when the browser lost the server), the weather, the day and the clock. The rumor tracker opens below it.                                                                                        |
-| Top right    | The stats card: `REAL MODEL CALLS` (calls · total time · tokens), your gold and up to three item counts, how many players are online and villagers live here, and, while calls are waiting, `N in queue · F failed`. See [Performance](setup/performance.md) for what the numbers mean.     |
-| Bottom left  | The LLM card: where the villagers think. `✈ OFFLINE` with `RUNNING ON THIS MACHINE · QWEN2.5:7B VIA OLLAMA` means a local model, no internet needed; `☁ ONLINE` means a hosted API. `⚠ MODEL UNREACHABLE` means the model doesn't answer. The last line shows how long the last reply took. |
-| Bottom       | The toolbar: `PAUSE`, zoom (`−`, fit, `+`), the speed buttons `1× 2× 4× 8×`, and the world event buttons. On narrower windows the event buttons show only their icons; hover for the name.                                                                                                  |
-| Bottom right | The dock: `Backpack`, `Map`, `Pet`, `Decorate`, `Home`, `Mail` and `Gold`.                                                                                                                                                                                                                  |
-| Right        | The inspector, when you click a villager.                                                                                                                                                                                                                                                   |
+| Where                                                                                       | What                                                                                                                                                                                                                                                                                        |
+| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Top left                                                                                    | The HUD: `TINY PIXEL PEOPLE`, a status badge (`LIVE`, `PAUSED`, or `CONNECTING` / `OFFLINE` when the browser lost the server), the weather, the day and the clock. The rumor tracker opens below it.                                                                                        |
+| Top right                                                                                   | The stats card: `REAL MODEL CALLS` (calls · total time · tokens), your gold and up to three item counts, how many players are online and villagers live here, the next train and the hotel (`🚂 Next train 16:00 · Hotel 3/6`), and, while calls are waiting,                               |
+| `N in queue · F failed`. See [Performance](setup/performance.md) for what the numbers mean. |
+| Bottom left                                                                                 | The LLM card: where the villagers think. `✈ OFFLINE` with `RUNNING ON THIS MACHINE · QWEN2.5:7B VIA OLLAMA` means a local model, no internet needed; `☁ ONLINE` means a hosted API. `⚠ MODEL UNREACHABLE` means the model doesn't answer. The last line shows how long the last reply took. |
+| Bottom                                                                                      | The toolbar: `PAUSE`, zoom (`−`, fit, `+`), the speed buttons `1× 2× 4× 8×`, and the world event buttons, including 🚂 Train. On narrower windows the event buttons show only their icons; hover for the name.                                                                              |
+| Bottom right                                                                                | The dock: `Backpack`, `Map`, `Pet`, `Decorate`, `Home`, `Letters` and `Gold`.                                                                                                                                                                                                               |
+| Right                                                                                       | The inspector, when you click a villager. Clicking an animal opens a small animal card.                                                                                                                                                                                                     |
 
 Short messages ("toasts") pop up at the bottom centre, for example `📮 Mailbox placed at your
 cottage ✓`. Your conversations with villagers appear in a small dialog there too.
@@ -76,8 +89,9 @@ model.
   you.
 - **Drag** to pan the camera; **scroll** to zoom. The toolbar `−` and `+` zoom too, and the fit button
   shows the whole town again.
-- **Map** (dock) opens the scene switcher: Plaza (the whole town), Farm, Shop street, Park, Town square
-  and Your home. The camera moves to the scene you pick and follows it until you pan. The Map tile
+- **Map** (dock) opens the scene switcher: Plaza (the whole old town), Farm, Shop street, Park, Town
+  square and Your home, plus Overview (the whole map) and one scene per new district (see
+  [The bigger village](#the-bigger-village)). The camera moves to the scene you pick and follows it until you pan. The Map tile
   shows the current scene, or `free` after you pan.
 - **Home** (dock) jumps the camera to your cottage, the purple-roofed house at the bottom left.
 
@@ -268,11 +282,228 @@ A card shows its price, `Owned · place` once bought, or `Placed ✓`. Placed it
 cottage (press `Home` to look). Villagers who walk past your cottage notice new decorations and
 remember them, so they may bring them up later.
 
-## Mail
+## The bigger village
 
-The `Mail` tile opens your mailbox, and so does clicking your own door. It is meant for letters
-villagers leave for you once a mailbox decoration is placed. In this version villagers don't write
-letters yet, so the mailbox stays empty.
+The village is one big map of 128×60 tiles. The old town sits in the top-left corner, unchanged,
+and roads lead from it to six new districts. Villagers walk everywhere on their own, so you will
+see them heading to the zoo after work or taking a walk in the woods.
+
+| District           | Where               | What's there                                                                                                  |
+| ------------------ | ------------------- | ------------------------------------------------------------------------------------------------------------- |
+| **Town**           | top left            | The original village: plaza and fountain, Bakery & Café, shop, crop field, park, the houses and your cottage. |
+| **Post row**       | top, east of town   | Laude's house, the post office with the notice board (and a crow on the roof), and Franzi's house.            |
+| **Zoo**            | top middle          | Twelve animal enclosures, three rides, the Burger Joint and two ice cream trucks.                             |
+| **Forest**         | the whole east side | Trails, an old grove with a picnic spot, a lake with ducks, and shy forest animals.                           |
+| **Farmstead**      | bottom left         | Cow and sheep pastures, the chicken coop, the barn, the farmhouse and the butcher's shed.                     |
+| **Market**         | bottom middle       | The main road from north to south with market stalls, a place to meet like the plaza.                         |
+| **Station, hotel** | bottom right        | The railway platform and a hotel with six rooms for visitors.                                                 |
+
+The **Map** in the dock lists a scene for each district (Post row, Zoo, Rides, Forest, Farmstead,
+Station, Market) and an **Overview** of the whole map, next to the old town scenes. Plaza is still
+the view the game starts with.
+
+Twelve villagers live here by default: the original ten plus **Laude** and **Franzi**, who live on
+the post row (see [Laude and Franzi](#laude-and-franzi)).
+
+## The zoo
+
+The zoo is open from 08:00 to 21:00 (`zoo.openTime`, `zoo.closeTime`). Its gate is on the
+promenade east of the post office. Twelve species live in their own enclosures: lions, elephants,
+giraffes, zebras, penguins, monkeys, pandas, flamingos, kangaroos, polar bears, hippos and
+crocodiles. The animals wander, rest and sleep inside their fences.
+
+Villagers come here to watch the animals, which is good for their fun, and to go on dates. **Click
+an animal** to open its card with its species and name.
+
+### Rides
+
+| Ride          | Riders per round | Round  | Your ticket | Fun for riders |
+| ------------- | ---------------- | ------ | ----------- | -------------- |
+| Rollercoaster | 8                | 10 min | 4 gold      | +35            |
+| Ferris wheel  | 8                | 15 min | 3 gold      | +25            |
+| Carousel      | 6                | 8 min  | 2 gold      | +20            |
+
+Riders queue at the entrance. A ride starts a round as soon as someone is waiting, takes as many
+riders as fit, runs, and lets them off. A villager who waits more than 20 game minutes gives up and
+watches the rides instead. To ride yourself, walk to the ride and press **Ride** (the button shows
+the price); you join the queue like everyone else. Rides are closed when the zoo is.
+
+### Food
+
+- **Burger Joint** (11:00–21:00): burgers for 5 gold. Villagers eat here too. When the burgers run
+  out, villagers get a veggie burger instead, so nobody goes hungry.
+- **Ice cream trucks** (10:00–19:00): ice cream for 3 gold, never sold out.
+
+Press the buy button at a food place to buy one. What you buy goes into your backpack, and you can
+give it away like anything else you carry. Some villagers love burgers or ice cream.
+
+## The farm
+
+The farmstead south of the town has cows, sheep and chickens. They are born, grow up, give milk,
+wool and eggs, grow old and die, all on their own. No farm animal ever needs the language model.
+
+| Animal  | At the start           | Grown up at | Old at  | Lives      | Gives                         |
+| ------- | ---------------------- | ----------- | ------- | ---------- | ----------------------------- |
+| Cow     | 4 (2 cows, 2 bulls)    | 3 days      | 12 days | 14–18 days | 1 milk per cow per day        |
+| Sheep   | 4 (2 ewes, 2 rams)     | 3 days      | 10 days | 12–16 days | 1 wool per sheep every 3 days |
+| Chicken | 6 (4 hens, 2 roosters) | 2 days      | 6 days  | 8–12 days  | 1 egg per hen per day         |
+
+(Ages are in game days.)
+
+- **Every morning at 06:00** the animals age by a day. Very old animals die peacefully
+  (`🕊️ Old Bessie the cow passed away peacefully on the farm.`), and when there is a grown-up male
+  and female and room on the farm, a baby may be born (`🐣 A chick hatched at the coop!`).
+- **At 07:00** the milk, eggs and wool go to the shop, where you can buy them (milk 2, egg 1,
+  wool 3 gold). Old animals give half as much. **At 18:00** the barn turns 2 milk into 1 cheese
+  (4 gold).
+- **At most 10 of each kind** live on the farm at a time (`farm.capPerSpecies`). Config can lower
+  this, but never raise it.
+- **At 16:00** at most one animal a day goes "to the butcher", when a kind has 8 or more animals
+  (`farm.butcherAtCount`) or the Burger Joint is running low. Tom the farmer walks it to the shed by
+  the road, or it walks there alone if he is busy. You never see what happens there: the animal
+  simply leaves the farm, burgers appear at the Burger Joint, and a toast says
+  `🍔 Tom took a cow to the butcher. Fresh burgers at the Burger Joint!`.
+
+Click a farm animal to see its name, whether it is young, grown up or old, and its age in days.
+
+## The train, visitors and the hotel
+
+A train stops at the station every day at **10:00** and **16:00** (`train.arrivals`). It pulls in a
+few minutes early, waits 20 minutes at the platform (`train.dwellMinutes`) and leaves. The **Train**
+button in the toolbar brings the next train right away. The stats card shows when the next train
+is due and how full the hotel is, for example `🚂 Next train 16:00 · Hotel 3/6`.
+
+Trains bring **visitors**. Two to four of them are in town at any time (`visitors.min`,
+`visitors.max`); the first train of a new village brings two or three. Each one is invented by the
+language model, with a name, a job, a reason for the trip and things they like. When the model is
+too slow, the visitor comes from a list of ready-made travellers instead (`data/visitors.json`).
+
+A visitor walks from the platform to the **hotel**, checks into one of its six rooms
+(`hotel.rooms`) and then lives in town like everyone else: plans a day, chats, gossips and may even
+go on a date. After one to three days (`visitors.stayDays`) the visitor takes a train home. The
+villagers keep their memories of them. The inspector shows a badge such as
+`Visitor · leaves Tue 16:00`.
+
+The 🕵 **Stranger** button still works as before; strangers have nothing to do with trains.
+
+## Going inside houses
+
+You can walk into any villager's house, the hotel lobby and the post office. Walk up to the door
+and go in. Inside, the house opens as its own small room on top of the dimmed village: you can
+walk around, and whoever is at home is there too. Press **Exit** to step back out onto the doorstep.
+
+Nothing is locked, but the owner notices:
+
+| Who is home       | What happens                                                                                                                                                                                                          |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The owner, awake  | The owner stops what it's doing, waves 👋 and greets you (`Oh, hello! Come on in, make yourself at home.` if the model is slow). It remembers your visit and likes you a little more (`interiors.visitAffinity`, +1). |
+| The owner, asleep | When it wakes up, it remembers that you walked in while it was asleep, and likes you a little less (−1).                                                                                                              |
+| Nobody            | That's **snooping**. When the owner comes home, it finds out it was you and likes you less (`interiors.snoopAffinity`, −2). Neighbours within a few tiles who saw you go in will gossip about it.                     |
+
+A visit counts once per house per game day, good or bad. The hotel lobby and the post office have
+no owner, so going in there is always fine. Your own cottage has no inside yet; decorations stay on
+the porch. Door notes still work from outside the door.
+
+## The post office
+
+The post office stands on the post row, next to Laude's and Franzi's houses. It is open from 08:00
+to 18:00; the post box at its door takes letters at any time. Laude, the postmaster, works there.
+
+### Letters
+
+Open **Letters** in the dock to see your inbox and what you sent. **Write a letter** works inside
+the post office or right at its door. You can write to any villager, visitors included, up to 500
+characters.
+
+- Your letter is posted at once. The post goes out at **11:00** and **17:00**
+  (`post.deliveryTimes`), and the crow on the roof caws when it does.
+- The villager reads the letter the next time it comes home, remembers it, and writes back. The
+  reply goes out with the next delivery and lands in your inbox.
+- Villagers write letters too: a thank-you on the evening after you gave them a gift, a note to a
+  friend they haven't seen in a while, and now and then a shy note between Franzi and Laude. At most
+  three villager letters go out per day (`post.maxVillagerLettersPerDay`), and at most one of them
+  to you.
+- A letter to a visitor who has already left comes back to you marked "moved away".
+
+Letters show on doors like notes do, until they're read.
+
+### The notice board
+
+The notice board stands in front of the post office. Click it to read the notices. When you stand
+next to it, you can **Post a notice** (up to 200 characters).
+
+- Every village event puts up its own notice: `📌 Bake-off at the Town square, 15:00. All welcome!
+(Mia Hartley)`.
+- Villagers who walk past the board read every notice they haven't seen yet and talk about it, so a
+  notice spreads like a rumor.
+- Notices come down after 3 days (`post.noticeTtlDays`) or when their event is over. At most 12 hang
+  at once (`post.maxNotices`); a new one replaces the oldest.
+
+### The Keep
+
+Inside the post office stands the **Keep**, a cupboard where every door note, letter, notice and
+rumor in the village is written down. Click it to open the Keep: search for a word, filter by kind
+(notes, letters, notices, rumors, replies) and page back through the entries, newest first. Reading
+the Keep changes nothing in the village. It holds the last 2000 entries (`post.keepMax`).
+
+### Quill the crow
+
+A crow called Quill lives on the post office roof. It hops between its perches, takes a short
+flight over the post row a few times a day, sleeps on the roof from 20:00 to 06:00, and caws when
+the post is posted or delivered, or when you come close (at most every 30 game minutes).
+
+## Laude and Franzi
+
+**Laude** (46) is the postmaster: kind, meticulous, a little forgetful, and he never misses a
+bake-off. Whenever a bake-off is planned, Laude is invited, and he goes unless he has a date.
+
+Laude hears about every note, letter, notice and rumor in the village the moment it happens. But he
+forgets most of it after a day, so he writes it all down in the Keep. When you ask him something,
+he checks the Keep first (`📒 checking the Keep…`) and tells you what he finds. Asking Laude is the
+quickest way to find out what is going on in the village.
+
+**Franzi** (31) draws postcards. She is shy and warm, and she often finds a reason to drop by the
+post office. Laude and Franzi have a quiet crush on each other. They chat a little awkwardly (never
+more than three lines), the neighbours notice and gossip, and their liking for each other grows
+slowly. Neither of them dares to ask the other out before day 5 of the village, and only once they
+have talked at least six times and really like each other. The inspector shows `💗 Shy crush on: …`.
+
+With `sim.villagers` set to 10, the game runs with only the original ten villagers. The post
+office, letters, the notice board and the Keep still work.
+
+## Romance and dates
+
+Romance is light and wholesome: crushes, dates, holding hands, and couples. Only grown-ups (18 or
+older) take part.
+
+1. **Crushes.** A villager who really likes someone (affinity 6 or more, `romance.crushAffinity`)
+   and has talked with them at least twice in the last three days may develop a crush overnight.
+   Everyone has at most one crush.
+2. **Asking out.** After a chat with its crush, a villager may ask it on a date: to the zoo, the
+   Burger Joint, a ride, an ice cream truck, the park, the forest grove or the lake. The other one
+   decides, mostly by how much it likes the asker.
+3. **The date.** A date lasts 90 minutes. If both turn up, they like each other more and remember
+   "a lovely date". Villagers who see them will gossip about it. If one doesn't show up, the other
+   is a little hurt.
+4. **Couples.** After two good dates (`romance.datesForCouple`), and if they like each other enough
+   (affinity 7 or more, `romance.coupleAffinity`), the two become a couple:
+   `💕 Mia and Tom are now a couple!`. Couples keep going on dates.
+5. **Breaking up** happens quietly, only if a couple stops liking each other for days.
+
+Visitors can have crushes and go on dates, but they don't become couples before their train leaves.
+The inspector shows `💕 Partner: …`, `💗 Crush on: …` and the last three dates.
+
+## The forest
+
+The forest fills the east side of the map. It is always open, but villagers head home from there
+after 22:00. Villagers take walks, have picnics at the old grove, feed the ducks and fish at the lake
+(Finn, the fisher, if he lives in your village; he is villager 13, so set `sim.villagers` to 13
+or more). The grove and the lake are popular for dates.
+
+The forest has its own animals: deer, rabbits, squirrels, hedgehogs, foxes, birds and ducks. Each
+kind keeps its own hours: hedgehogs and foxes come out at night, the ducks swim by day and sleep on
+the shore at night. They are shy: when you or a villager comes within a few tiles, they move away.
+Villagers who spot one remember it ("I saw a deer near the lake").
 
 ## Saving and loading
 
@@ -313,11 +544,20 @@ villager plans tomorrow in the evening, about 90 minutes before bedtime, while t
 busy (except when overloaded). The mode recovers as soon as answers come back faster. For how to
 make a slow machine keep up, see [Performance and slow hardware](setup/performance.md).
 
+## Watching from another program
+
+The game also serves a read-only **observer API**: plain JSON over HTTP that another program (or
+an AI) can poll to follow the village without a browser, for example
+`curl http://127.0.0.1:3000/api/state`. It only reads; it never changes anything in the village.
+See [Observer API](observer-api.md).
+
 ## Tips
 
 - To watch gossip spread, tell a rumor in the morning, set the speed to 4×, and keep the rumor
   tracker open. By evening several villagers usually know.
 - If replies feel slow, use a longer day (`sim.dayLengthMinutes: 30`) or a smaller model. See
   [Troubleshooting](troubleshooting.md).
+- Ask Laude at the post office about a rumor: he checks the Keep and usually knows who started it.
+- Post a notice on the board in the morning and watch it travel through the village by evening.
 - The LLM card shows which model is running. To try another one, change `llm.model` in `config.json`
   and restart; see [Providers](setup/providers.md).

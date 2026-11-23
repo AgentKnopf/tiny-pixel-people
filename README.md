@@ -1,10 +1,12 @@
 # Tiny Pixel People
 
-A tiny top-down pixel village whose villagers (10 by default, up to 16) are driven by LLMs, in the spirit of
+A tiny top-down pixel village whose villagers (12 by default, up to 18) are driven by LLMs, in the spirit of
 [Generative Agents](https://arxiv.org/abs/2304.03442) (Smallville). Each villager has a memory
 stream, reflects on what happened, plans its day, chats and gossips with its neighbours, organises
 small events, and answers the notes you pin to its door. You walk around the village as yourself,
-with your cat Pip, earn gold, collect things in your backpack and decorate your cottage.
+with your cat Pip, earn gold, collect things in your backpack and decorate your cottage. Beyond
+the town lie a zoo with rides, a farm, a forest with a lake, a post office and a train station
+with a hotel for visitors.
 
 It runs fully offline with a local [Ollama](https://ollama.com), or against any OpenAI-compatible
 server (LM Studio, vLLM, llama.cpp, OpenRouter, …), Anthropic or Gemini. The provider and model are
@@ -45,22 +47,30 @@ section, or set environment variables. See [Providers](docs/setup/providers.md).
 - Run the clock at pause, 1×, 2×, 4× or 8×.
 - Walk around, pick up flowers and apples, give gifts, earn gold, decorate your cottage, and take
   Pip for a walk.
+- Visit the zoo, ride the rollercoaster, buy burgers and ice cream, and watch the farm animals
+  grow up.
+- Meet the visitors the train brings, walk into villagers' houses (they notice snooping), and
+  watch crushes turn into dates and couples.
+- Send letters from the post office, pin notices on the notice board, and browse the Keep, where
+  Laude the postmaster records everything.
+- Follow the village from another program through the read-only [observer API](docs/observer-api.md).
 
 The [user guide](docs/user-guide.md) explains everything in detail.
 
 ## Documentation
 
-| Document                                               | What's in it                                                       |
-| ------------------------------------------------------ | ------------------------------------------------------------------ |
-| [User guide](docs/user-guide.md)                       | How to play: controls, inspector, notes, rumors, events, gold, pet |
-| [Installation](docs/setup/installation.md)             | Requirements, install, start, update, run on another port          |
-| [Ollama setup](docs/setup/ollama.md)                   | Local models and which one to pick for your RAM / GPU              |
-| [Providers](docs/setup/providers.md)                   | OpenAI-compatible, LM Studio, vLLM, OpenRouter, Anthropic, Gemini  |
-| [Configuration reference](docs/setup/configuration.md) | Every config key, its default, and the environment variables       |
-| [Troubleshooting](docs/troubleshooting.md)             | Common problems and fixes                                          |
-| [Architecture](docs/architecture.md)                   | How the server, cognition, LLM queue and client fit together       |
-| [Acceptance tests](docs/acceptance.md)                 | Running the test suite and the live check against a real model     |
-| [Specs](docs/spec/)                                    | The original spec, the technical spec and the visual style guide   |
+| Document                                               | What's in it                                                         |
+| ------------------------------------------------------ | -------------------------------------------------------------------- |
+| [User guide](docs/user-guide.md)                       | How to play: the village, zoo, farm, train, houses, letters, romance |
+| [Installation](docs/setup/installation.md)             | Requirements, install, start, update, run on another port            |
+| [Ollama setup](docs/setup/ollama.md)                   | Local models and which one to pick for your RAM / GPU                |
+| [Providers](docs/setup/providers.md)                   | OpenAI-compatible, LM Studio, vLLM, OpenRouter, Anthropic, Gemini    |
+| [Configuration reference](docs/setup/configuration.md) | Every config key, its default, and the environment variables         |
+| [Troubleshooting](docs/troubleshooting.md)             | Common problems and fixes                                            |
+| [Observer API](docs/observer-api.md)                   | Read-only HTTP API for following the village from another program    |
+| [Architecture](docs/architecture.md)                   | How the server, cognition, LLM queue and client fit together         |
+| [Acceptance tests](docs/acceptance.md)                 | Running the test suite and the live check against a real model       |
+| [Specs](docs/spec/)                                    | The original spec, the technical spec and the visual style guide     |
 
 ## Development
 
@@ -75,7 +85,7 @@ npm run format
 
 Layout: `src/shared` (types and the WebSocket protocol), `src/server` (config, llm, sim, cognition,
 player, persistence, net), `src/client` (canvas renderer and UI), `data` (villagers, items,
-decorations, strangers), `assets` (art, see `assets/CREDITS.md`), `docs`, `test`, `scripts`.
+decorations, strangers, visitors, romance, animals), `assets` (art, see `assets/CREDITS.md`), `docs`, `test`, `scripts`.
 Contributors: read [AGENTS.md](AGENTS.md) and the [architecture](docs/architecture.md) first.
 
 ## License
