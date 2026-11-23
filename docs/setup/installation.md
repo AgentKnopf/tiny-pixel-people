@@ -29,12 +29,13 @@ npm start
 
 This builds the browser client into `dist/client` and starts the server. Open
 <http://127.0.0.1:3000>. The first lines of the server log show which config file was used and
-whether the model answered its health check:
+whether the chat model and the embedding model answered their health checks:
 
 ```
 INFO  [main] config: /path/to/tiny-pixel-people/config.json
-INFO  [main] LLM ollama/qwen2.5:7b: ...
 INFO  [main] resuming save "default" from /path/to/tiny-pixel-people/saves/default
+INFO  [main] LLM ollama/qwen2.5:7b: ollama at http://127.0.0.1:11434, model qwen2.5:7b ready
+INFO  [main] embeddings: ollama at http://127.0.0.1:11434, model nomic-embed-text ready
 INFO  [main] world: 48x30 tiles, 10 villagers
 INFO  [main] Tiny Pixel People running at http://127.0.0.1:3000
 ```

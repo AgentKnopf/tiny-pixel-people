@@ -171,9 +171,12 @@ _Generative Agents_ (Park et al., 2023), scaled down to small local models:
 - Structured output is parsed tolerantly (code fences stripped, first JSON object taken),
   validated with zod, retried once with a repair prompt, and otherwise replaced by the caller's
   fallback.
-- At startup the server runs a health check (Ollama: `GET /api/tags` and is the model pulled;
-  OpenAI-compatible: `GET /models`; Anthropic and Gemini: look up the model). A failure doesn't
-  stop the server; villagers use fallbacks and the UI shows the model as unreachable.
+- At startup `checkLlmHealth` checks the chat and embedding providers (Ollama: `GET /api/tags` and
+  is the model pulled; OpenAI-compatible: `GET /models`; Anthropic and Gemini: look up the model)
+  and logs one line for each. A failure doesn't stop the server: it seeds the queue's online flag
+  (the UI shows the model as unreachable and villagers use fallbacks), and a failed embeddings
+  check switches retrieval to keywords. After that the online flag follows the calls: network
+  errors, timeouts and 401/403 set it to offline, any success sets it back.
 - With 10 villagers a game day costs roughly 200 calls plus player chats.
 
 ## Protocol

@@ -40,7 +40,9 @@ How the key is found, first match wins:
 
 Embeddings look up `TPP_EMBED_API_KEY`, `embeddings.apiKey` and `embeddings.apiKeyEnv` first.
 If none is set and the embeddings use the same provider and endpoint as the chat model, they reuse
-the chat key; otherwise the provider's usual variable from step 4 applies. Ollama needs no key.
+the chat key; otherwise the provider's usual variable from step 4 applies. Ollama needs no key; if
+you set one anyway (for example for an Ollama behind an authenticating proxy), it is sent as
+`Authorization: Bearer <key>`.
 Keys are never sent to the browser and never written to logs or to the optional prompt log
 (`llm.logFile`).
 

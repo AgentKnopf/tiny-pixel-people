@@ -54,7 +54,9 @@ Start it with: ollama serve`, and `curl http://127.0.0.1:11434/api/tags` must an
   key shows as `anthropic: no API key; set llm.apiKeyEnv …`. A 401/403 means a wrong key; a 404
   usually a wrong model name (`unknown model …; check llm.model`).
 
-Restart the server after fixing it.
+Restart the server after fixing it. While the game runs, the card switches to `⚠ MODEL UNREACHABLE`
+when calls fail with network errors, timeouts or a rejected key, and back as soon as a call
+succeeds.
 
 **Ollama says the model isn't pulled, but `ollama list` shows it.**
 The names must match. `qwen2.5` means `qwen2.5:latest`, which can be a different model from
@@ -70,8 +72,9 @@ Some servers reject JSON mode. The game drops `response_format` by itself when t
 if the errors continue, set `"llm": { "jsonMode": false }`.
 
 **The log says `embeddings disabled (…); memory retrieval falls back to keywords`.**
-The embedding model can't be used, for example because `nomic-embed-text` isn't pulled. The game
-keeps running with keyword recall. Pull it (`ollama pull nomic-embed-text`) or, for other
+The embedding model can't be used, for example because `nomic-embed-text` isn't pulled or Ollama
+wasn't running when the game started. The game keeps running with keyword recall until the next
+restart. Pull it (`ollama pull nomic-embed-text`) or, for other
 providers, set `embeddings.model` to a model that provider offers, then restart. To switch
 embeddings off on purpose, set `"embeddings": { "provider": "none" }`.
 

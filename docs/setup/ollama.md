@@ -36,8 +36,11 @@ npm start
 On startup the server checks that Ollama answers and that the model is pulled. If it isn't, the log
 tells you what to run, for example
 `LLM ollama/qwen2.5:7b: model qwen2.5:7b not pulled; run: ollama pull qwen2.5:7b`. If Ollama isn't
-running, the log ends with `Is Ollama running? Start it with: ollama serve`. The game still starts: villagers follow simple default plans
-and the LLM card shows `⚠ MODEL UNREACHABLE`. Pull the model and restart the server. When
+running, the log ends with `Is Ollama running? Start it with: ollama serve`. The game still starts:
+villagers follow simple default plans and the LLM card shows `⚠ MODEL UNREACHABLE`. A second line,
+`embeddings: …`, reports the embedding model the same way. If the embedding model can't be used at
+startup, the game logs `embeddings disabled (…); memory retrieval falls back to keywords` and keeps
+keyword recall until the next restart. Pull the models (or start Ollama) and restart the server. When
 everything works the card reads `✈ OFFLINE · RUNNING ON THIS MACHINE · QWEN2.5:7B VIA OLLAMA`:
 "offline" here means no internet is needed.
 
