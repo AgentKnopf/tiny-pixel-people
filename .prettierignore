@@ -3,3 +3,5 @@ node_modules
 saves
 package-lock.json
 assets
+# Saves written by older versions; kept byte-exact.
+test/fixtures

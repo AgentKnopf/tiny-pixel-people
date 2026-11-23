@@ -686,7 +686,7 @@ export interface Notice {
   postedAt: GameMinutes;
   expiresAt: GameMinutes;
   eventId?: EventId;
-  /** Root memory id for gossip tracing (Laude's log memory, or the first reader's). */
+  /** Laude's log memory id; readers use `originId ?? id` for gossip tracing. */
   originId?: MemoryId;
 }
 
