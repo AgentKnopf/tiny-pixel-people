@@ -1,5 +1,5 @@
 /**
- * AC17 (spec v2 §15, §18): saves written by v1 (schemaVersion 1) load into v2.
+ * Saves written by v1 (schemaVersion 1) load into v2 (spec v2 §15). WP6's AC17 suite may reuse the fixture.
  * The fixture in test/fixtures/save-v1/ was written by v1 main (e769b2b) with JsonSaveStore:
  * 10 villagers at 13:00 on day 0, a door note, a player rumor and a placed decoration.
  */
@@ -21,7 +21,7 @@ function copyFixture(): JsonSaveStore {
   return new JsonSaveStore({ dir, slot: 'save-v1' });
 }
 
-describe('AC17: v1 saves load into v2', () => {
+describe('v1 save fixture loads into v2', () => {
   let w: TestWorld | undefined;
   afterEach(() => w?.dispose());
 

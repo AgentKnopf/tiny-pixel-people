@@ -499,7 +499,7 @@ Schema rules:
 - **Interiors:**
   - While `player.inside` is set, show the interior template as its own view, with the world dimmed behind it.
   - Draw the player at `inside.pos` and residents who are home at the interior spots, and show an "Exit" button.
-  - The door hit-test sends `player.enter`.
+  - Clicking a door opens the door modal with "Go inside" (sends `player.enter`) and "Leave a note".
   - In the post office, clicking `keep_cupboard` opens the Keep.
 - **UI:**
   - **Animal card** when clicking an animal: species, name, stage and age in days; forest animals and the crow show only species and name.
