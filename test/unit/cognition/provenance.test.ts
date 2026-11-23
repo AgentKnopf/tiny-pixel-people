@@ -159,6 +159,26 @@ describe('fallback plan rescue and the dawn rush', () => {
   });
 });
 
+describe('one-place model plans', () => {
+  it('adds a break elsewhere and keeps the model plan', async () => {
+    const p = new MockChatProvider();
+    p.setScript('plan.day', () =>
+      JSON.stringify({ summary: 'shop all day', blocks: [['06:00', '22:00', 'bakery', 'mind the shop']] }),
+    );
+    const v = createTestVillage({ start: at(0, '05:00'), provider: p });
+    await v.advanceTo(at(0, '05:10'));
+    for (const id of ['mia', 'ben', 'cleo', 'dan']) {
+      const plan = v.worlds.get(id)!.plan!;
+      expect(plan, id).toMatchObject({ day: 0, source: 'llm' });
+      const places = new Set(plan.blocks.map((b) => b.locationId));
+      expect(places.size, id).toBeGreaterThanOrEqual(2);
+    }
+    expect(v.worlds.get('mia')!.plan!.blocks).toContainEqual(
+      expect.objectContaining({ locationId: 'plaza', activity: 'eat lunch on the square', start: 720 }),
+    );
+  });
+});
+
 describe('provenance', () => {
   it('asks the model for the daily event even when overloaded, and marks the event', async () => {
     const p = new MockChatProvider();

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ensureVariety,
   fallbackBlocks,
   insertBlock,
   needOverride,
@@ -22,6 +23,54 @@ function coversDay(blocks: { start: number; end: number }[]) {
   expect(blocks.at(-1)!.end).toBe(w.sleep);
   for (let i = 1; i < blocks.length; i++) expect(blocks[i]!.start).toBe(blocks[i - 1]!.end);
 }
+
+describe('two places a day', () => {
+  const allDay = (locationId: string) =>
+    normalizeBlocks(
+      [{ start: 0, end: 24 * 60, locationId, activity: 'mind the shop', emoji: '🛍️' }],
+      w,
+      mia.homeId,
+    );
+  const places = (b: { locationId: string }[]) => new Set(b.map((x) => x.locationId));
+
+  it('adds a lunch break elsewhere to a one-place plan, never at the place already used', () => {
+    const atWork = ensureVariety(allDay('bakery'), w, LOCATIONS);
+    expect(places(atWork)).toEqual(new Set(['bakery', 'plaza']));
+    expect(atWork.find((b) => b.locationId === 'plaza')).toMatchObject({ start: 720, end: 780 });
+    coversDay(atWork);
+    const atHome = ensureVariety(allDay(mia.homeId), w, LOCATIONS);
+    expect(atHome.find((b) => b.locationId !== mia.homeId)).toMatchObject({
+      locationId: 'bakery',
+      start: 720,
+    });
+  });
+
+  it('keeps events and tasks, prefers a slot after now, and leaves varied plans alone', () => {
+    const event = {
+      start: 690,
+      end: 810,
+      locationId: 'bakery',
+      activity: 'host Bake-off',
+      emoji: '🎉',
+      eventId: 'ev1',
+    };
+    const out = ensureVariety(insertBlock(allDay('bakery'), event), w, LOCATIONS);
+    expect(out.find((b) => b.eventId === 'ev1')).toMatchObject({ start: 690, end: 810 });
+    const brk = out.find((b) => b.locationId !== 'bakery')!;
+    expect(brk.end <= 690 || brk.start >= 810).toBe(true);
+    const late = ensureVariety(allDay('bakery'), w, LOCATIONS, 15 * 60);
+    expect(late.find((b) => b.locationId !== 'bakery')!.start).toBeGreaterThanOrEqual(15 * 60);
+    const varied = fallbackBlocks(mia, LOCATIONS);
+    expect(ensureVariety(varied, w, LOCATIONS)).toEqual(varied);
+  });
+
+  it('gives fallback plans a second place even when work, food and company are all at home', () => {
+    const writer = { ...mia, occupation: 'Writer', bio: 'Writes.', id: 'zed' };
+    const locs = LOCATIONS.filter((l) => l.id === mia.homeId || l.id === 'farm');
+    const blocks = fallbackBlocks(writer, locs);
+    expect(places(blocks)).toEqual(new Set([mia.homeId, 'farm']));
+  });
+});
 
 describe('planning', () => {
   it('resolves messy location names', () => {
