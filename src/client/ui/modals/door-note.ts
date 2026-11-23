@@ -217,22 +217,20 @@ function mailboxView(ctx: UiContext): ModalView {
   return {
     title: 'Your mailbox',
     icon: ['note', '📬'],
-    footer: 'Villagers who know you may leave a note once a mailbox is placed at your cottage.',
+    footer:
+      'Letters from villagers arrive here with the post office delivery rounds. Write back at the post office.',
     className: 'modal-note',
-    key: () =>
-      `${store.player?.placedDecorations.includes('mailbox')}|` +
-      [...store.notesFor(PLAYER_HOME_ID), ...inbox()].map((n) => `${n.id}:${n.status}`).join(','),
+    key: () => [...store.notesFor(PLAYER_HOME_ID), ...inbox()].map((n) => `${n.id}:${n.status}`).join(','),
     render(body) {
       const notes = store.notesFor(PLAYER_HOME_ID).filter((n) => n.authorId !== PLAYER_ID);
       const letters = inbox();
-      const hasMailbox = store.player?.placedDecorations.includes('mailbox') ?? false;
       const items = [
         ...notes.map((n) => ({
           at: n.postedAt,
           el: h(
             'li',
             { class: `note note-${n.status}` },
-            h('div', { class: 'label' }, `${when(n.postedAt)} · from ${store.name(n.authorId)}`),
+            h('div', { class: 'label' }, `${when(n.postedAt)} · 📝 door note from ${store.name(n.authorId)}`),
             h('div', { class: 'note-body' }, `“${n.text}”`),
           ),
         })),
@@ -252,9 +250,6 @@ function mailboxView(ctx: UiContext): ModalView {
       ].sort((a, b) => b.at - a.at);
       replaceChildren(
         body,
-        hasMailbox
-          ? null
-          : h('p', { class: 'hint' }, 'Tip: place a 📮 Mailbox (Decorate) so villagers can write to you.'),
         h(
           'ul',
           { class: 'note-history', 'data-testid': 'mailbox' },
