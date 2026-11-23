@@ -20,6 +20,7 @@ import type {
   GroundItem,
   PlayerState,
   Point,
+  Provenance,
   Rumor,
   Weather,
   WorldEvent,
@@ -92,6 +93,7 @@ export interface ConversationMessageMsg {
   listenerId: VillagerId;
   text: string;
   time: GameMinutes;
+  source?: Provenance;
 }
 
 export interface ConversationEndedMsg {
