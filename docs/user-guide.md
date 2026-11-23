@@ -331,7 +331,7 @@ watches the rides instead. To ride yourself, walk up to the ride: the place bar 
 how many are waiting and a **Ride** button with the price, for example `Ride (4 gold)`. You join the queue like
 everyone else; the bar then says `in the queue`, and `riding!` during your round. The button is
 greyed out when the rides are closed (outside zoo hours) or you don't have enough gold. While a
-ride runs, its riders are on it and you don't see them on the map: the rollercoaster cars go round
+ride runs, its riders are on it and you don't see them on the map, yourself included: the rollercoaster cars go round
 the track, and the Ferris wheel and carousel turn.
 
 ### Food
@@ -506,10 +506,12 @@ older) take part.
 1. **Crushes.** A villager who really likes someone (affinity 6 or more, `romance.crushAffinity`)
    and has talked with them at least twice in the last three days may develop a crush overnight:
    a 30 % chance each night, and certain on the third night in a row that this still holds. A night
-   when it doesn't hold starts the count again. Everyone has at most one crush.
+   when it doesn't hold starts the count again. Everyone has at most one crush, and nobody gets a
+   crush on someone who is already dating or partnered with another villager.
 2. **Asking out.** After a chat with its crush, a villager may ask it on a date: to the zoo, the
    Burger Joint, a ride, an ice cream truck, the park, the forest grove or the lake. The other one
-   decides, mostly by how much it likes the asker.
+   decides, mostly by how much it likes the asker. A villager who is on a date, in a couple or has
+   a crush on someone else always says no.
 3. **The date.** A date lasts 90 minutes. If both turn up, they like each other more and remember
    "a lovely date". Villagers who see them will gossip about it. If one doesn't show up, the other
    is a little hurt.
