@@ -1,5 +1,9 @@
 /** AC14: the player can enter houses at any time; owners greet and remember; snooping lowers affinity. */
+import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { ChatRequest } from '../../../src/server/llm/types.ts';
+import { MockChatProvider, mockAnswer } from '../../../src/server/llm/providers/mock.ts';
+import { findPath } from '../../../src/server/sim/pathfinding.ts';
 import { dayOf } from '../../../src/shared/time.ts';
 import {
   PLAYER_ID,
@@ -9,8 +13,10 @@ import {
   type PlayerInside,
   type Point,
   type VillagerId,
+  type VillagerProfile,
+  type WorldMap,
 } from '../../../src/shared/types.ts';
-import { readyV2, waitingForV2 } from '../../helpers/features.ts';
+import { featurePath, readyV2, repoPath, waitingForV2 } from '../../helpers/features.ts';
 import { dist, loc, V2, walkPlayerTo } from '../../helpers/v2.ts';
 import { createTestWorld, type TestWorld } from '../../helpers/world.ts';
 
@@ -61,6 +67,86 @@ async function goToHouse(w: TestWorld, ok: (h: House) => boolean, attempts = 8):
   return null;
 }
 
+/**
+ * A controlled cast, derived from the map: `greet` is a single-owner house whose owner stays home;
+ * `snoop` is a single-owner house whose owner is out until 20:00; the witness lives next door and
+ * walks past the snooped door at WITNESS_LEAVES on the way to `errand`.
+ */
+interface Cast {
+  greet: House;
+  snoop: House;
+  witness: VillagerId;
+  errand: string;
+  away: string;
+}
+
+const WITNESS_LEAVES = '09:00';
+const OWNER_BACK = '20:00';
+
+function pickCast(): Cast {
+  const m = JSON.parse(readFileSync(repoPath(featurePath('villageMap')), 'utf8')) as WorldMap;
+  const roster = (JSON.parse(readFileSync(repoPath(featurePath('villagers')), 'utf8')) as VillagerProfile[])
+    .slice(0, 12)
+    .map((p) => p.id);
+  const singles = m.locations.filter(
+    (l): l is House =>
+      l.kind === 'house' &&
+      !!l.interiorId &&
+      !!l.door &&
+      l.ownerIds?.length === 1 &&
+      roster.includes(l.ownerIds[0]!),
+  );
+  const open = m.locations.filter((l) => l.kind !== 'house' && !l.hours);
+  for (const snoop of singles)
+    for (const next of singles) {
+      if (next === snoop || dist(next.door, snoop.door) > 6.5) continue;
+      for (const errand of open) {
+        const path = findPath(m, next.entry, errand.entry);
+        if (!path || path.length < 12 || !path.some((p) => dist(p, snoop.door) <= 4)) continue;
+        const greet = singles.find((h) => h !== snoop && h !== next);
+        if (!greet) continue;
+        const away = [...open].sort((a, b) => dist(b.entry, snoop.door) - dist(a.entry, snoop.door))[0]!;
+        return { greet, snoop, witness: next.ownerIds[0]!, errand: errand.id, away: away.id };
+      }
+    }
+  throw new Error('map has no single-owner house next door to another one on a through path');
+}
+
+function planDay(meta: Record<string, unknown>): number {
+  if (typeof meta.day === 'number') return meta.day;
+  return typeof meta.now === 'number' ? dayOf(meta.now) : 0;
+}
+
+/** Day-0 plans for the cast; everybody else gets the default mock plan. */
+function castPlans(cast: Cast) {
+  const block = (start: string, end: string, location: string, activity: string) => ({
+    start,
+    end,
+    location,
+    activity,
+    emoji: '🙂',
+  });
+  return (req: ChatRequest): string => {
+    const meta = req.meta ?? {};
+    const p = meta.profile as VillagerProfile | undefined;
+    if (!p || planDay(meta) !== 0) return mockAnswer(req);
+    let blocks;
+    if (p.id === cast.greet.ownerIds[0]) blocks = [block('06:00', '22:00', p.homeId, 'A quiet day at home')];
+    else if (p.id === cast.snoop.ownerIds[0])
+      blocks = [
+        block('06:00', OWNER_BACK, cast.away, 'A long day out'),
+        block(OWNER_BACK, '22:00', p.homeId, 'Back home'),
+      ];
+    else if (p.id === cast.witness)
+      blocks = [
+        block('06:00', WITNESS_LEAVES, p.homeId, 'Breakfast at home'),
+        block(WITNESS_LEAVES, '20:00', cast.errand, 'Running errands'),
+        block('20:00', '22:00', p.homeId, 'Back home'),
+      ];
+    else return mockAnswer(req);
+    return JSON.stringify({ summary: `${p.name} has a planned day`, blocks });
+  };
+}
 describe.skipIf(!readyV2(...F))(`AC14: house interiors${waitingForV2(...F)}`, () => {
   let w: TestWorld;
   const bubbles: { villagerId: VillagerId; text: string }[] = [];
@@ -94,8 +180,13 @@ describe.skipIf(!readyV2(...F))(`AC14: house interiors${waitingForV2(...F)}`, ()
     noteStatusBefore: '' as string,
   };
 
+  let cast: Cast;
+
   beforeAll(async () => {
-    w = await createTestWorld({ villagers: 12, seed: 14, startAt: '06:00' });
+    cast = pickCast();
+    const provider = new MockChatProvider('mock');
+    provider.setScript('plan.day', castPlans(cast));
+    w = await createTestWorld({ villagers: 12, seed: 14, startAt: '06:00', provider });
     w.engine.onMessage((m) => {
       if (m.type === 'tick')
         for (const f of m.villagers) if (f.bubble) bubbles.push({ villagerId: f.id, text: f.bubble });
@@ -103,8 +194,8 @@ describe.skipIf(!readyV2(...F))(`AC14: house interiors${waitingForV2(...F)}`, ()
     await w.advanceTo('06:30');
 
     // (a) owner home and awake
-    const h = await goToHouse(w, (x) => !!ownerHomeAwake(w, x));
-    if (!h) throw new Error('could not reach a house with its owner home and awake');
+    const h = await goToHouse(w, (x) => x.id === cast.greet.id && !!ownerHomeAwake(w, x));
+    if (!h) throw new Error(`could not reach ${cast.greet.id} with its owner home and awake`);
     visit.house = h;
     visit.owner = ownerHomeAwake(w, h)!;
     visit.affinityBefore = affinityToPlayer(w, visit.owner);
@@ -134,7 +225,33 @@ describe.skipIf(!readyV2(...F))(`AC14: house interiors${waitingForV2(...F)}`, ()
     visit.memoriesAfterSecond = w.memories(visit.owner).filter((m) => VISIT_TEXT.test(m.text)).length;
     w.command({ type: 'player.exit' });
 
-    // (d) public interiors
+    // (b) owner away; the neighbour walks past the door on the way out
+    const s = cast.snoop;
+    if (!(await walkPlayerTo(w, s.entry))) throw new Error(`player could not reach ${s.id}`);
+    const nearDoor = () =>
+      w
+        .state()
+        .villagers.filter(
+          (v) => !s.ownerIds.includes(v.id) && v.status !== 'sleeping' && dist(v.pos, s.door) <= 6,
+        )
+        .map((v) => v.id);
+    const passing = () => w.villager(cast.witness).status === 'walking' && nearDoor().includes(cast.witness);
+    if (!(await w.until(() => nobodyHome(w, s) && passing(), 4 * 60)))
+      throw new Error(`${cast.witness} never walked past ${s.id} while it was empty`);
+    snoop.house = s;
+    snoop.expectedWitnesses = nearDoor();
+    for (const id of s.ownerIds) if (present(w, id)) snoop.affinityBefore.set(id, affinityToPlayer(w, id));
+    snoop.enteredAt = w.now();
+    w.command({ type: 'player.enter', locationId: s.id });
+    await w.advance(2, { chunk: 1 });
+    w.command({ type: 'player.exit' });
+    // (f) a v1 door note from outside
+    w.command({ type: 'note.post', houseId: s.id, text: NOTE });
+    const note = w.state().notes.find((n) => n.houseId === s.id && n.text === NOTE);
+    snoop.noteCreated = !!note;
+    snoop.noteStatusBefore = note?.status ?? 'missing';
+
+    // (d) public interiors (the post office opens at 08:00)
     for (const id of ['hotel', 'post_office']) {
       const target = loc(w.engine.map, id);
       if (!(await walkPlayerTo(w, target.entry))) throw new Error(`player could not reach ${id}`);
@@ -151,36 +268,8 @@ describe.skipIf(!readyV2(...F))(`AC14: house interiors${waitingForV2(...F)}`, ()
       w.command({ type: 'player.exit' });
     }
 
-    // (b) owner away, with someone near the door to witness it
-    for (let attempt = 0; attempt < 4 && !snoop.house; attempt++) {
-      const s = await goToHouse(w, (x) => x.id !== h.id && nobodyHome(w, x));
-      if (!s) break;
-      const nearDoor = () =>
-        w
-          .state()
-          .villagers.filter(
-            (v) => !s.ownerIds.includes(v.id) && v.status !== 'sleeping' && dist(v.pos, s.door) <= 6,
-          )
-          .map((v) => v.id);
-      const ok = await w.until((x) => nobodyHome(x, s) && nearDoor().length > 0, 240);
-      if (!ok || !nobodyHome(w, s)) continue;
-      snoop.house = s;
-      snoop.expectedWitnesses = nearDoor();
-      for (const id of s.ownerIds) if (present(w, id)) snoop.affinityBefore.set(id, affinityToPlayer(w, id));
-      snoop.enteredAt = w.now();
-      w.command({ type: 'player.enter', locationId: s.id });
-      await w.advance(2, { chunk: 1 });
-      w.command({ type: 'player.exit' });
-      // (f) a v1 door note from outside
-      w.command({ type: 'note.post', houseId: s.id, text: NOTE });
-      const note = w.state().notes.find((n) => n.houseId === s.id && n.text === NOTE);
-      snoop.noteCreated = !!note;
-      snoop.noteStatusBefore = note?.status ?? 'missing';
-    }
-    if (!snoop.house) throw new Error('found no empty house with a passer-by near its door');
-    const s = snoop.house;
     await w.advance(10);
-    const home = await w.until((x) => !nobodyHome(x, s), 20 * 60);
+    const home = await w.until((x) => !nobodyHome(x, s), 14 * 60);
     if (home) {
       snoop.returnedOwner = s.ownerIds.find((id) => present(w, id)?.locationId === s.id) ?? null;
       await w.advance(30);

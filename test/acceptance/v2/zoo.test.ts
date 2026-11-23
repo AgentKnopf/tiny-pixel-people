@@ -160,6 +160,8 @@ describe.skipIf(!readyV2(...F))(`AC9: zoo, rides and food${waitingForV2(...F)}`,
     let ridesAt2130: WorldSnapshot['rides'];
     let nightBlock: { locationId: string; start: number; end: number } | undefined;
     let nightPlanBlocks: { locationId: string; start: number; end: number }[] = [];
+    let hungerAt0900 = new Map<VillagerId, number>();
+    let hungerAt2130 = new Map<VillagerId, number>();
 
     beforeAll(async () => {
       const provider = new MockChatProvider('mock');
@@ -192,6 +194,7 @@ describe.skipIf(!readyV2(...F))(`AC9: zoo, rides and food${waitingForV2(...F)}`,
           leftAt: null,
         });
       await w.advanceTo('09:00');
+      hungerAt0900 = new Map(w.state().villagers.map((v) => [v.id, v.needs.hunger]));
       const problems: string[] = [];
       await w.advanceTo('11:45', {
         chunk: 1,
@@ -235,6 +238,7 @@ describe.skipIf(!readyV2(...F))(`AC9: zoo, rides and food${waitingForV2(...F)}`,
         },
       });
       ridesAt2130 = w.state().rides;
+      hungerAt2130 = new Map(w.state().villagers.map((v) => [v.id, v.needs.hunger]));
       const plan = w.villager(NIGHT_RIDER).plan;
       nightPlanBlocks = (plan?.blocks ?? []).map((b) => ({
         locationId: b.locationId,
@@ -262,6 +266,18 @@ describe.skipIf(!readyV2(...F))(`AC9: zoo, rides and food${waitingForV2(...F)}`,
       expect(
         w.of('ride.updated').some((m) => m.ride.locationId === RIDE && m.ride.status === 'running'),
       ).toBe(true);
+    });
+
+    it('really runs with needs off: hunger never decays and no food override enters the plan', () => {
+      expect(w.config.needs.enabled).toBe(false);
+      // Eating still raises hunger (a burger or an ice cream on an outing); only the decay is off.
+      const decayed = [...hungerAt0900]
+        .filter(([id, h]) => (hungerAt2130.get(id) ?? h) < h)
+        .map(([id]) => `${id} ${h} -> ${hungerAt2130.get(id)}`);
+      expect(decayed, 'villagers whose hunger dropped').toEqual([]);
+      const home = w.engine.profiles.find((p) => p.id === NIGHT_RIDER)!.homeId;
+      const allowed = new Set(['square', RIDE, home, ...OPEN_ALTERNATIVES]);
+      expect(nightPlanBlocks.filter((b) => !allowed.has(b.locationId))).toEqual([]);
     });
 
     it('moves a 21:00 ride block to an open place and keeps the rides closed after hours', () => {
