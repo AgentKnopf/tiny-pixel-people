@@ -3,6 +3,12 @@
  * See specs/technical-spec.md §7. The engine owns physics; the mind owns decisions.
  */
 import type {
+  HouseVisit,
+  KeepEntry,
+  Letter,
+  Notice,
+  Provenance,
+  Romance,
   Conversation,
   ConversationId,
   DayPlan,
@@ -49,6 +55,15 @@ export interface WorldView {
   events: readonly VillageEvent[];
   villagerNames: Readonly<Record<VillagerId, string>>;
   weather?: Readonly<Weather>;
+  // ---------- v2 ----------
+  /** Romance records this villager is part of. */
+  romances?: readonly Romance[];
+  /** Active notices if the villager is within reading distance of the notice board. */
+  noticesInReach?: readonly Notice[];
+  /** Letters delivered to this villager's mailbox and not read yet (read on arrival home). */
+  lettersAtHome?: readonly Letter[];
+  /** Keyword search over the Keep (Laude's prompts, spec v2 §8.3). */
+  searchKeep?: (query: string, k: number) => readonly KeepEntry[];
 }
 
 export type Intent =
@@ -92,6 +107,11 @@ export interface VillagerMind {
   requestEventProposal(): void;
   /** True once the plan for `day` is final (LLM plan in or fallback chosen); the engine's wake-up hold waits on it. */
   isPlanSettled?(day: number): boolean;
+  // ---------- v2 (spec v2 §6–§8) ----------
+  /** The player walked in while this villager is home and awake (`visit.greet`, with fallback). */
+  greetVisitor?(view: WorldView, visit: HouseVisit): Promise<{ reply: string; source: Provenance }>;
+  /** A letter addressed to this villager was read at home; a reply to a player letter comes back via `letter.reply`. */
+  onLetterRead?(view: WorldView, letter: Letter): void;
 }
 
 export interface PlayerInteraction {
@@ -164,6 +184,17 @@ export interface MindWorld {
   recordLearned?(fact: LearnedFact): void;
   /** A plan block tagged taskId finished; WP8 pays economy.taskReward. */
   taskCompleted?(taskId: string, block: PlanBlock): void;
+  // ---------- v2 (spec v2 §7–§8) ----------
+  /** Create or update a romance record involving this villager; the engine stores, broadcasts and saves it. */
+  upsertRomance?(romance: Romance): void;
+  romances?(): readonly Romance[];
+  /** Post a letter from this villager (letter.reply / letter.write); delivered at the next round. */
+  sendLetter?(to: VillagerId, text: string, opts?: { replyTo?: string; source?: Provenance }): Letter | null;
+  /**
+   * Add an observation to ANOTHER villager's memory stream. Only for the post office log
+   * (Laude's instant knowledge, spec v2 §8.3); everything else goes through perception.
+   */
+  observeFor?(villagerId: VillagerId, obs: Observation): void;
 }
 
 /** Services the engine hands to each mind. */

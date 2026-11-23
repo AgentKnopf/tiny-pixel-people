@@ -4,6 +4,18 @@
  */
 import type { ClientMessage, ServerMessage } from '../../shared/protocol.ts';
 import type {
+  AnimalFrame,
+  AnimalId,
+  AnimalRemovalReason,
+  AnimalSpecies,
+  AnimalState,
+  FarmSpecies,
+  FarmState,
+  ItemId,
+  LocationId,
+  Point,
+  RideState,
+  TrainState,
   Conversation,
   GameMinutes,
   Memory,
@@ -65,4 +77,45 @@ export interface SimEngine {
   conversations(): readonly Conversation[];
   /** Everything needed to resume this world (WP5 JsonSaveStore.save). */
   toSaveData(): SaveData;
+}
+
+// ---------- v2 deterministic subsystems (spec v2 §3–§5). Owned by WP2. ----------
+
+export interface AnimalChange {
+  added: AnimalState[];
+  removed: { id: AnimalId; species: AnimalSpecies; reason: AnimalRemovalReason }[];
+  updated: AnimalState[];
+  /** Farm products made this step (milk, egg, wool). */
+  produced: { animalId: AnimalId; itemId: ItemId; count: number }[];
+  /** Emotes such as the crow's caw. */
+  emotes: { animalId: AnimalId; emote: string }[];
+}
+
+/** Zoo, farm and ambient animals (src/server/sim/animals.ts). Seeded RNG only; never touches the LLM. */
+export interface AnimalSim {
+  /** Advance by one sim step; `occupants` are villager/player tiles (forest animals flee within 3 tiles). */
+  step(now: GameMinutes, occupants: readonly Point[]): AnimalChange;
+  all(): readonly AnimalState[];
+  /** Frames of animals that moved or changed status since the last call. */
+  frames(): AnimalFrame[];
+  /** Living farm animals of a species (counts `leaving`). Never above config.farm.capPerSpecies. */
+  count(species: FarmSpecies): number;
+  /** Crow: caw now unless on cooldown. */
+  caw(reason: 'letter' | 'player'): void;
+  serialize(): { animals: AnimalState[]; farm: FarmState };
+}
+
+export interface RideService {
+  join(villagerId: VillagerId, rideId: LocationId): boolean;
+  leave(villagerId: VillagerId): void;
+  step(now: GameMinutes): RideState[];
+  all(): readonly RideState[];
+}
+
+export interface TrainService {
+  state(): TrainState;
+  /** Advance; returns the new state when it changed. */
+  step(now: GameMinutes): TrainState | null;
+  /** world.trigger 'train': bring the next train now. */
+  triggerNow(now: GameMinutes): void;
 }

@@ -38,6 +38,10 @@ export const DEFAULT_TASK_TTL_MINUTES: Partial<Record<LlmTask, number>> = {
   'event.decide': 120,
   'day.summarize': 720,
   'stranger.create': 120,
+  'date.decide': 120,
+  'visitor.create': 240,
+  'date.ask': 120,
+  'letter.write': 360,
 };
 
 export interface LlmQueueOptions {
