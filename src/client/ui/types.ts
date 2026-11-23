@@ -51,8 +51,16 @@ export interface UiController {
   selectVillager(id: VillagerId | null): void;
   /** Open (or close with null) the animal card for a clicked animal (closes the villager inspector). */
   selectAnimal(id: AnimalId | null): void;
-  /** Open the door-note modal for a house (clicked door). `player_home` opens the mailbox. */
+  /**
+   * Open the door modal for a clicked door: "Go inside" (player.enter) when the building has an
+   * interior, the note form and the player's notes and letters for a house, or the post office and
+   * hotel services for public buildings. `player_home` opens the mailbox.
+   */
   openDoorNote(houseId: LocationId): void;
+  /** Open the notice board modal (clicked board in front of the post office). */
+  openNoticeBoard(): void;
+  /** Open the Keep (clicked `keep_cupboard` inside the post office). */
+  openKeep(): void;
   /** Called by the renderer when the user pans away from a scene (null) or a scene is entered. */
   setActiveScene(sceneId: string | null): void;
   /** Replace the decoration/item catalog (otherwise fetched from /api/catalog or built-in defaults). */
