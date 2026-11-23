@@ -1,0 +1,126 @@
+# Troubleshooting
+
+Start with the server log in the terminal where you ran `npm start`. The first lines say which
+config file was used and whether the model answered. For more detail set `"debug": true` (or
+`TPP_DEBUG=1`), and to see every prompt and reply set `"llm": { "logFile": "llm.jsonl" }`.
+
+## Installing and starting
+
+**`npm install` fails or warns about the engine / `npm start` fails with syntax errors.**
+You need Node.js 22.12 or newer. Check with `node -v` and upgrade from <https://nodejs.org> (or
+with `nvm install 22`).
+
+**`Invalid configuration in …/config.json:` and the server exits.**
+A value in `config.json` has the wrong type or an unknown option. The message lists each bad key,
+for example `llm.provider: Invalid option`. Compare with `config.example.json` and the
+[configuration reference](setup/configuration.md).
+
+**`Could not parse …/config.json`.**
+The file isn't valid JSON. Comments and trailing commas aren't allowed.
+
+**`Config file not found`.**
+The path given with `--config` or `TPP_CONFIG` doesn't exist. Paths are relative to the folder you
+run `npm start` from.
+
+**`EADDRINUSE` / the port is already in use.**
+Another program (or another copy of the game) uses port 3000. Stop it, or start on another port:
+`TPP_PORT=3001 npm start`.
+
+**The page says `Client not built. Run "npm start"`.**
+The server was started without building the client (for example with `npm run dev:server`). Use
+`npm start`, or run `npm run build` once.
+
+**The page is blank or doesn't connect.**
+Make sure you open the address printed in the log (default <http://127.0.0.1:3000>). If you set
+`server.host` to `0.0.0.0` to play from another device, check your firewall. Reload the page after
+restarting the server.
+
+## The model
+
+**The LLM card shows `OFFLINE`, or the log warns that the LLM health check failed.**
+The game runs, but villagers use simple default plans and don't talk. Check, depending on the
+provider:
+
+- Ollama: is it running? `curl http://127.0.0.1:11434/api/tags` must answer. Is the model pulled?
+  `ollama list` must show `llm.model` exactly (including the tag, e.g. `qwen2.5:7b`); otherwise
+  `ollama pull <model>`.
+- OpenAI-compatible: is `llm.baseUrl` right and does it end in `/v1`? Is the local server running
+  with a model loaded? Is the model name exactly what the server expects?
+- Hosted APIs: is the key set? If you use `apiKeyEnv`, the variable must be set in the shell that
+  runs `npm start` or in `.env`. A 401/403 means a wrong key; a 404 usually a wrong model name.
+
+Restart the server after fixing it.
+
+**Ollama says the model isn't found, but `ollama list` shows it.**
+The names must match exactly. `qwen2.5` and `qwen2.5:7b` can be different models; use the full
+name from `ollama list`.
+
+**HTTP 400 errors with an OpenAI-compatible server (LM Studio, llama.cpp, …).**
+Some servers reject JSON mode. Set `"llm": { "jsonMode": false }`.
+
+**Errors from embeddings, e.g. `model "nomic-embed-text" not found`.**
+Pull it (`ollama pull nomic-embed-text`) or, for other providers, set `embeddings.model` to a model
+that provider offers. To switch embeddings off, set `"embeddings": { "provider": "none" }`;
+villagers then recall memories by keywords.
+
+**Rate limits (HTTP 429) from a hosted API.**
+Calls are retried with backoff. If it happens a lot, lower `llm.concurrency`, use a longer day
+(`sim.dayLengthMinutes`) or a lower speed.
+
+**Timeouts.**
+A call that takes longer than `llm.timeoutMs` (2 minutes by default) is cancelled and the villager
+uses its fallback. Large models on slow hardware may need more time, but usually a smaller model is
+the better fix.
+
+## Villagers
+
+**Villagers walk around but never talk, or follow the same simple routine every day.**
+The model isn't answering (see above), or is too slow for the day length. Look at the stats card:
+if the call count barely moves, the model is offline or slow. Use a smaller model, set
+`sim.dayLengthMinutes` to 30–60, play at 1×, or lower `sim.villagers`.
+
+**Replies to my messages take a long time.**
+Your messages have the highest priority, but each one waits for a free model slot. With a slow
+local model, a reply can take 10–30 seconds. Raising `llm.concurrency` helps only if your hardware
+(and `OLLAMA_NUM_PARALLEL`) can actually run calls in parallel.
+
+**Villagers talk nonsense or plans look broken.**
+Small models sometimes produce invalid JSON; the game repairs or replaces it with defaults, so the
+town keeps going. A 7B+ model (see the [sizing table](setup/ollama.md#which-model-for-which-machine))
+gives much better results. Setting `llm.temperature` to 0.5 can also help.
+
+**My door note is never read.**
+The owner reads notes only when it **arrives** home while awake. If it is out all day, the note
+waits until evening. Check the owner's plan in the inspector.
+
+**A rumor doesn't spread.**
+Villagers pass news on in conversations, and conversations need the model. Give it time (a few game
+hours), make sure the model is online, and try **Have them talk** to start one.
+
+**The Stranger button says the village is full.**
+At most 20 villagers live in town, strangers included. Wait until a stranger leaves at 22:00.
+
+**`Not enough gold`.**
+Decorations cost gold. Attend events (+10) or ask villagers for favours (+12 when done).
+
+## Saves
+
+**The village starts over after a restart.**
+Check that `persistence.loadOnStart` is `true`, that you didn't pass `--new`, and that
+`persistence.dir` and `persistence.slot` are the same as before. The game saves every 60 game
+minutes and on `Ctrl+C`; if the process was killed hard (`kill -9`, a crash), the last few game
+minutes are lost.
+
+**The server fails to start with an error about a save file.**
+A save file is damaged or from an incompatible version. Start fresh with `npm start -- --new`, or
+move the slot folder (`saves/default/`) somewhere else to keep it.
+
+**I want to start over completely.**
+Run `npm start -- --new`, or delete the slot folder under `saves/`.
+
+## Still stuck?
+
+Run the checks: `npm test` should pass on any machine, and `npm run test:live` (see
+[Acceptance tests](acceptance.md)) tells you whether your model setup works end to end. When
+reporting a problem, include the first 20 lines of the server log and your `config.json` without
+keys.
