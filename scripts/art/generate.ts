@@ -21,7 +21,15 @@ import { ICONS_V2 } from './icons-v2.ts';
 import { buildVillage, type MapBuilder } from './map.ts';
 import type { ItemDef, Location, WorldMap } from '../../src/shared/types.ts';
 import { encodePng } from './png.ts';
-import { ANIMALS, ANIMAL_FRAMES, ANIMAL_ROWS, CROW_FRAMES, crow, drawAnimalSheet } from './animals.ts';
+import {
+  ANIMALS,
+  ANIMAL_FRAMES,
+  ANIMAL_ROWS,
+  CROW_COLS,
+  CROW_FRAMES,
+  crow,
+  drawAnimalSheet,
+} from './animals.ts';
 import { buildVillageV2 } from './map-v2.ts';
 import {
   CAROUSEL_FRAMES,
@@ -352,16 +360,16 @@ export function buildArt(): ArtFiles {
     };
   });
   const crowSpec = crow();
-  const crowSheet = drawAnimalSheet(crowSpec, 7);
+  const crowSheet = drawAnimalSheet(crowSpec, CROW_COLS);
   animalSheets.push({ key: 'crow', sheet: crowSheet });
   writePng('assets/animals/crow.png', crowSheet);
   write(
     'assets/animals/index.json',
     json({
-      note: 'Side-view sheets: row 0 faces left, row 1 faces right; columns per "frames". Anchor = feet.',
+      note: 'Side-view sheets: row 0 faces left, row 1 faces right; columns per "frames" (the crow lists its own). Anchor = feet. When moving up or down, keep the last horizontal facing.',
       rows: ANIMAL_ROWS,
       frames: ANIMAL_FRAMES,
-      fps: { idle: 2, walk: 6 },
+      fps: { idle: 2, walk: 6, fly: 8, sleep: 1 },
       animals: [
         ...animalIndex,
         {
