@@ -80,7 +80,25 @@ The script:
 5. At 12:00 inspects every villager (AC6).
 6. Plays until midnight, or until the real-time limit, and judges plans (AC2), gossip (AC3, looks
    for "Biscuit" from another speaker by 20:00), the door note (AC4) and events (AC5).
-7. Prints a PASS/FAIL report. Exit code 0 means every check passed.
+7. Prints the LLM queue statistics (calls done and failed, average time per call, per task) and
+   the first distinct server warnings, to tell a slow model from a bug.
+8. Prints a PASS/FAIL report. Exit code 0 means every check passed.
+
+A check can pass on a deterministic fallback as well as on model output (for example canned
+gossip lines or a default event). So each check of model output gets a second line saying where
+its evidence came from:
+
+```
+        via fallback: 0/10 plans tagged llm
+```
+
+`via llm` and `via fallback` come from the `source` tags on plans, conversation lines, events and
+note replies; `mixed` means both. For untagged results the script uses the per-task queue
+statistics: no successful call for that task means `fallback`, otherwise `unknown` (a successful
+call can still fall back if its answer doesn't parse). The summary counts the passed checks by
+source, for example `6/7 checks passed (model-output checks: 1 via LLM, 3 via fallback, 0 unknown)`
+(`mixed` counts as fallback). Several checks passing via fallback means the model is too slow for
+the settings; see [Performance and slow hardware](setup/performance.md).
 
 | Option               | Default         | Meaning                          |
 | -------------------- | --------------- | -------------------------------- |

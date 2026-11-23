@@ -54,12 +54,20 @@ cottage ✓`. Your conversations with villagers appear in a small dialog there t
 - Villagers sleep at night. Each one has its own hours: early birds get up at 05:00, late risers at
   08:00, and bedtimes are between 21:00 and 23:30. While everybody sleeps, the clock runs 6× faster on
   top of the chosen speed (`sim.nightSpeedMultiplier`), so nights pass quickly.
+- **Waking up.** At 06:00 each day the clock waits until every villager's plan for the day is ready,
+  so the day starts with real plans. A small banner at the top centre shows
+  `🌅 Villagers are waking up… (n/m plans ready)` with a progress bar. The banner doesn't block
+  the screen: you can still open the inspector and send messages, but nobody moves until the clock
+  runs again. The clock goes on when all plans are in, when the model has nothing
+  left to do or is unreachable, or after 5 real minutes at most (`sim.wakeUpTimeoutSec`; `0` turns
+  the wait off). Villagers still without a plan then start the day on a default plan.
 - The town darkens in the evening, lamps and windows glow at night, and it gets light again in the
   morning.
 
 At higher speeds the language model has less real time per game hour, so villagers "think slower" in
 game time: a conversation takes longer, or a villager follows a simple default plan until its real
-plan arrives. That's expected; the town never waits for the model.
+plan arrives. That's expected; apart from the short wait at 06:00, the town never waits for the
+model.
 
 ## Moving around and the camera
 
@@ -101,7 +109,7 @@ From top to bottom it shows:
   "grab a bite at the café".
 - **Today's plan**: the day's blocks as a checklist (`☐ 07:00 🍞 bake bread at Bakery & Café`). Done
   blocks are ticked and the current one is highlighted. `· fallback` next to the title means the
-  model hasn't delivered a plan yet and the villager follows a simple default. Blocks you asked for
+  model hasn't delivered a usable plan (yet) and the villager follows a simple default. Blocks you asked for
   carry a `your request` tag.
 - **Friends ❤ n**: n is the number of close friends; below are the five villagers (or you) it likes
   most, with their affinity from −10 to +10.

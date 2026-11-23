@@ -48,15 +48,16 @@ Invalid configuration in /path/config.json:
 
 ## `sim`: the simulation
 
-| Key                    | Default   | Meaning                                                                                                                       |
-| ---------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `villagers`            | `10`      | Number of villagers, 1–20: the first N profiles in `data/villagers.json`, which ships 16. Strangers count toward a cap of 20. |
-| `dayLengthMinutes`     | `15`      | Real minutes for one 24-hour game day at 1×.                                                                                  |
-| `startTime`            | `"06:00"` | Game clock at the start of a new village (`HH:MM`).                                                                           |
-| `speed`                | `1`       | Starting speed. The UI offers 0 (pause), 1, 2, 4 and 8.                                                                       |
-| `nightSpeedMultiplier` | `6`       | Extra speed-up while every villager is asleep (at least 1).                                                                   |
-| `tickMs`               | `100`     | Real milliseconds between simulation steps (at least 10).                                                                     |
-| `seed`                 | `42`      | Random seed. The same seed and the mock provider give the same day.                                                           |
+| Key                    | Default   | Meaning                                                                                                                         |
+| ---------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `villagers`            | `10`      | Number of villagers, 1–20: the first N profiles in `data/villagers.json`, which ships 16. Strangers count toward a cap of 20.   |
+| `dayLengthMinutes`     | `15`      | Real minutes for one 24-hour game day at 1×.                                                                                    |
+| `startTime`            | `"06:00"` | Game clock at the start of a new village (`HH:MM`).                                                                             |
+| `speed`                | `1`       | Starting speed. The UI offers 0 (pause), 1, 2, 4 and 8.                                                                         |
+| `nightSpeedMultiplier` | `6`       | Extra speed-up while every villager is asleep (at least 1).                                                                     |
+| `tickMs`               | `100`     | Real milliseconds between simulation steps (at least 10).                                                                       |
+| `seed`                 | `42`      | Random seed. The same seed and the mock provider give the same day.                                                             |
+| `wakeUpTimeoutSec`     | `300`     | At 06:00 each day the clock waits until the villagers' plans are ready, at most this many real seconds. `0` turns the wait off. |
 
 ## `cognition`: how villagers think
 

@@ -61,6 +61,13 @@ such a fallback, so the town keeps moving even with no model at all.
   (`goto`, `act`, `sleep`, `talk`, `wait`), moves villagers along A* paths, runs perception,
   starts conversations between nearby villagers, tracks event attendance, updates the player world
   and broadcasts a `tick` with the villagers that changed.
+- **Wake-up hold.** The first time each day reaches 06:00, the engine keeps stepping with no game
+  time passing until every non-transient villager's day plan is settled, the LLM queue is idle
+  (after a 1.5 s grace), the queue reports the model offline, or `sim.wakeUpTimeoutSec` (300) real
+  seconds have passed (`0` disables the hold). It broadcasts `sim.status` with `phase: "wakingUp"`,
+  `plansReady` and `villagers` while holding (again every stats interval, for late clients) and
+  `phase: "running"` at the end; a timeout logs `wake-up: only N/M plans ready, starting the day
+anyway`. The client shows a non-blocking banner during the hold.
 - Tests use a virtual clock instead: the engine is stepped in fixed game-minute increments and the
   LLM queue is drained between steps, so a full day with the mock provider runs in seconds and is
   deterministic for a given `sim.seed`.
@@ -188,6 +195,12 @@ _Generative Agents_ (Park et al., 2023), scaled down to small local models:
 - Structured output is parsed tolerantly (code fences stripped, first JSON object taken),
   validated with zod, retried once with a repair prompt, and otherwise replaced by the caller's
   fallback.
+- **Provenance.** Model-driven results carry `source: 'llm' | 'fallback'` (`Provenance` in
+  `src/shared/types.ts`): day plans (`DayPlan.source`), conversation lines
+  (`ConversationMessage.source`, also on `conversation.message`), village events
+  (`VillageEvent.source`) and door-note replies (`DoorNote.replySource`). `llm` means a model
+  answer was parsed and used; anything canned or rule-based is `fallback`.
+  The inspector shows `· fallback` on such plans, and the live acceptance script uses the tags.
 - At startup `checkLlmHealth` checks the chat and embedding providers (Ollama: `GET /api/tags` and
   is the model pulled; OpenAI-compatible: `GET /models`; Anthropic and Gemini: look up the model)
   and logs one line for each. A failure doesn't stop the server: it seeds the queue's online flag
@@ -205,7 +218,7 @@ One WebSocket at `/ws`, JSON text frames with a `type` field (`PROTOCOL_VERSION 
   speed, changed villagers), `conversation.message`, `conversation.ended`, `note.updated`,
   `event.updated`, `inspect.data`, `stats` (queue statistics, LLM online), `player.updated`,
   `rumor.updated`, `world.event`, `weather.updated`, `items.updated`, `villagers.changed`,
-  `toast`, `log`, `error`.
+  `sim.status` (wake-up hold), `toast`, `log`, `error`.
 - **Client → server:** `inspect`, `speed`, `note.post`, `save`, `player.move`, `player.say`,
   `player.rumor`, `player.pairTalk`, `player.gift`, `world.trigger`, `decor.toggle`,
   `pet.command`, and with `debug: true` also `debug.inject` and `debug.jump`. Any command may carry

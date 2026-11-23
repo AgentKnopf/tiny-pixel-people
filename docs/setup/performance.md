@@ -13,19 +13,28 @@ a time by default (`llm.concurrency` 1; hosted providers default to 2). On a GPU
 Mac that really runs two calls in parallel, `llm.concurrency: 2` lets each call take about 9
 seconds. Higher speeds (2×, 4×, 8×) shrink that budget by the same factor.
 
-For comparison, a test run of `qwen2.5:1.5b` on a 4-core cloud machine with no GPU took 20–60
-seconds per call, and some calls took up to 110 seconds. Even with a 40-minute day, 6 of 10
-villagers ended up on default plans, and they had very few conversations. The game didn't crash and
-every late answer fell back cleanly. A 7B model on an Apple Silicon Mac or a GPU answers in a few
-seconds.
+For comparison, two test runs on a 4-core cloud machine with 7.8 GB of memory and no GPU
+(`llm.concurrency` 2, a 40-minute day, speed 2):
+
+| Model          | Calls per game day | `plan.day` call | Door-note reply | Plans from the model | Live checks passed |
+| -------------- | ------------------ | --------------- | --------------- | -------------------- | ------------------ |
+| `qwen2.5:1.5b` | about 30           | 48 s            | 6 s             | at most 5 of 10      | 6 of 7             |
+| `gemma3:4b`    | about 30           | 92 s            | 86 s            | 1 of 10              | 6 of 7             |
+
+On this machine `gemma3:4b` was about twice as slow as `qwen2.5:1.5b`, and half of its day plans
+hit the 2-minute timeout. The gossip and event checks passed in both runs, but through the
+fallbacks (canned gossip lines and a default event), not through model output. An earlier version
+of the game made about 214 calls per game day on the same machine and passed 4 of 7 checks. The
+game didn't crash, and every late answer fell back cleanly. A 7B model on an Apple Silicon Mac or
+a GPU answers in a few seconds.
 
 ## Choose a model for your hardware
 
-| Hardware                                             | Chat model (`llm.model`)                    |
-| ---------------------------------------------------- | ------------------------------------------- |
-| CPU only (no usable GPU)                             | `gemma3:4b` or `qwen2.5:1.5b`               |
-| Apple Silicon with 16 GB, or a GPU with 8 GB VRAM    | 7–8B: `qwen2.5:7b` (default), `llama3.1:8b` |
-| Apple Silicon with 32 GB+, or a GPU with 12 GB+ VRAM | up to 14B: `qwen2.5:14b`                    |
+| Hardware                                             | Chat model (`llm.model`)                       |
+| ---------------------------------------------------- | ---------------------------------------------- |
+| CPU only (no usable GPU)                             | `qwen2.5:1.5b`, or `gemma3:4b` on a faster CPU |
+| Apple Silicon with 16 GB, or a GPU with 8 GB VRAM    | 7–8B: `qwen2.5:7b` (default), `llama3.1:8b`    |
+| Apple Silicon with 32 GB+, or a GPU with 12 GB+ VRAM | up to 14B: `qwen2.5:14b`                       |
 
 See [Which model for which machine](ollama.md#which-model-for-which-machine) for download sizes and
 more options. Hosted APIs (see [Providers](providers.md)) are usually fast enough at any speed.
@@ -34,7 +43,7 @@ more options. Hosted APIs (see [Providers](providers.md)) are usually fast enoug
 
 ```json
 {
-  "llm": { "provider": "ollama", "model": "gemma3:4b" },
+  "llm": { "provider": "ollama", "model": "qwen2.5:1.5b" },
   "sim": { "dayLengthMinutes": 90, "villagers": 6 },
   "cognition": { "importanceMode": "heuristic", "maxConversationTurns": 4 }
 }
@@ -79,6 +88,10 @@ settings lively; above 20 seconds, use the CPU settings above.
   that carry news, with at most 3 canned lines, and invitees answer by a simple rule. There is no
   setting for this; it recovers as soon as the model catches up. See
   [When the model is slow](../user-guide.md#when-the-model-is-slow) in the user guide.
+- **Waiting for plans at 06:00.** Each morning the clock holds until the villagers' day plans are
+  in, the queue is idle, the model is offline, or `sim.wakeUpTimeoutSec` (300) real seconds have
+  passed. On a slow model this wait gives the plans a head start; set it to `0` to never wait.
+  When it times out, the log says `[sim] wake-up: only N/M plans ready, starting the day anyway`.
 - **Earlier daily event, evening planning.** The daily event is proposed at 07:00, and villagers
   plan tomorrow in the evening, so both are ready before the morning rush.
 - **Jobs expire.** Background jobs have a lifetime in game time, for example 30 game minutes for a
