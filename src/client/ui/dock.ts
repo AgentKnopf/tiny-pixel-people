@@ -23,7 +23,7 @@ function tile(sprite: string, emoji: string, label: string, testid: string, oncl
   return { el, sub, badge };
 }
 
-/** Bottom-right dock: Backpack, Map, Pet, Decorate, Home, Mail, Gold. */
+/** Bottom-right dock: Backpack, Map, Pet, Decorate, Home, Mail, Letters, Gold. */
 export function createDock(ctx: UiContext): HTMLElement {
   const { store, host } = ctx;
   const backpack = tile('backpack', '🎒', 'Backpack', 'dock-backpack', () => ctx.openModal('backpack'));
@@ -35,6 +35,7 @@ export function createDock(ctx: UiContext): HTMLElement {
     store.setScene('home');
   });
   const mail = tile('note', '📬', 'Mail', 'dock-mail', () => ctx.openModal('door-note', PLAYER_HOME_ID));
+  const letters = tile('letter', '✉️', 'Letters', 'dock-letters', () => ctx.openModal('letters'));
   const gold = tile('coin', '🪙', 'Gold', 'dock-gold', () => ctx.openModal('backpack'));
   setText(decorate.sub, 'Your cottage');
   setText(home.sub, 'Your cottage');
@@ -42,7 +43,7 @@ export function createDock(ctx: UiContext): HTMLElement {
   const el = h(
     'nav',
     { class: 'dock', id: 'dock', 'aria-label': 'Dock' },
-    [backpack, map, pet, decorate, home, mail, gold].map((t) => t.el),
+    [backpack, map, pet, decorate, home, mail, letters, gold].map((t) => t.el),
   );
 
   const render = () => {
@@ -57,8 +58,12 @@ export function createDock(ctx: UiContext): HTMLElement {
     setText(mail.sub, unread ? `${unread} new` : 'Mailbox');
     setText(mail.badge, String(unread));
     mail.badge.hidden = unread === 0;
+    const newLetters = store.unreadLetters();
+    setText(letters.sub, newLetters ? `${newLetters} new` : 'Post office');
+    setText(letters.badge, String(newLetters));
+    letters.badge.hidden = newLetters === 0;
   };
-  store.subscribe(['player', 'scene', 'notes', 'hello', 'catalog'], render);
+  store.subscribe(['player', 'scene', 'notes', 'hello', 'catalog', 'letters'], render);
   render();
   return el;
 }

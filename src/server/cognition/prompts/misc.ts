@@ -129,6 +129,8 @@ export function playerReplyPrompt(
   memories: readonly Memory[],
   activity: string,
   mode: 'say' | 'ask' | 'gift',
+  /** Laude's Keep lookup (spec v2 §8.3). */
+  keep = '',
 ): { system: string; user: string } {
   const what =
     mode === 'gift'
@@ -140,6 +142,7 @@ export function playerReplyPrompt(
       `You are ${activity}.`,
       relation,
       `What you remember:\n${memoryLines(memories, false, 6)}`,
+      keep,
       what,
       `Reply in 1-2 sentences, in character.`,
       `Example: {"reply":"Oh, hello! I was just about to open the bakery."}`,

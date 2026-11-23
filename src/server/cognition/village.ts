@@ -6,6 +6,7 @@ import { dayOf } from '../../shared/time.ts';
 import type { GameMinutes, Memory, VillagerId, VillagerProfile } from '../../shared/types.ts';
 import type { LlmQueue } from '../llm/types.ts';
 import type { Embedder } from './memory.ts';
+import { LetterBudget } from './post.ts';
 
 interface MindLike {
   readonly id: VillagerId;
@@ -24,6 +25,8 @@ export function hostScore(p: VillagerProfile): number {
 export class Village<M extends MindLike = MindLike> {
   readonly minds = new Map<VillagerId, M>();
   readonly embedder: QueueEmbedder;
+  /** Villager-written letters across the town (spec v2 §8.1). */
+  readonly letters = new LetterBudget();
   private proposals = new Map<number, number>();
   private claims = new Map<number, VillagerId>();
   private statsLogged = new Set<number>();

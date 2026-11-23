@@ -1,6 +1,7 @@
 import type {
   HelloMessage,
   InspectDataMsg,
+  KeepDataMsg,
   LogMsg,
   ServerMessage,
   StatsMsg,
@@ -9,7 +10,21 @@ import type {
   VillagerProfilePublic,
 } from '../shared/protocol.ts';
 import {
+  PLAYER_HOME_ID,
   PLAYER_ID,
+  type AnimalFrame,
+  type AnimalId,
+  type AnimalState,
+  type FoodStock,
+  type HotelState,
+  type HouseVisit,
+  type Letter,
+  type LetterId,
+  type Notice,
+  type RideState,
+  type Romance,
+  type TrainState,
+  type VisitorInfo,
   type ConversationId,
   type DoorNote,
   type Facing,
@@ -33,6 +48,8 @@ import type { WorldRenderer } from './render/renderer.ts';
 
 /** How long a speech bubble stays up (real ms). */
 export const BUBBLE_MS = 5000;
+/** Animal emotes ("Caw!") are short. */
+export const EMOTE_MS = 2500;
 /** Moves longer than this (tiles) between two updates snap instead of gliding (teleport, reload). */
 const SNAP_DISTANCE = 4;
 const MIN_LERP_MS = 50;
@@ -56,6 +73,18 @@ export interface Entity {
   /** Last real-time ms the entity changed position. */
   lastMovedAt: number;
   lastUpdateAt: number;
+}
+
+/** An animal: the latest server state plus an interpolated position. */
+export interface AnimalView {
+  state: AnimalState;
+  e: Entity;
+  /** Animal sheets are side views only: the last horizontal facing, kept on vertical moves. */
+  side: 'left' | 'right';
+}
+
+function sideOf(facing: Facing, prev: 'left' | 'right'): 'left' | 'right' {
+  return facing === 'left' || facing === 'right' ? facing : prev;
 }
 
 export interface Bubble {
@@ -183,6 +212,20 @@ export class GameStore {
   toasts: ToastMsg[] = [];
   log: LogMsg[] = [];
   lastError: string | null = null;
+  // v2
+  animals = new Map<AnimalId, AnimalView>();
+  rides = new Map<LocationId, RideState>();
+  train: TrainState | null = null;
+  hotel: HotelState | null = null;
+  visitors = new Map<VillagerId, VisitorInfo>();
+  romances = new Map<string, Romance>();
+  houseVisits = new Map<string, HouseVisit>();
+  stock: FoodStock = {};
+  letters = new Map<LetterId, Letter>();
+  notices = new Map<string, Notice>();
+  keepSize = 0;
+  /** Last `keep.data` page, with `keep.added` entries prepended (newest first). */
+  keep: KeepDataMsg | null = null;
 
   private listeners = new Set<StoreListener>();
 
@@ -216,6 +259,60 @@ export class GameStore {
         this.setTime(msg.time, now);
         this.speed = msg.speed;
         for (const f of msg.villagers) this.applyFrame(f, now);
+        if (msg.animals) for (const f of msg.animals) this.applyAnimalFrame(f, now);
+        break;
+      case 'animals.changed':
+        for (const a of msg.added) this.upsertAnimal(a, now);
+        for (const a of msg.updated) this.upsertAnimal(a, now);
+        for (const r of msg.removed) {
+          this.animals.delete(r.id);
+          this.bubbles.delete(r.id);
+        }
+        break;
+      case 'animal.emote':
+        if (this.animals.has(msg.animalId)) this.say(msg.animalId, msg.emote, now, EMOTE_MS);
+        break;
+      case 'ride.updated':
+        this.rides.set(msg.ride.locationId, msg.ride);
+        break;
+      case 'train.updated':
+        this.train = msg.train;
+        break;
+      case 'hotel.updated':
+        this.hotel = msg.hotel;
+        break;
+      case 'visitor.updated':
+        this.visitors.set(msg.visitor.villagerId, msg.visitor);
+        break;
+      case 'romance.updated':
+        this.romances.set(msg.romance.id, msg.romance);
+        break;
+      case 'visit.updated':
+        this.houseVisits.set(msg.visit.id, msg.visit);
+        break;
+      case 'stock.updated':
+        this.stock = msg.stock;
+        break;
+      case 'letter.updated':
+        this.letters.set(msg.letter.id, msg.letter);
+        break;
+      case 'notice.updated':
+        if (msg.removed) this.notices.delete(msg.notice.id);
+        else this.notices.set(msg.notice.id, msg.notice);
+        break;
+      case 'keep.added':
+        this.keepSize++;
+        if (this.keep && !this.keep.entries.some((k) => k.id === msg.entry.id)) {
+          this.keep = {
+            ...this.keep,
+            entries: [msg.entry, ...this.keep.entries],
+            total: this.keep.total + 1,
+          };
+        }
+        break;
+      case 'keep.data':
+        this.keep = msg;
+        this.keepSize = Math.max(this.keepSize, msg.total);
         break;
       case 'conversation.message':
         this.conversations.set(msg.conversationId, {
@@ -263,6 +360,7 @@ export class GameStore {
         for (const id of msg.removed) {
           this.profiles.delete(id);
           this.villagers.delete(id);
+          this.visitors.delete(id);
           this.bubbles.delete(id);
           if (this.selectedId === id) this.select(null);
         }
@@ -308,6 +406,19 @@ export class GameStore {
     this.playerEntity = null;
     this.petEntity = null;
     this.applyPlayer(s.player, now);
+    this.animals.clear();
+    for (const a of s.animals ?? []) this.upsertAnimal(a, now);
+    this.rides = new Map((s.rides ?? []).map((r) => [r.locationId, r]));
+    this.train = s.train ?? null;
+    this.hotel = s.hotel ?? null;
+    this.visitors = new Map((s.visitors ?? []).map((v) => [v.villagerId, v]));
+    this.romances = new Map((s.romances ?? []).map((r) => [r.id, r]));
+    this.houseVisits = new Map((s.houseVisits ?? []).map((v) => [v.id, v]));
+    this.stock = s.stock ?? {};
+    this.letters = new Map((s.letters ?? []).map((l) => [l.id, l]));
+    this.notices = new Map((s.notices ?? []).map((n) => [n.id, n]));
+    this.keepSize = s.keepSize ?? 0;
+    this.keep = null;
     if (this.selectedId && !this.villagers.has(this.selectedId) && !this.profiles.has(this.selectedId)) {
       this.select(null);
     }
@@ -344,11 +455,36 @@ export class GameStore {
     if (f.bubble) this.say(f.id, f.bubble, now);
   }
 
+  private upsertAnimal(a: AnimalState, now: number): void {
+    const cur = this.animals.get(a.id);
+    if (!cur) {
+      const e = newEntity(a.id, a.pos, a.facing, now);
+      e.status = a.status === 'walking' ? 'walking' : 'idle';
+      const side = sideOf(a.facing, a.id.length % 2 === 0 ? 'right' : 'left');
+      this.animals.set(a.id, { state: { ...a }, e, side });
+      return;
+    }
+    moveEntity(cur.e, a.pos, a.facing, now);
+    cur.state = { ...a };
+    cur.side = sideOf(a.facing, cur.side);
+  }
+
+  private applyAnimalFrame(f: AnimalFrame, now: number): void {
+    const a = this.animals.get(f.id);
+    if (!a) return;
+    moveEntity(a.e, f, f.facing, now);
+    a.e.status = f.status === 'walking' ? 'walking' : 'idle';
+    a.state.pos = { x: f.x, y: f.y };
+    a.state.facing = f.facing;
+    a.state.status = f.status;
+    a.side = sideOf(f.facing, a.side);
+  }
+
   /** Show a speech bubble over `speakerId`; repeating the current text does not restart it. */
-  say(speakerId: VillagerId, text: string, now: number): void {
+  say(speakerId: string, text: string, now: number, durMs = BUBBLE_MS): void {
     const cur = this.bubbles.get(speakerId);
     if (cur && cur.text === text && now - cur.startedAt < cur.durMs) return;
-    this.bubbles.set(speakerId, { speakerId, text, startedAt: now, durMs: BUBBLE_MS });
+    this.bubbles.set(speakerId, { speakerId, text, startedAt: now, durMs });
   }
 
   /** Bubbles still visible at `now` (expired ones are dropped). */
@@ -392,11 +528,37 @@ export class GameStore {
     return out.sort((a, b) => a.postedAt - b.postedAt);
   }
 
+  /** Where a villager's letters are delivered: the hotel for visitors, otherwise their home. */
+  mailboxOf(id: VillagerId): LocationId | null {
+    if (id === PLAYER_ID) return this.player?.homeId || PLAYER_HOME_ID;
+    if (this.visitors.has(id) || this.profiles.get(id)?.visitor) return 'hotel';
+    return this.profiles.get(id)?.homeId ?? null;
+  }
+
+  /** Letters waiting at each mailbox (delivered, not yet read), by location id. */
+  lettersByMailbox(): Map<LocationId, Letter[]> {
+    const out = new Map<LocationId, Letter[]>();
+    for (const l of this.letters.values()) {
+      if (l.status !== 'delivered') continue;
+      const box = this.mailboxOf(l.to);
+      if (!box) continue;
+      let list = out.get(box);
+      if (!list) out.set(box, (list = []));
+      list.push(l);
+    }
+    return out;
+  }
+
+  /** Letters posted but not yet delivered (they wait at the post office). */
+  undeliveredLetters(): Letter[] {
+    return [...this.letters.values()].filter((l) => l.status === 'posted');
+  }
+
   /** Position (tiles) of any entity id: villager, player or 'pet'. */
   positionOf(id: string, now: number): Point | null {
     if (id === PLAYER_ID) return this.playerEntity ? entityPos(this.playerEntity, now) : null;
     if (id === 'pet') return this.petEntity ? entityPos(this.petEntity, now) : null;
-    const e = this.villagers.get(id);
+    const e = this.villagers.get(id) ?? this.animals.get(id)?.e;
     return e ? entityPos(e, now) : null;
   }
 }

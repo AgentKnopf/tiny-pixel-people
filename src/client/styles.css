@@ -273,7 +273,7 @@ select:focus {
   gap: 8px;
   align-items: flex-start;
   /* Leave room for the dock so the toolbar wraps instead of sliding under it. */
-  max-width: calc(100vw - 640px);
+  max-width: calc(100vw - var(--dock-width, 630px) - 24px);
   min-width: 300px;
 }
 
@@ -1170,6 +1170,110 @@ select:focus {
 
 .stats-train {
   font-size: 11px;
+  margin-top: 2px;
+}
+
+/* ---------- v2: place bar, letters, notices, Keep ---------- */
+.place-bar {
+  position: absolute;
+  top: 44px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px;
+  /* Centred, so it must clear the stats card on both sides to never overlap it. */
+  max-width: max(240px, min(640px, calc(100vw - 2 * (var(--top-right-width, 300px) + 20px))));
+  pointer-events: auto;
+}
+
+.place-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.place-name {
+  font-weight: bold;
+  margin-right: 4px;
+}
+
+.place-tag {
+  color: var(--accent);
+  font-size: 12px;
+}
+
+.btn-buy .label-note {
+  color: var(--muted);
+}
+
+.door-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.modal-letters .segmented,
+.modal-keep .keep-controls,
+.modal-keep .keep-paging {
+  margin-bottom: 8px;
+}
+
+.letter-to {
+  margin-left: 6px;
+  max-width: 260px;
+}
+
+.letter.unread .note-body {
+  color: var(--accent);
+}
+
+.notice .note-body {
+  font-size: 13px;
+}
+
+.notice.mine {
+  border-left: 2px solid var(--accent);
+  padding-left: 6px;
+}
+
+.keep-controls,
+.keep-paging {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.keep-search {
+  flex: 1;
+}
+
+.keep-paging {
+  justify-content: space-between;
+  margin-top: 8px;
+}
+
+.keep-entries {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 46vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.keep-entry {
+  background: var(--card);
+  border-radius: 7px;
+  padding: 6px 8px;
+}
+
+.keep-text {
+  font-size: 12px;
   margin-top: 2px;
 }
 

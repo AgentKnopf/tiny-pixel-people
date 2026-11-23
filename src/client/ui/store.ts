@@ -71,6 +71,13 @@ export interface KeepPage {
   offset: number;
 }
 
+export interface KeepFilter {
+  query: string;
+  kind?: KeepEntry['kind'];
+  offset: number;
+  limit: number;
+}
+
 export interface ToastItem {
   icon: string;
   text: string;
@@ -136,6 +143,8 @@ export class UiStore {
   keepSize = 0;
   /** Last keep.data page (the Keep is fetched on demand). */
   keep: KeepPage | null = null;
+  /** What the open Keep modal asked for, so live `keep.added` entries land on page one. */
+  keepFilter: KeepFilter | null = null;
 
   private listeners = new Map<Topic, Set<() => void>>();
   private toastListeners = new Set<(t: ToastItem) => void>();
@@ -351,10 +360,27 @@ export class UiStore {
         else this.notices.set(msg.notice.id, msg.notice);
         this.emit('notices');
         break;
-      case 'keep.added':
+      case 'keep.added': {
         this.keepSize++;
+        const f = this.keepFilter;
+        const e = msg.entry;
+        if (
+          this.keep &&
+          f &&
+          f.offset === 0 &&
+          (!f.kind || f.kind === e.kind) &&
+          (!f.query || e.text.toLowerCase().includes(f.query.toLowerCase())) &&
+          !this.keep.entries.some((x) => x.id === e.id)
+        ) {
+          this.keep = {
+            ...this.keep,
+            entries: [e, ...this.keep.entries].slice(0, f.limit),
+            total: this.keep.total + 1,
+          };
+        }
         this.emit('keep');
         break;
+      }
       case 'keep.data':
         this.keep = { entries: msg.entries, total: msg.total, offset: msg.offset };
         this.keepSize = Math.max(this.keepSize, msg.total);
@@ -421,6 +447,10 @@ export class UiStore {
   private setSpeed(s: number): void {
     this.speed = s;
     if (s > 0) this.lastSpeed = s;
+  }
+
+  setKeepFilter(f: KeepFilter | null): void {
+    this.keepFilter = f;
   }
 
   selectAnimal(id: AnimalId | null): void {

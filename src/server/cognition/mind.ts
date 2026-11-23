@@ -10,6 +10,9 @@ import {
   type DoorNote,
   type EventId,
   type GameMinutes,
+  type HouseVisit,
+  type KeepEntry,
+  type Letter,
   type Location,
   type LocationId,
   type Memory,
@@ -93,6 +96,30 @@ import {
 import { settingsFromConfig, type CognitionSettings } from './settings.ts';
 import { villageFor, type Village } from './village.ts';
 import { addVisit, hashUnit, isForest, sanitizeBlocks, type Hours } from './sanitize.ts';
+import {
+  GREETING_MAX,
+  KEEPER,
+  KEEP_EMBED_GAP,
+  KEEP_FORGET_AFTER,
+  KEEP_LOOKUP_MAX,
+  KEEP_REFLECTION_WEIGHT,
+  KEEP_THOUGHT,
+  KEEP_WRITE_MINUTES,
+  LETTER_MAX,
+  LETTER_WRITE_AT,
+  LETTER_WRITE_TTL,
+  MISS_YOU_AFFINITY,
+  MISS_YOU_DAYS,
+  SHY_NOTE_EVERY,
+  fallbackGreeting,
+  fallbackLetterReply,
+  greetPrompt,
+  keepLines,
+  keepMeta,
+  letterReplyPrompt,
+  letterWritePrompt,
+  type LetterReason,
+} from './post.ts';
 
 const log = createLogger('mind');
 
@@ -181,6 +208,15 @@ export class Mind implements VillagerMind {
   private eventRequested = false;
   private lastSeekAt = -Infinity;
   private lastPlanJson = '';
+  /** Days on which the player gave this villager a gift (thank-you letters). */
+  private readonly giftDays = new Set<number>();
+  private readonly repliedLetters = new Set<string>();
+  /** Recipient -> game time of this villager's last letter to them. */
+  private readonly lettersSent = new Map<VillagerId, GameMinutes>();
+  private lastLetterDay = -1;
+  private keepWritingUntil = -Infinity;
+  private lastKeepEmbedAt = -Infinity;
+  private lastKeepArchiveAt = -Infinity;
 
   constructor(
     readonly profile: VillagerProfile,
@@ -206,6 +242,13 @@ export class Mind implements VillagerMind {
         if (m.kind === 'summary' && d) this.summarizedDays.add(Number(d[1]) - 1);
         if (m.meta.noteId && m.kind === 'note') this.processedNotes.add(m.meta.noteId);
         if (m.meta.noticeId) this.readNoticeIds.add(m.meta.noticeId);
+        if (m.meta.letterId && m.kind === 'note' && m.text.startsWith('I wrote back'))
+          this.repliedLetters.add(m.meta.letterId);
+        if (m.meta.letterId && m.kind === 'note' && m.text.startsWith('I wrote a letter')) {
+          for (const to of m.meta.toldTo ?? [])
+            this.lettersSent.set(to, Math.max(this.lettersSent.get(to) ?? -Infinity, m.createdAt));
+          this.lastLetterDay = Math.max(this.lastLetterDay, dayOf(m.createdAt));
+        }
       }
     } else {
       const at = deps.now();
@@ -229,6 +272,7 @@ export class Mind implements VillagerMind {
     const now = view.now;
     const mod = minuteOfDay(now);
     this.flushRatings(now);
+    this.keepUpkeep(now);
     if (view.self.status === 'talking' || view.self.conversationId) return { type: 'wait' };
 
     if (!isAwake(this.window, mod)) {
@@ -256,8 +300,11 @@ export class Mind implements VillagerMind {
     this.maybeDecideEvents(view);
     this.maybeProposeEvent(view, day, mod);
     this.maybeReplan(view, day, mod);
+    this.maybeWriteLetter(view, mod);
 
     const block = this.effectiveBlock(view, mod);
+    if (now < this.keepWritingUntil && view.self.locationId === POST_OFFICE && !block.eventId)
+      return { type: 'act', activity: 'writing in the Keep', emoji: '📒' };
     return this.seekListener(view, mod, block) ?? this.intentFor(block, view);
   }
 
@@ -334,6 +381,7 @@ export class Mind implements VillagerMind {
     const player = this.playerName();
     const text = input.text.trim().slice(0, 300);
     const gift = input.mode === 'gift';
+    if (gift) this.giftDays.add(dayOf(now));
     // Gift memories (and the affinity change) are stored by the player service (WP8).
     if (!gift)
       this.addMemory({
@@ -344,6 +392,7 @@ export class Mind implements VillagerMind {
       });
     const relation = this.relationText(view, PLAYER_ID, player);
     const memories = await this.recall(`${player} ${text}`, now, { k: 6 });
+    const keep = gift ? [] : this.checkKeep(view, text);
     const p = playerReplyPrompt(
       this.profile,
       player,
@@ -352,11 +401,19 @@ export class Mind implements VillagerMind {
       memories,
       view.self.activity.text || 'going about your day',
       input.mode,
+      keepLines(keep, (id) => this.nameOf(id, view)),
     );
     const res = await this.ask({
       task: 'player.reply',
       ...p,
-      meta: { ...this.baseMeta(view), text, mode: input.mode, itemId: input.itemId, liked: input.liked },
+      meta: {
+        ...this.baseMeta(view),
+        text,
+        mode: input.mode,
+        itemId: input.itemId,
+        liked: input.liked,
+        ...(keep.length ? { keep: keepMeta(keep) } : {}),
+      },
       parse: (raw) => cleanLine(asString(pick(asRecord(raw), 'reply', 'say', 'text', 'message', 'answer'))),
       acceptText: (t) => cleanLine(t),
       fallback: () => fallbackPlayerReply(this.profile, player, text, input),
@@ -382,12 +439,217 @@ export class Mind implements VillagerMind {
     return task ? { reply, task } : { reply };
   }
 
+  async greetVisitor(view: WorldView, visit: HouseVisit): Promise<{ reply: string; source: Provenance }> {
+    this.lastView = view;
+    const now = view.now;
+    const player = this.playerName();
+    const affinity = view.self.relationships[PLAYER_ID]?.affinity ?? 0;
+    let memories: Memory[] = [];
+    try {
+      memories = await this.recall(`${player} visit home`, now, { k: 4 });
+    } catch (err) {
+      log.debug(`${this.id} greeting memories unavailable: ${(err as Error).message}`);
+    }
+    const res = await this.ask({
+      task: 'visit.greet',
+      ...greetPrompt(this.profile, player, this.relationText(view, PLAYER_ID, player), now, memories),
+      meta: { ...this.baseMeta(view), playerName: player, houseId: visit.houseId, affinity },
+      parse: (raw) =>
+        cleanLine(asString(pick(asRecord(raw), 'reply', 'say', 'text', 'greeting', 'message')), GREETING_MAX),
+      acceptText: (t) => cleanLine(t, GREETING_MAX),
+      fallback: () => fallbackGreeting(this.profile, now),
+      shape: '{"reply":"..."}',
+      // Player-facing: never shed. The engine also falls back after 60 game minutes.
+      deadline: now + 60,
+      temperature: this.settings.temperature,
+      maxTokens: 120,
+    });
+    this.world.setThought(res.value);
+    return { reply: res.value, source: res.source };
+  }
+
+  /** The read memory is written by the post office service; this only answers player letters. */
+  onLetterRead(view: WorldView, letter: Letter): void {
+    this.lastView = view;
+    if (letter.from !== PLAYER_ID || letter.to !== this.id || this.repliedLetters.has(letter.id)) return;
+    this.repliedLetters.add(letter.id);
+    this.job(`letter.reply:${letter.id}`, () => this.replyToLetter(view, letter));
+  }
+
+  private async replyToLetter(view: WorldView, letter: Letter): Promise<void> {
+    const player = this.playerName();
+    let memories: Memory[] = [];
+    try {
+      memories = await this.recall(letter.text, view.now, { k: 5 });
+    } catch (err) {
+      log.debug(`${this.id} letter memories unavailable: ${(err as Error).message}`);
+    }
+    const res = await this.ask({
+      task: 'letter.reply',
+      ...letterReplyPrompt(this.profile, player, letter.text, memories),
+      meta: { ...this.baseMeta(view), letterText: letter.text, fromName: player, letterId: letter.id },
+      parse: (raw) =>
+        cleanLine(asString(pick(asRecord(raw), 'reply', 'text', 'letter', 'message', 'answer')), LETTER_MAX),
+      acceptText: (t) => cleanLine(t, LETTER_MAX),
+      fallback: () => fallbackLetterReply(this.profile, letter.text),
+      shape: '{"reply":"..."}',
+      deadline: view.now + NOTE_REPLY_DEADLINE,
+      temperature: this.settings.temperature,
+      maxTokens: 220,
+    });
+    const reply = ensureReference(res.value, letter.text);
+    const source: Provenance = res.source === 'llm' && reply === res.value ? 'llm' : 'fallback';
+    const sent = this.world.sendLetter?.(PLAYER_ID, reply, { replyTo: letter.id, source });
+    if (!sent) return;
+    this.addMemory({
+      kind: 'note',
+      at: this.deps.now(),
+      text: `I wrote back to ${player}: "${reply}"`,
+      importance: 4,
+      meta: { letterId: letter.id, toldTo: [PLAYER_ID] },
+    });
+    this.world.setThought(reply);
+  }
+
+  /** Laude looks up what the Keep says about `query` (spec v2 §8.3); other villagers get nothing. */
+  checkKeep(view: WorldView | null, query: string): readonly KeepEntry[] {
+    if (this.id !== KEEPER || !view?.searchKeep || !query.trim()) return [];
+    const entries = view.searchKeep(query, KEEP_LOOKUP_MAX).slice(0, KEEP_LOOKUP_MAX);
+    if (entries.length) this.world.setThought(KEEP_THOUGHT);
+    return entries;
+  }
+
+  /** Batched embeddings and the 1-day forgetting of post office log memories. */
+  private keepUpkeep(now: GameMinutes): void {
+    if (this.memory.deferredEmbeddings > 0 && now - this.lastKeepEmbedAt >= KEEP_EMBED_GAP) {
+      this.lastKeepEmbedAt = now;
+      this.memory.flushEmbeddings();
+    }
+    if (now - this.lastKeepArchiveAt >= 60) {
+      this.lastKeepArchiveAt = now;
+      this.memory.archiveLog(now, KEEP_FORGET_AFTER);
+    }
+  }
+
+  /** A new Keep entry: Laude writes it down if he is at the post office with nothing else on. */
+  private noteKeepEntry(now: GameMinutes): void {
+    const v = this.lastView;
+    if (!v || v.self.locationId !== POST_OFFICE || v.self.conversationId) return;
+    if (v.self.status === 'talking' || v.self.status === 'sleeping') return;
+    if (blockAt(this.plan, minuteOfDay(now))?.eventId) return;
+    this.keepWritingUntil = Math.max(this.keepWritingUntil, now + KEEP_WRITE_MINUTES);
+  }
+
+  // ---------- villager-written letters (spec v2 §8.1) ----------
+
+  /** Checked once a day from 21:00; deterministic triggers, town-wide caps, skipped when overloaded. */
+  private maybeWriteLetter(view: WorldView, mod: number): void {
+    const day = dayOf(view.now);
+    if (mod < LETTER_WRITE_AT || this.lastLetterDay >= day) return;
+    this.lastLetterDay = day;
+    if (this.profile.transient || this.deps.config.post?.enabled === false || !this.world.sendLetter) return;
+    if (this.load() === 'overloaded') return;
+    const target = this.letterTarget(view, day);
+    if (!target) return;
+    const toPlayer = target.to === PLAYER_ID;
+    const max = this.deps.config.post?.maxVillagerLettersPerDay ?? 3;
+    if (!this.village.letters.claim(day, toPlayer, max)) return;
+    // Reserved now so the partner of a shy pair, stepped right after, does not write the same evening.
+    const prev = this.lettersSent.get(target.to);
+    this.lettersSent.set(target.to, view.now);
+    this.job(`letter.write:${day}`, async () => {
+      const sent = await this.writeLetter(view, target.to, target.reason).catch((err: unknown) => {
+        log.warn(`${this.id} letter.write failed: ${(err as Error).message}`);
+        return false;
+      });
+      if (sent) return;
+      this.village.letters.release(day, toPlayer);
+      if (prev === undefined) this.lettersSent.delete(target.to);
+      else this.lettersSent.set(target.to, prev);
+    });
+  }
+
+  private letterTarget(view: WorldView, day: number): { to: VillagerId; reason: LetterReason } | null {
+    if (this.giftDays.has(day)) return { to: PLAYER_ID, reason: 'thanks' };
+    const now = view.now;
+    const shy = this.romances(view).find((r) => r.shy && r.stage !== 'ended' && r.pair.includes(this.id));
+    const partner = shy?.pair.find((id) => id !== this.id);
+    if (partner && this.village.minds.has(partner)) {
+      const last = this.lastShyNote(shy!.pair);
+      if (now - last >= SHY_NOTE_EVERY * MINUTES_PER_DAY) return { to: partner, reason: 'shy' };
+    }
+    let best: { id: VillagerId; a: number } | null = null;
+    for (const [id, r] of Object.entries(view.self.relationships)) {
+      if (id === PLAYER_ID || id === this.id || !this.village.minds.has(id)) continue;
+      if (this.village.minds.get(id)?.profile.transient) continue;
+      if (r.affinity < MISS_YOU_AFFINITY) continue;
+      const talked = this.lastTalkedAt.get(id) ?? r.lastTalkedAt;
+      if (talked === undefined || now - talked < MISS_YOU_DAYS * MINUTES_PER_DAY) continue;
+      if (now - (this.lettersSent.get(id) ?? -Infinity) < MISS_YOU_DAYS * MINUTES_PER_DAY) continue;
+      if (!best || r.affinity > best.a || (r.affinity === best.a && id < best.id))
+        best = { id, a: r.affinity };
+    }
+    return best ? { to: best.id, reason: 'missYou' } : null;
+  }
+
+  /** Last shy note in either direction of a shy pair (one every few days, not one each). */
+  private lastShyNote(pair: readonly VillagerId[]): GameMinutes {
+    let last = -Infinity;
+    for (const id of pair) {
+      const m = id === this.id ? this : this.village.minds.get(id);
+      const other = pair.find((x) => x !== id);
+      if (m && other) last = Math.max(last, m.lettersSent.get(other) ?? -Infinity);
+    }
+    return last;
+  }
+
+  private async writeLetter(view: WorldView, to: VillagerId, reason: LetterReason): Promise<boolean> {
+    const toName = this.nameOf(to, view);
+    let memories: Memory[] = [];
+    try {
+      memories = await this.recall(toName, view.now, { k: 4 });
+    } catch (err) {
+      log.debug(`${this.id} letter memories unavailable: ${(err as Error).message}`);
+    }
+    const res = await this.ask<string | null>({
+      task: 'letter.write',
+      ...letterWritePrompt(this.profile, toName, reason, memories),
+      meta: { ...this.baseMeta(view), toId: to, toName, reason },
+      parse: (raw) =>
+        cleanLine(asString(pick(asRecord(raw), 'text', 'letter', 'note', 'message')), LETTER_MAX),
+      acceptText: (t) => cleanLine(t, LETTER_MAX),
+      // Optional letter: no fallback text, nothing is sent.
+      fallback: () => null,
+      shape: '{"text":"..."}',
+      deadline: view.now + LETTER_WRITE_TTL,
+      temperature: this.settings.temperature,
+      maxTokens: 220,
+    });
+    if (res.source !== 'llm' || !res.value) return false;
+    const letter = this.world.sendLetter?.(to, res.value, { source: 'llm' });
+    if (!letter) return false;
+    const at = this.deps.now();
+    this.lettersSent.set(to, at);
+    this.addMemory({
+      kind: 'note',
+      at,
+      text: `I wrote a letter to ${toName}: "${res.value}"`,
+      importance: reason === 'shy' ? 6 : 4,
+      meta: { letterId: letter.id, toldTo: [to] },
+    });
+    return true;
+  }
   // ---------- memory ----------
 
   addMemory(obs: Observation): Memory {
     const explicit = obs.importance !== undefined;
-    const m = this.memory.add(obs);
-    this.bookkeeping.importanceSinceReflection += m.importance;
+    const logged = !!obs.meta?.keepId;
+    // The post office log floods Laude with entries: batched embeddings, a reduced reflection weight.
+    const m = this.memory.add(obs, { deferEmbedding: logged });
+    this.bookkeeping.importanceSinceReflection += logged
+      ? m.importance * KEEP_REFLECTION_WEIGHT
+      : m.importance;
+    if (logged) this.noteKeepEntry(m.createdAt);
     if (
       !explicit &&
       this.settings.importanceMode === 'llm' &&
