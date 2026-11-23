@@ -21,6 +21,18 @@ describe('live provenance', () => {
     expect(provenance('AC4', { ...base, note: { replySource: 'fallback' } }).via).toBe('fallback');
   });
 
+  it('AC3/AC5 pass via llm when any qualifying item is llm; AC2 needs all', () => {
+    const hits = [
+      { text: 'Really? Biscuit? I had no idea!', source: 'fallback' as const },
+      { text: 'Did you hear the cat is called Biscuit?', source: 'llm' as const },
+    ];
+    expect(provenance('AC3', { ...base, gossipHits: hits })).toEqual({
+      via: 'llm',
+      detail: '1/2 gossip lines tagged llm; first llm: "Did you hear the cat is called Biscuit?"',
+    });
+    expect(provenance('AC5', { ...base, goodEvents: [{ source: 'fallback' }] }).via).toBe('fallback');
+  });
+
   it('untagged output: zero successful calls means fallback, otherwise unknown', () => {
     const none = { 'event.propose': { done: 0, failed: 2, avgLatencyMs: 0 } };
     expect(provenance('AC5', { ...base, goodEvents: [{}], taskStats: none }).via).toBe('fallback');
