@@ -62,7 +62,7 @@ describe('server smoke test', () => {
   it('answers /api/health', async () => {
     const res = await fetch(`${server.url}/api/health`);
     expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ ok: true, protocolVersion: 1 });
+    expect(await res.json()).toMatchObject({ ok: true, protocolVersion: 2 });
   });
 
   it('serves the snapshot, the observer state and the item catalog', async () => {

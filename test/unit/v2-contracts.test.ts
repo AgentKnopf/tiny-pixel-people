@@ -11,9 +11,9 @@ const load = (overrides?: PartialConfig) =>
   loadConfig({ env: {}, cwd: '/nonexistent-dir-for-tests', overrides });
 
 describe('v2 contracts', () => {
-  it('bumps the save schema version (protocol stays 1 until v2 messages are sent)', () => {
+  it('bumps the save schema and protocol versions to 2', () => {
     expect(SAVE_SCHEMA_VERSION).toBe(2);
-    expect(PROTOCOL_VERSION).toBe(1);
+    expect(PROTOCOL_VERSION).toBe(2);
   });
 
   it('migrates a v1 save to v2 with empty v2 defaults and keeps v1 data', () => {
