@@ -77,15 +77,17 @@ settings lively; above 20 seconds, use the CPU settings above.
 ## What happens under load
 
 - **Priorities.** Your chats go first, then replies to your door notes, then today's plan for a
-  villager still on a default plan, then conversation turns, the daily event and the invitees'
-  answers, then your requests to villagers, then tomorrow's plans, summaries, importance ratings
+  villager still on a default plan, then the first line of a villager who has news to share, the
+  daily event, other conversation turns and the invitees' answers, then your requests to villagers, then tomorrow's plans, summaries, importance ratings
   and reflections. Jobs that have waited a long time slowly gain priority, so background work is
   delayed but not starved.
 - **Load levels.** The villagers notice when answers take long in game time and cut back on
   optional work by themselves: **busy** from about 12 game minutes per answer, **overloaded** from
   about 35. Busy means shorter conversations (at most 4 lines), mostly when someone has news, and
   no plan revisions, reflections or model-written summaries. Overloaded means only conversations
-  that carry news, with at most 3 canned lines, and invitees answer by a simple rule. There is no
+  that carry news, with at most 3 lines, and invitees answer by a simple rule. The first line of a
+  villager with news still goes to the model once; the other lines are canned. Under load, if the
+  model's line leaves the news out, the game adds it (`Did you hear? …`). There is no
   setting for this; it recovers as soon as the model catches up. See
   [When the model is slow](../user-guide.md#when-the-model-is-slow) in the user guide.
 - **Waiting for plans at 06:00.** Each morning the clock holds until the villagers' day plans are
@@ -93,10 +95,17 @@ settings lively; above 20 seconds, use the CPU settings above.
   passed. On a slow model this wait gives the plans a head start; set it to `0` to never wait.
   When it times out, the log says `[sim] wake-up: only N/M plans ready, starting the day anyway`.
 - **Earlier daily event, evening planning.** The daily event is proposed at 07:00, and villagers
-  plan tomorrow in the evening, so both are ready before the morning rush.
+  plan tomorrow in the evening, so both are ready before the morning rush. The event proposal
+  always gets a real model attempt; only if no answer has come by 13:00 does the villager fall
+  back to a default event. A day plan the game can't use is asked for once more right away.
+- **Model or fallback, per night.** Once a night, when the first villager is asleep, the server
+  sends a log message over the WebSocket with how many answers so far came from the model and how many from a
+  fallback, per task, for example
+  `LLM use so far (model / fallback): convo.turn 12/30, event.propose 1/0, plan.day 14/6`. The
+  counts run from server start.
 - **Jobs expire.** Background jobs have a lifetime in game time, for example 30 game minutes for a
-  conversation turn, 2 hours for revising a plan, 4 hours for proposing an event and 6 hours for a
-  day plan. A job that hasn't started by then is dropped, and the villager uses its fallback
+  conversation turn, 2 hours for revising a plan and 6 hours for a day plan (the daily event proposal
+  doesn't expire). A job that hasn't started by then is dropped, and the villager uses its fallback
   instead, such as a default day plan. With `TPP_DEBUG=1` the log shows each one as
   `<task>: request failed (<task>: dropped, expired before it started); using fallback`. Your
   chats, door-note replies and requests never expire.

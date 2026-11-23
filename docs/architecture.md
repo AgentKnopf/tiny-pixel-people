@@ -99,10 +99,13 @@ _Generative Agents_ (Park et al., 2023), scaled down to small local models:
 - **Reflection.** When the summed importance of new memories reaches
   `cognition.reflectionThreshold`, the villager writes 2–3 insights citing the memories behind
   them.
-- **Planning.** At wake-up the model writes a day plan of 5–8 blocks (time, place, activity,
+- **Planning.** For each day (prepared in the evening, otherwise at wake-up) the model writes a day plan of 5–8 blocks (time, place, activity,
   emoji), taking needs, memories, invitations and the weather into account. The plan is validated
-  and repaired (unknown places mapped, gaps filled, overlaps clipped). Important news triggers a
-  rate-limited revision of the rest of the day. Accepted events and player requests are inserted
+  and repaired (unknown places mapped, gaps filled, overlaps clipped). An answer that can't be used is
+  asked for once more at once; after that the villager keeps a fallback plan. A plan prepared while
+  the villager is asleep is applied right away, so the engine's 06:00 wake-up hold (see
+  [Time and the loop](#time-and-the-loop)) can see it through `isPlanSettled(day)`. Important news
+  triggers a rate-limited revision of the rest of the day. Accepted events and player requests are inserted
   deterministically.
 - **Needs.** Hunger, energy, social and fun decay per game hour and are restored by matching
   activities. A need below 20 makes the mind insert a short block to fix it, without a model call.
@@ -114,7 +117,8 @@ _Generative Agents_ (Park et al., 2023), scaled down to small local models:
   the listener hasn't heard from it yet; facts the listener learns keep the original `originId`
   and record who they came from. This is how gossip and rumors are traced.
 - **Events.** Villagers propose events in their day plan or on request; at least one per day with
-  `events.ensureDaily` (asked from 07:00 until 15:00). Invitees decide with a model call; accepting inserts a plan block.
+  `events.ensureDaily` (asked from 07:00 until 15:00). The proposal call never expires in the queue; if nothing has
+  come back by 13:00 (at least an hour after asking), a default event is created. Invitees decide with a model call; accepting inserts a plan block.
   Attendance counts villagers inside the area for at least half the window.
 - **Door notes.** A note waits on the door until the owner next arrives home awake, becomes an
   importance-8 memory, and gets a reply that refers to its content.
@@ -128,7 +132,10 @@ _Generative Agents_ (Park et al., 2023), scaled down to small local models:
   conversations without news, and no LLM importance ratings, plan revisions (replaced by a 45-minute
   "share the news" block at a social place), reflections, conversation summaries or day summaries.
   Overloaded additionally: only conversations that carry news, at most 3 turns of canned lines
-  (which still pass on and echo the news), heuristic RSVPs, and no evening planning. Calls with a
+  (which still pass on and echo the news), except that each speaker's first line with news still
+  gets one model attempt (priority 104, 45-minute deadline). Under load, news the model leaves out
+  of that line is appended as `Did you hear? …` (and the line counts as `fallback`). Overloaded also uses heuristic RSVPs and skips evening
+  planning. Calls with a
   deadline are aborted when the game clock passes it, and the fallback is used.
 
 ## The player world
@@ -172,13 +179,14 @@ _Generative Agents_ (Park et al., 2023), scaled down to small local models:
   **LlmQueue** runs at most `llm.concurrency` calls at once (default 1 for `ollama`, 2 otherwise;
   the engine also caps simultaneous villager conversations at this number), ordered by priority. The defaults are in `TASK_PRIORITY` (`llm/types.ts`); cognition overrides
   some (`PRIORITY` in `cognition/mind.ts`). The resulting order is: player replies (110), note
-  replies (108), today's plan (105), conversation turns (100), the event proposal (95), RSVPs (92),
+  replies (108), today's plan (105), a speaker's first line with news (104), the event proposal
+  (101), conversation turns (100), RSVPs (92),
   plan retries (90), player task requests (85), tomorrow's plan and plan revisions (70),
   conversation summaries (60), importance ratings (30), reflections and day summaries (20). Waiting jobs gain +1 priority per 2 s of real
   waiting (at most +50). Duplicate jobs are coalesced. Jobs whose `expiresAt` game time has passed
   before they start are dropped; without an explicit `expiresAt`, background tasks get a default
   lifetime (`DEFAULT_TASK_TTL_MINUTES` in `queue.ts`, e.g. 30 game minutes for `convo.turn`, 360
-  for `plan.day`), while player-facing tasks never expire. At most 64 jobs wait; beyond that the
+  for `plan.day`), while player-facing tasks and the event proposal never expire. At most 64 jobs wait; beyond that the
   lowest-priority one is dropped. Retryable errors (408, 409, 429, 5xx, network) are retried twice
   with jittered exponential backoff from 500 ms, honouring `retry-after` up to 30 s; timeouts are
   not retried. Errors are `LlmError`s of kind `network`, `http`, `timeout`, `parse`,
@@ -201,6 +209,9 @@ _Generative Agents_ (Park et al., 2023), scaled down to small local models:
   (`VillageEvent.source`) and door-note replies (`DoorNote.replySource`). `llm` means a model
   answer was parsed and used; anything canned or rule-based is `fallback`.
   The inspector shows `· fallback` on such plans, and the live acceptance script uses the tags.
+  Cognition also counts model and fallback answers per task (`fallbackStats` in `cognition/llm.ts`,
+  per queue, from server start) and, once per game day when the first villager is asleep, sends
+  them as a WebSocket `log` message: `LLM use so far (model / fallback): <task> <llm>/<fallback>, …`.
 - At startup `checkLlmHealth` checks the chat and embedding providers (Ollama: `GET /api/tags` and
   is the model pulled; OpenAI-compatible: `GET /models`; Anthropic and Gemini: look up the model)
   and logs one line for each. A failure doesn't stop the server: it seeds the queue's online flag

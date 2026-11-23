@@ -287,12 +287,12 @@ measures how long answers take in game time and works in one of three modes:
   revisions (instead, a villager with news spends 45 minutes at a meeting place to pass it on), no
   reflections, and memories, conversations and the day are summarised by simple rules.
 - **Overloaded** (about 35 game minutes or more): only villagers with news start conversations,
-  at most 3 lines, and the lines are canned (`Did you hear? …`, `Really? …? I had no idea!`), so
-  gossip still spreads. Invitees decide about events by a simple rule (how much they like the host
+  at most 3 lines. The first line with news still goes to the model; the rest are canned
+  (`Did you hear? …`, `Really? …? I had no idea!`), so gossip still spreads. Invitees decide about events by a simple rule (how much they like the host
   and whether they're free).
 
 In every mode your chats and door-note replies come first, followed by today's plans for villagers
-still on a default plan. Each
+still on a default plan, news being passed on, and the day's event. Each
 villager plans tomorrow in the evening, about 90 minutes before bedtime, while the model is less
 busy (except when overloaded). The mode recovers as soon as answers come back faster. For how to
 make a slow machine keep up, see [Performance and slow hardware](setup/performance.md).
