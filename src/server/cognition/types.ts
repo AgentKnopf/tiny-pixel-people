@@ -117,7 +117,10 @@ export interface VillagerMind {
   // ---------- v2 (spec v2 §6–§8) ----------
   /** The player walked in while this villager is home and awake (`visit.greet`, with fallback). */
   greetVisitor?(view: WorldView, visit: HouseVisit): Promise<{ reply: string; source: Provenance }>;
-  /** A letter addressed to this villager was read at home; a reply to a player letter comes back via `letter.reply`. */
+  /**
+   * Called after PostOfficeService marked a letter to this villager read and wrote the read memory.
+   * Writes no read memory itself; for a player letter it queues one `letter.reply` (deduplicated per letter).
+   */
   onLetterRead?(view: WorldView, letter: Letter): void;
 }
 
