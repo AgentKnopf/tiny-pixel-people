@@ -72,6 +72,14 @@ export function isAt(loc: Location, p: Point): boolean {
   return (loc.spots ?? []).some((s) => s.x === x && s.y === y);
 }
 
+/** Distance (tiles) from `p` to the nearest tile of a location's area; 0 inside it. */
+export function distanceToArea(loc: Location, p: Point): number {
+  const { x, y, w, h } = loc.area;
+  const dx = Math.max(x - p.x, 0, p.x - (x + w - 1));
+  const dy = Math.max(y - p.y, 0, p.y - (y + h - 1));
+  return Math.hypot(dx, dy);
+}
+
 /** The most specific location at a point (smallest area wins). */
 export function locationAt(locations: readonly Location[], p: Point): Location | null {
   let best: Location | null = null;

@@ -13,8 +13,10 @@ import {
   type Conversation,
   type DoorNote,
   type GameMinutes,
+  type HouseVisit,
   type Location,
   type Memory,
+  type Notice,
   type PlayerState,
   type Provenance,
   type Point,
@@ -51,13 +53,16 @@ import {
   type PlayerReplyRequest,
   type PlayerWorld,
 } from '../player/index.ts';
+import { LAUDE_ID, NOTICE_BOARD_ID } from '../player/post-office.ts';
+import { POST_OFFICE_ID } from '../player/house-visits.ts';
+import { playerConversationId } from '../player/player.ts';
 import { createAnimalSim, type AnimalStepResult, type DeterministicAnimalSim } from './animals.ts';
 import { SimBus } from './bus.ts';
 import { SimClock } from './clock.ts';
 import { advanceAlongPath, distance, facingFor, tileOf } from './movement.ts';
 import { CONVERSATION_SOCIAL_BONUS, initialNeeds, updateNeeds } from './needs.ts';
 import { isWalkable, PathFinder } from './pathfinding.ts';
-import { isAwakeAt } from './plan.ts';
+import { currentBlock, isAwakeAt } from './plan.ts';
 import { Rng } from './rng.ts';
 import { createStubConversationRunner } from './stub-mind.ts';
 import { TownLog } from './town-log.ts';
@@ -65,7 +70,15 @@ import { recordTownLog } from './town-recorder.ts';
 import { Rides } from './rides.ts';
 import { Train } from './train.ts';
 import type { AdvanceOptions, SimEngine, SimEngineOptions } from './types.ts';
-import { isAt, loadMap, loadProfiles, locationAt, locationById, nearestWalkable } from './world.ts';
+import {
+  distanceToArea,
+  isAt,
+  loadMap,
+  loadProfiles,
+  locationAt,
+  locationById,
+  nearestWalkable,
+} from './world.ts';
 
 const log = createLogger('sim');
 
@@ -90,6 +103,10 @@ export const MAX_VILLAGERS = 20;
 /** The crow caws when the player comes this close (tiles). */
 export const CROW_CAW_RADIUS = 3;
 export const ANIMALS_NEARBY_RADIUS = 4;
+/** Villagers this close (tiles) to the notice board read it (spec v2 §8.2). */
+export const NOTICE_READ_RADIUS = 3;
+/** An owner greeting the player stops for at most this long (spec v2 §6). */
+export const GREETING_HOLD_MINUTES = 10;
 /** What villagers do at a ride after their cycle, or after giving up on the queue (spec v2 §4). */
 export const RIDE_FALLBACK_ACTIVITY = 'watching the rides';
 const RIDE_EMOJI: Record<string, string> = { rollercoaster: '🎢', ferris_wheel: '🎡', carousel: '🎠' };
@@ -590,9 +607,18 @@ export class Engine implements SimEngine, SimHost {
 
   upsertNote(note: DoorNote): void {
     const i = this.noteList.findIndex((n) => n.id === note.id);
+    const prev = i >= 0 ? this.noteList[i] : undefined;
     if (i >= 0) this.noteList[i] = note;
     else this.noteList.push(note);
     this.broadcast({ type: 'note.updated', note: structuredClone(note) });
+    // The Keep logs every note created, read or replied to (spec v2 §8.3), not every rewrite.
+    if (!prev || prev.status !== note.status || prev.reply !== note.reply) {
+      try {
+        this.playerWorld.onNoteChanged(note);
+      } catch (err) {
+        log.error('onNoteChanged failed', err);
+      }
+    }
   }
 
   addVillager(profile: VillagerProfile, at?: Point): boolean {
@@ -793,6 +819,15 @@ export class Engine implements SimEngine, SimHost {
         }
         this.bus.emit('learned', { fact });
       },
+      sendLetter: (to, text, opts) => {
+        try {
+          return this.playerWorld.postLetter(id, to, text, opts);
+        } catch (err) {
+          log.error('postLetter failed', err);
+          return null;
+        }
+      },
+      observeFor: (villagerId, obs) => this.observe(villagerId, obs),
       taskCompleted: (taskId, block) => {
         try {
           this.playerWorld.onTaskCompleted(id, taskId, block);
@@ -842,13 +877,27 @@ export class Engine implements SimEngine, SimHost {
           log.warn(`could not add ${profile.id}: village full or duplicate`);
       },
       removeVillager: (id) => this.removeVillager(id),
+      requestGreeting: (id, visit) => this.requestGreeting(id, visit),
+      letterRead: (id, letter) => {
+        const rt = this.runtimes.get(id);
+        if (!rt?.mind.onLetterRead) return;
+        try {
+          rt.mind.onLetterRead(this.buildView(rt), letter);
+        } catch (err) {
+          log.error(`onLetterRead failed for ${id}`, err);
+        }
+      },
+      caw: (reason) => this.animals.caw(reason),
       llm: queue,
       loadLevel: () => loadTracker(queue).level(this.now()),
       joinRide: (rideId) =>
-        this.rides.join(PLAYER_ID, rideId) ? { ok: true } : { ok: false, reason: 'That ride is closed right now' },
+        this.rides.join(PLAYER_ID, rideId)
+          ? { ok: true }
+          : { ok: false, reason: 'That ride is closed right now' },
       triggerTrain: () => {
         if (!this.train) return { ok: false, reason: 'There is no train service' };
-        if (this.train.state(this.now()).status !== 'away') return { ok: false, reason: 'The train is already here' };
+        if (this.train.state(this.now()).status !== 'away')
+          return { ok: false, reason: 'The train is already here' };
         this.train.triggerNow(this.now());
         return { ok: true };
       },
@@ -1101,7 +1150,7 @@ export class Engine implements SimEngine, SimHost {
   private stepTrain(): void {
     if (!this.train) return;
     const now = this.clock.time;
-    this.train.step(now);
+    const changed = this.train.step(now);
     for (const event of this.train.takeEvents()) {
       try {
         if (event.kind === 'arrived') this.trainArrived(now);
@@ -1111,8 +1160,9 @@ export class Engine implements SimEngine, SimHost {
       }
       this.bus.emit('train', event);
     }
-    const changed = this.train.step(now);
-    if (changed) this.broadcast({ type: 'train.updated', train: changed });
+    // setPassengers in the event handlers marks the train dirty; the second step picks that up.
+    const passengers = this.train.step(now);
+    if (changed || passengers) this.broadcast({ type: 'train.updated', train: this.train.state(now) });
   }
 
   private platformTiles(): Point[] {
@@ -1137,7 +1187,8 @@ export class Engine implements SimEngine, SimHost {
     const tiles = this.platformTiles();
     const added: VillagerId[] = [];
     profiles.forEach((p, i) => {
-      const at = tiles.length > 0 ? tiles[Math.floor(((i + 0.5) * tiles.length) / profiles.length)]! : undefined;
+      const at =
+        tiles.length > 0 ? tiles[Math.floor(((i + 0.5) * tiles.length) / profiles.length)]! : undefined;
       if (this.addVillager(p, at)) added.push(p.id);
       else log.warn(`could not add visitor ${p.id}: village full or duplicate`);
     });
@@ -1769,8 +1820,27 @@ export class Engine implements SimEngine, SimHost {
       villagerNames: names,
       weather: { ...this.playerWorld.weather },
       animalsNearby: this.animalsNear(rt.state.pos),
+      noticesInReach: this.noticesInReach(rt),
+      lettersAtHome: this.playerWorld.post
+        .letters()
+        .filter((l) => l.to === rt.profile.id && l.status === 'delivered'),
+      ...(rt.profile.id === LAUDE_ID
+        ? { searchKeep: (query: string, k: number) => this.playerWorld.post.keep.search(query, k) }
+        : {}),
       ...(rt.profile.visitor ? visitorField(this.playerWorld.visitors.info(rt.profile.id)) : {}),
     };
+  }
+
+  /** Villagers read the board within 3 tiles of it, or when their plan block is at the board or the post office. */
+  private noticesInReach(rt: Runtime): readonly Notice[] {
+    const notices = this.playerWorld.post.notices();
+    if (notices.length === 0) return [];
+    const board = locationById(this.map.locations, NOTICE_BOARD_ID);
+    const near = !!board && distanceToArea(board, rt.state.pos) <= NOTICE_READ_RADIUS;
+    const blockLoc = currentBlock(rt.state.plan, this.now())?.locationId;
+    const planned =
+      blockLoc === NOTICE_BOARD_ID || (blockLoc === POST_OFFICE_ID && rt.state.locationId === POST_OFFICE_ID);
+    return near || planned ? notices : [];
   }
 
   private frameOf(rt: Runtime): VillagerFrame {
@@ -1969,6 +2039,60 @@ export class Engine implements SimEngine, SimHost {
    * The villager answers the player (WP8 already broadcast the player's line). The villager stops
    * and faces the player until a few minutes after its last reply.
    */
+  /** The owner stops for up to GREETING_HOLD_MINUTES (👋) and greets the player via `mind.greetVisitor` (spec v2 §6). */
+  private requestGreeting(id: VillagerId, visit: HouseVisit): Promise<{ reply: string; source: Provenance }> {
+    const rt = this.runtimes.get(id);
+    if (!rt?.mind.greetVisitor) return Promise.reject(new Error(`${id} cannot greet`));
+    const now = this.now();
+    if (!rt.state.conversationId && rt.state.status !== 'sleeping') {
+      const conversation: Conversation = {
+        id: `c${++this.seq}`,
+        participants: [PLAYER_ID, id],
+        locationId: rt.state.locationId,
+        startedAt: now,
+        messages: [],
+        status: 'active',
+      };
+      this.active.set(conversation.id, {
+        conversation,
+        sent: 0,
+        started: true,
+        withPlayer: true,
+        publicId: playerConversationId(id),
+        pendingReplies: 0,
+        holdUntil: now + GREETING_HOLD_MINUTES,
+      });
+      rt.state.conversationId = conversation.id;
+      rt.state.status = 'talking';
+      rt.state.path = [];
+      rt.approach = null;
+      rt.target = null;
+      rt.arrived = false;
+      rt.state.activity = {
+        text: `greeting ${this.player.name}`,
+        emoji: '👋',
+        locationId: rt.state.locationId,
+        since: now,
+      };
+      const p = this.player.pos;
+      rt.state.facing = facingFor(p.x - rt.state.pos.x, p.y - rt.state.pos.y, rt.state.facing);
+    }
+    let reply: Promise<{ reply: string; source: Provenance }>;
+    try {
+      reply = rt.mind.greetVisitor(this.buildView(rt), visit);
+    } catch (err) {
+      reply = Promise.reject(err);
+    }
+    const shown = reply.then((r) => {
+      const live = this.runtimes.get(id);
+      const text = typeof r?.reply === 'string' ? r.reply.trim() : '';
+      if (live && text) live.bubble = { text, untilMs: Date.now() + BUBBLE_MS, untilGame: this.now() + 10 };
+      return r;
+    });
+    this.track(shown.catch(() => undefined));
+    return shown;
+  }
+
   private requestPlayerReply(req: PlayerReplyRequest): void {
     const rt = this.runtimes.get(req.villagerId);
     if (!rt) return;
