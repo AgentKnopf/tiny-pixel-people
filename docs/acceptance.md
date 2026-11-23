@@ -172,7 +172,7 @@ end) and uses a temporary save folder.
 Some things are best checked by eye after `npm start`:
 
 - Click several villagers: the inspector shows the plan and the last memories (AC6).
-- Pin a note on a door and wait for the ✉ icon (AC4).
+- Leave a note on a door and wait for the ✉ icon (AC4).
 - Use **Tell as rumor** and watch the rumor tracker count up (AC3).
 - Try every toolbar button: rain falls, confetti at the party, a stranger walks in, a birthday
   toast.

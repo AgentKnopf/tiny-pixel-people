@@ -154,7 +154,9 @@ first walks up to the villager if it is far away. Sleeping villagers can't be sp
 ## Door notes
 
 Every house has a door. Click a door (or use **Visit their home**) to open the note window, titled
-`Note for <owner>'s door`. Type a note of up to 500 characters and press `📌 Pin note`.
+`Note for <owner>'s door`. Type a note of up to 500 characters and press `📌 Leave a note`. The
+same window has **🚪 Go inside** (see [Going inside houses](#going-inside-houses)) and lists the
+notes, replies and letters at that door.
 
 - A paper note appears on the door while it is unread.
 - The owner reads it **the next time it is home and awake**. If the owner is already at home and
@@ -459,7 +461,7 @@ and until when it hangs. Next to the board you can **📌 Post a notice** (up to
 Inside the post office stands the **Keep**, a cupboard where every door note, letter, notice and
 rumor in the village is written down. Inside, press **📒 Open the Keep** in the place bar: search
 for a word, filter by kind (notes, letters, notices, rumors, replies, or everything) and page back
-through the entries with **Older ›**, newest first. New entries appear while it is open. Outside
+through the entries with **‹ Newer** and **Older ›**, newest first. New entries appear while it is open. Outside
 the post office the Keep stays closed. Reading
 the Keep changes nothing in the village. It holds the last 2000 entries (`post.keepMax`).
 
