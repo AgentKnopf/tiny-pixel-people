@@ -330,7 +330,9 @@ riders as fit, runs, and lets them off. A villager who waits more than 20 game m
 watches the rides instead. To ride yourself, walk up to the ride: the place bar at the bottom shows
 how many are waiting and a **Ride** button with the price, for example `Ride (4 gold)`. You join the queue like
 everyone else; the bar then says `in the queue`, and `riding!` during your round. The button is
-greyed out when the rides are closed (outside zoo hours) or you don't have enough gold.
+greyed out when the rides are closed (outside zoo hours) or you don't have enough gold. While a
+ride runs, its riders are on it and you don't see them on the map: the rollercoaster cars go round
+the track, and the Ferris wheel and carousel turn.
 
 ### Food
 
@@ -377,7 +379,8 @@ Click a farm animal to see its name, whether it is young, grown up or old, and i
 ## The train, visitors and the hotel
 
 A train stops at the station every day at **10:00** and **16:00** (`train.arrivals`). It pulls in a
-few minutes early, waits 20 minutes at the platform (`train.dwellMinutes`) and leaves. The **Train**
+few minutes early from the east, waits 20 minutes at the platform (`train.dwellMinutes`) and
+leaves to the west. The **Train**
 button in the toolbar brings the next train right away. The stats card shows when the next train
 is due and how full the hotel is, for example `🚂 Next train 16:00 · Hotel 3/6`. While a train is
 in, it says `🚂 Train arriving …`, `🚂 Train boarding · departs …` or `🚂 Train departing`.
