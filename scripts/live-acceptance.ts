@@ -88,6 +88,8 @@ async function freePort(): Promise<number> {
   });
 }
 
+const minToClock = (m: number) =>
+  `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const log = (msg: string) => console.log(`[live] ${msg}`);
 
@@ -281,9 +283,23 @@ async function main(): Promise<void> {
 
   const midday = samples.find((s) => s.time >= t('12:00'));
   const judgedVillagers = midday?.villagers ?? last.villagers;
-  results.push(
-    checkPlans({ ...last, villagers: judgedVillagers }, planAdherence(samples, hello.map.locations)),
-  );
+  const adherence = planAdherence(samples, hello.map.locations);
+  const plans = checkPlans({ ...last, villagers: judgedVillagers }, adherence);
+  results.push(plans);
+  if (!plans.pass) {
+    // The save dir is deleted on exit, so this is the only record of what the flagged plans said.
+    for (const v of judgedVillagers.filter((v) => plans.detail.includes(`${v.id}:`))) {
+      const a = adherence.find((x) => x.villagerId === v.id);
+      const blocks = (v.plan?.blocks ?? []).map(
+        (b) => `${minToClock(b.start)} ${b.locationId} (${b.activity})`,
+      );
+      log(
+        `AC2 detail ${v.id}: plan ${v.plan?.source ?? 'none'} rev ${v.plan?.revision ?? '-'}, ` +
+          `adherence ${a ? `${a.following}/${a.samples}` : '-'}, ${a?.locationsVisited ?? 0} location(s); ` +
+          (blocks.join('; ') || 'no blocks'),
+      );
+    }
+  }
 
   const wsLines = messages.filter((m): m is ConversationMessageMsg => m.type === 'conversation.message');
   const apiConvos = (await getJson<Conversation[]>(`${base}/api/conversations`)) ?? [];
