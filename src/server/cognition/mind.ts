@@ -32,6 +32,7 @@ import type {
   Observation,
   PlayerInteraction,
   PlayerReply,
+  RetrieveOptions,
   VillagerMind,
   WorldView,
 } from './types.ts';
@@ -41,6 +42,7 @@ import { extractKeywords, keywordOverlap } from './keywords.ts';
 import {
   ask,
   fallbackStats,
+  gameTimer,
   loadTracker,
   statsLine,
   type AskResult,
@@ -96,6 +98,11 @@ const SUMMARY_RE = /^Summary of day (\d+):/;
  * decides what gets done at all: today's late plan first, then the daily event and the answers
  * it needs, then dialogue, then background work.
  */
+/** Game minutes a note reply may wait for the model before the fallback reply is posted. */
+const NOTE_REPLY_DEADLINE = 180;
+/** Game minutes a retrieval waits for its query embedding before ranking by keywords alone. */
+const RECALL_MAX_WAIT = 10;
+
 export const PRIORITY = {
   planToday: 105,
   // Above convo.turn (100): one call a day that must not starve behind chatter.
@@ -129,6 +136,7 @@ export class Mind implements VillagerMind {
   private lastRevisionAt = -Infinity;
   private readonly decidedEvents = new Set<EventId>();
   private readonly processedNotes = new Set<NoteId>();
+  private readonly repliedNotes = new Set<NoteId>();
   private readonly summarizedDays = new Set<number>();
   private readonly prepared = new Map<number, DayPlan>();
   private readonly planAttempts = new Map<number, number>();
@@ -296,7 +304,7 @@ export class Mind implements VillagerMind {
         meta: { heardFrom: PLAYER_ID },
       });
     const relation = this.relationText(view, PLAYER_ID, player);
-    const memories = await this.memory.retrieve(`${player} ${text}`, now, { k: 6 });
+    const memories = await this.recall(`${player} ${text}`, now, { k: 6 });
     const p = playerReplyPrompt(
       this.profile,
       player,
@@ -426,6 +434,19 @@ export class Mind implements VillagerMind {
     return loadTracker(this.deps.queue).level(this.deps.now());
   }
 
+  /**
+   * Memory retrieval that waits at most RECALL_MAX_WAIT game minutes for the query embedding (one
+   * local model server can keep it queued behind long generations), then ranks by keywords.
+   */
+  async recall(query: string, now: GameMinutes, opts: RetrieveOptions = {}): Promise<Memory[]> {
+    const timer = gameTimer(() => this.deps.now(), this.deps.now() + RECALL_MAX_WAIT);
+    try {
+      return await this.memory.retrieve(query, now, opts, timer.done);
+    } finally {
+      timer.stop();
+    }
+  }
+
   ask<T>(spec: AskSpec<T>): Promise<AskResult<T>> {
     return ask(this.deps.queue, { now: () => this.deps.now(), ...spec });
   }
@@ -549,7 +570,7 @@ export class Mind implements VillagerMind {
   /** Returns true when an immediate retry was scheduled. */
   private async dayPlanJob(view: WorldView, day: number): Promise<boolean> {
     const now = view.now;
-    const memories = await this.memory.retrieve(
+    const memories = await this.recall(
       `my plans for today ${this.profile.occupation} ${this.profile.name}`,
       now,
       { k: 5 },
@@ -665,7 +686,7 @@ export class Mind implements VillagerMind {
     this.lastRevisionAt = view.now;
     this.job('plan.revise', async () => {
       const plan = this.plan!;
-      const memories = await this.memory.retrieve(reason, view.now, { k: 6 });
+      const memories = await this.recall(reason, view.now, { k: 6 });
       const p = planRevisePrompt({
         profile: this.profile,
         now: mod,
@@ -822,7 +843,7 @@ export class Mind implements VillagerMind {
         if (q.value.length) {
           const found = new Map<string, Memory>();
           for (const question of q.value)
-            for (const m of await this.memory.retrieve(question, view.now, { k: 6 })) found.set(m.id, m);
+            for (const m of await this.recall(question, view.now, { k: 6 })) found.set(m.id, m);
           if (found.size) sources = [...found.values()].slice(0, 20);
         }
       }
@@ -923,7 +944,7 @@ export class Mind implements VillagerMind {
         (b) => b.start < en && b.end > s && b.activity !== 'relax at home',
       );
       const pinnedConflict = overlapping.some((b) => b.eventId || b.taskId);
-      const memories = await this.memory.retrieve(`${e.title} ${hostName}`, view.now, { k: 5 });
+      const memories = await this.recall(`${e.title} ${hostName}`, view.now, { k: 5 });
       const p = eventDecidePrompt(
         this.profile,
         e,
@@ -1009,7 +1030,7 @@ export class Mind implements VillagerMind {
 
   private proposeEvent(view: WorldView): void {
     this.job('event.propose', async () => {
-      const memories = await this.memory.retrieve(`host a fun event ${this.profile.occupation}`, view.now, {
+      const memories = await this.recall(`host a fun event ${this.profile.occupation}`, view.now, {
         k: 6,
       });
       const villagers = Object.entries(view.villagerNames)
@@ -1149,6 +1170,15 @@ export class Mind implements VillagerMind {
       )
       .filter((n) => !this.processedNotes.has(n.id))
       .sort((a, b) => a.postedAt - b.postedAt);
+    // Read but never answered (reply job lost, or restored from a save between read and reply).
+    for (const n of this.world.notes()) {
+      if (n.houseId !== this.profile.homeId || n.authorId === this.id) continue;
+      if (n.status !== 'read' || n.reply || this.repliedNotes.has(n.id)) continue;
+      if (this.pending.has(`note.reply:${n.id}`)) continue;
+      this.processedNotes.add(n.id);
+      const who = n.authorId === PLAYER_ID ? this.playerName() : this.nameOf(n.authorId, view);
+      this.replyToNote(view, n, who);
+    }
     for (const note of notes) {
       this.processedNotes.add(note.id);
       const now = view.now;
@@ -1168,46 +1198,80 @@ export class Mind implements VillagerMind {
 
   private replyToNote(view: WorldView, note: DoorNote, author: string): void {
     this.job(`note.reply:${note.id}`, async () => {
-      const memories = await this.memory.retrieve(note.text, view.now, { k: 5 });
-      const res = await this.ask({
-        task: 'note.reply',
-        ...noteReplyPrompt(this.profile, author, note.text, memories),
-        meta: { ...this.baseMeta(view), noteText: note.text, noteId: note.id, authorId: note.authorId },
-        parse: (raw) =>
-          cleanLine(asString(pick(asRecord(raw), 'reply', 'text', 'message', 'answer', 'note')), 400),
-        acceptText: (t) => cleanLine(t, 400),
-        fallback: () => fallbackNoteReply(this.profile, note.text),
-        shape: '{"reply":"..."}',
-        priority: PRIORITY.noteReply,
-        temperature: this.settings.temperature,
-        maxTokens: 200,
-      });
-      const reply = ensureReference(res.value, note.text);
-      // A reply we had to patch to reference the note counts as a fallback.
-      const replySource: Provenance = res.source === 'llm' && reply === res.value ? 'llm' : 'fallback';
-      const at = this.deps.now();
-      const latest = this.world.notes().find((n) => n.id === note.id) ?? {
-        ...note,
-        status: 'read' as const,
-        readAt: view.now,
-      };
-      const replied: DoorNote = {
-        ...latest,
-        status: 'replied',
-        reply,
-        repliedAt: at,
-        replySource,
-      };
-      this.world.upsertNote(replied);
-      this.addMemory({
-        kind: 'note',
-        at,
-        text: `I replied to the note from ${author}: "${reply}"`,
-        importance: 4,
-        meta: { noteId: note.id },
-      });
-      this.world.setThought(reply);
+      try {
+        await this.writeNoteReply(view, note, author);
+      } catch (err) {
+        log.warn(`${this.id} note reply failed (${(err as Error).message}); replying without the model`);
+        this.postNoteReply(
+          view,
+          note,
+          author,
+          ensureReference(fallbackNoteReply(this.profile, note.text), note.text),
+          'fallback',
+        );
+      }
     });
+  }
+
+  private async writeNoteReply(view: WorldView, note: DoorNote, author: string): Promise<void> {
+    let memories: Memory[] = [];
+    try {
+      memories = await this.recall(note.text, view.now, { k: 5 });
+    } catch (err) {
+      log.debug(`${this.id} note memories unavailable: ${(err as Error).message}`);
+    }
+    const res = await this.ask({
+      task: 'note.reply',
+      ...noteReplyPrompt(this.profile, author, note.text, memories),
+      meta: { ...this.baseMeta(view), noteText: note.text, noteId: note.id, authorId: note.authorId },
+      parse: (raw) =>
+        cleanLine(asString(pick(asRecord(raw), 'reply', 'text', 'message', 'answer', 'note')), 400),
+      acceptText: (t) => cleanLine(t, 400),
+      fallback: () => fallbackNoteReply(this.profile, note.text),
+      shape: '{"reply":"..."}',
+      priority: PRIORITY.noteReply,
+      // Never left unanswered: after a few game hours the fallback reply goes up instead.
+      deadline: view.now + NOTE_REPLY_DEADLINE,
+      temperature: this.settings.temperature,
+      maxTokens: 200,
+    });
+    const reply = ensureReference(res.value, note.text);
+    // A reply we had to patch to reference the note counts as a fallback.
+    const replySource: Provenance = res.source === 'llm' && reply === res.value ? 'llm' : 'fallback';
+    this.postNoteReply(view, note, author, reply, replySource);
+  }
+
+  private postNoteReply(
+    view: WorldView,
+    note: DoorNote,
+    author: string,
+    reply: string,
+    replySource: Provenance,
+  ): void {
+    if (this.repliedNotes.has(note.id)) return;
+    this.repliedNotes.add(note.id);
+    const at = this.deps.now();
+    const latest = this.world.notes().find((n) => n.id === note.id) ?? {
+      ...note,
+      status: 'read' as const,
+      readAt: view.now,
+    };
+    const replied: DoorNote = {
+      ...latest,
+      status: 'replied',
+      reply,
+      repliedAt: at,
+      replySource,
+    };
+    this.world.upsertNote(replied);
+    this.addMemory({
+      kind: 'note',
+      at,
+      text: `I replied to the note from ${author}: "${reply}"`,
+      importance: 4,
+      meta: { noteId: note.id },
+    });
+    this.world.setThought(reply);
   }
 
   // ---------- player tasks ----------

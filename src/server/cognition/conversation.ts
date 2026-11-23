@@ -137,7 +137,7 @@ export class LlmConversationRunner implements ConversationRunner {
         ? heard.find((h) => findMention(h.text, [last], listener.id))
         : undefined;
     const place = conv.locationId ? speaker.locName(view, conv.locationId) : 'the village path';
-    const memories = await speaker.memory.retrieve(`${listener.profile.name} ${place}`, now, { k: 5 });
+    const memories = await speaker.recall(`${listener.profile.name} ${place}`, now, { k: 5 });
     const transcript = conv.messages.slice();
     const p = convoTurnPrompt({
       profile: speaker.profile,
