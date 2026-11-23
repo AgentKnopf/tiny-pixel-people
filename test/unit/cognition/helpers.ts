@@ -33,6 +33,11 @@ export class DirectQueue implements LlmQueue {
     readonly embeddings: EmbeddingProvider | null = null,
   ) {}
 
+  /** Mirrors PriorityLlmQueue: false when embeddings are off for good. */
+  get embeddingsAvailable(): boolean {
+    return this.embeddings !== null;
+  }
+
   enqueue(req: ChatRequest): Promise<ChatResponse> {
     this.requests.push(req);
     return this.track(this.chat.chat(req));

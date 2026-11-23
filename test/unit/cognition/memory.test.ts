@@ -74,4 +74,35 @@ describe('MemoryStore', () => {
     expect(top!.text).toContain('apple');
     expect(embedder.enabled).toBe(false);
   });
+
+  it('keeps embeddings on after a transient failed batch and retries those memories', async () => {
+    const inner = new MockEmbeddingProvider();
+    let fail = true;
+    const flaky = {
+      kind: inner.kind,
+      model: inner.model,
+      embed: (texts: string[]) => inner.embed(texts),
+    };
+    const queue = new DirectQueue(new MockChatProvider(), flaky);
+    const realEmbed = queue.embed.bind(queue);
+    // The real queue resolves a failed batch to null while embeddings stay available.
+    queue.embed = (texts) => (fail ? Promise.resolve(null) : realEmbed(texts));
+    const embedder = new QueueEmbedder(queue);
+    const s = new MemoryStore('ada', {
+      weights: { recency: 0, importance: 0, relevance: 1 },
+      defaultK: 1,
+      embedder,
+    });
+    s.add({ at: 0, kind: 'observation', text: 'apple pie recipe from grandma' });
+    s.add({ at: 0, kind: 'observation', text: 'the fountain is broken' });
+    await queue.drain();
+    expect(s.all().some((m) => m.embedding)).toBe(false);
+    const [kwTop] = await s.retrieve('apple pie', 10);
+    expect(kwTop!.text).toContain('apple pie');
+    expect(embedder.enabled).toBe(true);
+    fail = false;
+    await s.retrieve('apple pie', 10);
+    await queue.drain();
+    expect(s.all().every((m) => m.embedding?.length === 64)).toBe(true);
+  });
 });
