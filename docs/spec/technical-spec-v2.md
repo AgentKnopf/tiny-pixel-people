@@ -561,6 +561,8 @@ On restore:
 
 A v1 save therefore resumes as a v2 world with the same villagers, memories, notes, rumors, gold and decorations.
 
+Determinism across a restore: every saved field restores exactly, including each animal's `pos` at the moment of the save. Lifecycle outcomes (births, deaths, the butcher, products) after a restore are the same as in an uninterrupted run. Animal wandering steps after a restore are not part of the contract, because the wander RNG restarts from `sim.seed`, so later positions may differ from an uninterrupted run while staying inside the pen.
+
 ## 16. Performance budgets
 
 | What                                         | Budget                                                | How measured                                                           |
