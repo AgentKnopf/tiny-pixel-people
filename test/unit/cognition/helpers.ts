@@ -13,6 +13,7 @@ import type { QueueStats, ServerMessage } from '../../../src/shared/protocol.ts'
 import type {
   DoorNote,
   GameMinutes,
+  Letter,
   Location,
   VillageEvent,
   VillagerProfile,
@@ -249,6 +250,7 @@ export interface TestVillage {
   states: Map<string, VillagerState>;
   events: VillageEvent[];
   notes: DoorNote[];
+  letters: Letter[];
   messages: ServerMessage[];
   time: { now: GameMinutes };
   weather?: Weather;
@@ -277,6 +279,7 @@ export function createTestVillage(opts: {
   const profiles = opts.profiles ?? PROFILES;
   const events: VillageEvent[] = [];
   const notes: DoorNote[] = [];
+  const letters: Letter[] = [];
   const messages: ServerMessage[] = [];
   const time = { now: opts.start };
   const rng = createRng(opts.seed ?? 7);
@@ -292,6 +295,7 @@ export function createTestVillage(opts: {
     states,
     events,
     notes,
+    letters,
     messages,
     time,
     view(id) {
@@ -350,7 +354,7 @@ export function createTestVillage(opts: {
     },
   };
   for (const p of profiles) {
-    const world = createMemoryWorld({ events, notes });
+    const world = createMemoryWorld({ events, notes, letters, self: p.id, now: () => time.now });
     worlds.set(p.id, world);
     states.set(p.id, makeState(p, opts.start, locations));
     const snapshot = opts.snapshots?.[p.id];

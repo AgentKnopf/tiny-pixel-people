@@ -15,6 +15,8 @@ export interface TurnPromptInput {
   maxTurns: number;
   /** The partner just told you this news. */
   justHeard?: string;
+  /** Laude's Keep lookup (spec v2 §8.3). */
+  keep?: string;
 }
 
 export function transcriptLines(
@@ -29,6 +31,7 @@ export function convoTurnPrompt(i: TurnPromptInput): { system: string; user: str
   const user = lines(
     `You meet ${i.partnerName} at ${i.place}. You were: ${i.activity}. ${i.relationship}`,
     `What you remember about this:\n${memoryLines(i.memories, false, 6)}`,
+    i.keep,
     i.news.length > 0 &&
       (i.turn <= 1
         ? `Tell ${i.partnerName} this news in your own words: ${i.news[0]}`
