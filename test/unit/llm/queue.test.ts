@@ -233,6 +233,106 @@ describe('PriorityLlmQueue', () => {
     expect(s.byTask!['convo.turn']!.done).toBe(2);
   });
 
+  it('lets a high-priority job jump ahead of a queued backlog', async () => {
+    const p = new ManualProvider();
+    const q = new PriorityLlmQueue({ chat: p, concurrency: 1 });
+    const order: string[] = [];
+    const jobs = [q.enqueue(req('reflect', 'running')).then(() => order.push('running'))];
+    for (let i = 0; i < 5; i++)
+      jobs.push(q.enqueue(req('importance.rate', `bg${i}`)).then(() => order.push(`bg${i}`)));
+    jobs.push(q.enqueue(req('player.reply', 'player')).then(() => order.push('player')));
+    while (p.calls.length) {
+      p.calls.shift()!.resolve({});
+      await tick();
+    }
+    await Promise.all(jobs);
+    expect(order.slice(0, 2)).toEqual(['running', 'player']);
+  });
+
+  it('ages queued jobs so low-priority work is not starved, capped below the player', async () => {
+    let ms = 0;
+    const p = new ManualProvider();
+    const q = new PriorityLlmQueue({
+      chat: p,
+      concurrency: 1,
+      clockMs: () => ms,
+      agingMs: 1000,
+      maxAgingBoost: 50,
+    });
+    const order: string[] = [];
+    const jobs = [q.enqueue(req('reflect', 'running')).then(() => order.push('running'))];
+    jobs.push(q.enqueue(req('event.propose', 'old-event')).then(() => order.push('old-event')));
+    ms = 100_000;
+    jobs.push(q.enqueue(req('plan.day', 'fresh-plan')).then(() => order.push('fresh-plan')));
+    jobs.push(q.enqueue(req('player.reply', 'player')).then(() => order.push('player')));
+    while (p.calls.length) {
+      p.calls.shift()!.resolve({});
+      await tick();
+    }
+    await Promise.all(jobs);
+    // event.propose (40) aged by +50 beats plan.day (70) but not player.reply (110).
+    expect(order).toEqual(['running', 'player', 'old-event', 'fresh-plan']);
+  });
+
+  it('applies default per-task TTLs in game time when no expiresAt is given', async () => {
+    let now = 0;
+    const p = new ManualProvider();
+    const q = new PriorityLlmQueue({ chat: p, concurrency: 1, now: () => now });
+    const first = q.enqueue(req('reflect'));
+    const turn = q.enqueue(req('convo.turn'));
+    const note = q.enqueue(req('note.reply'));
+    now = 31;
+    p.calls.shift()!.resolve({});
+    await first;
+    await expect(turn).rejects.toMatchObject({ kind: 'expired' });
+    p.calls.shift()!.resolve({});
+    await note;
+    expect(q.droppedCount).toBe(1);
+
+    const noTtl = new PriorityLlmQueue({
+      chat: new ScriptedProvider(() => ({})),
+      now: () => now,
+      taskTtlMinutes: false,
+    });
+    now = 0;
+    const blocked = noTtl.enqueue(req('convo.turn'));
+    now = 1000;
+    await expect(blocked).resolves.toBeDefined();
+  });
+
+  it('sheds the lowest-priority job when the queue is full', async () => {
+    const p = new ManualProvider();
+    const q = new PriorityLlmQueue({ chat: p, concurrency: 1, maxQueued: 3 });
+    void q.enqueue(req('reflect', 'running'));
+    const a = q.enqueue(req('plan.day'));
+    const b = q.enqueue(req('day.summarize'));
+    const c = q.enqueue(req('convo.turn'));
+    const d = q.enqueue(req('importance.rate'));
+    await expect(b).rejects.toMatchObject({ kind: 'expired' });
+    expect(q.stats().queued).toBe(3);
+    expect(q.droppedCount).toBe(1);
+    void a;
+    void c;
+    void d;
+  });
+
+  it('does not retry a timed-out job', async () => {
+    const p = new ManualProvider();
+    const q = new PriorityLlmQueue({ chat: p, timeoutMs: 30, sleep: async () => {} });
+    await expect(q.enqueue(req('plan.day'))).rejects.toMatchObject({ kind: 'timeout' });
+    expect(p.calls).toHaveLength(1);
+  });
+
+  it('lists every enqueued task in byTask, even before it finishes', () => {
+    const q = new PriorityLlmQueue({ chat: new ManualProvider(), concurrency: 1 });
+    void q.enqueue(req('plan.day'));
+    void q.enqueue(req('convo.turn'));
+    expect(q.stats().byTask).toEqual({
+      'plan.day': { done: 0, failed: 0, avgLatencyMs: 0 },
+      'convo.turn': { done: 0, failed: 0, avgLatencyMs: 0 },
+    });
+  });
+
   it('drain() also waits for follow-up jobs enqueued by result continuations', async () => {
     const p = new ScriptedProvider((_n, r) => ({ text: r.task }));
     const q = new PriorityLlmQueue({ chat: p });

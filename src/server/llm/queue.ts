@@ -15,10 +15,30 @@ import {
   type EmbeddingProvider,
   type EnqueueOptions,
   type LlmQueue,
+  type LlmTask,
   type Providers,
 } from './types.ts';
 
 const log = createLogger('llm.queue');
+
+/**
+ * Game minutes a job may wait before it is dropped (callers fall back), used when the caller
+ * gives no `expiresAt`. On a slow model this keeps the backlog from piling up with answers that
+ * would arrive too late to matter. Player-facing tasks never expire.
+ */
+export const DEFAULT_TASK_TTL_MINUTES: Partial<Record<LlmTask, number>> = {
+  'convo.turn': 30,
+  'convo.summarize': 180,
+  'importance.rate': 240,
+  'plan.day': 360,
+  'plan.revise': 120,
+  reflect: 360,
+  'reflect.questions': 360,
+  'event.propose': 240,
+  'event.decide': 120,
+  'day.summarize': 720,
+  'stranger.create': 120,
+};
 
 export interface LlmQueueOptions {
   chat: ChatProvider;
@@ -40,6 +60,16 @@ export interface LlmQueueOptions {
   maxRetryDelayMs?: number;
   /** Game clock used for `expiresAt` (game minutes). Without it, `expiresAt` is ignored. */
   now?: () => number;
+  /** Default per-task TTL in game minutes when `expiresAt` is not given; `false` disables. */
+  taskTtlMinutes?: Partial<Record<LlmTask, number>> | false;
+  /** A queued job gains +1 priority per `agingMs` of real waiting time (default 2000 ms). */
+  agingMs?: number;
+  /** Cap for the aging bonus (default 50), so aged background work never outranks the player. */
+  maxAgingBoost?: number;
+  /** Max queued jobs; beyond it the lowest-priority job is dropped (default 64). */
+  maxQueued?: number;
+  /** Real clock in ms (tests). */
+  clockMs?: () => number;
   /** JSONL file for prompts/responses (debugging); empty = off. */
   logFile?: string;
   /** Injected for tests. */
@@ -53,6 +83,7 @@ interface Job {
   priority: number;
   dedupeKey: string | undefined;
   expiresAt: number | undefined;
+  enqueuedAtMs: number;
   promise: Promise<ChatResponse>;
   resolve: (r: ChatResponse) => void;
   reject: (e: unknown) => void;
@@ -86,6 +117,11 @@ export class PriorityLlmQueue implements LlmQueue {
   private readonly logFile: string;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly random: () => number;
+  private readonly taskTtl: Partial<Record<LlmTask, number>>;
+  private readonly agingMs: number;
+  private readonly maxAgingBoost: number;
+  private readonly maxQueued: number;
+  private readonly clockMs: () => number;
 
   private seq = 0;
   private pending: Job[] = [];
@@ -122,6 +158,11 @@ export class PriorityLlmQueue implements LlmQueue {
     this.logFile = opts.logFile ?? '';
     this.sleep = opts.sleep ?? defaultSleep;
     this.random = opts.random ?? Math.random;
+    this.taskTtl = opts.taskTtlMinutes === false ? {} : (opts.taskTtlMinutes ?? DEFAULT_TASK_TTL_MINUTES);
+    this.agingMs = Math.max(1, opts.agingMs ?? 2_000);
+    this.maxAgingBoost = Math.max(0, opts.maxAgingBoost ?? 50);
+    this.maxQueued = Math.max(1, opts.maxQueued ?? 64);
+    this.clockMs = opts.clockMs ?? Date.now;
   }
 
   get provider(): ChatProvider {
@@ -168,12 +209,15 @@ export class PriorityLlmQueue implements LlmQueue {
       resolve = res;
       reject = rej;
     });
+    const ttl = this.taskTtl[req.task];
+    const expiresAt = opts.expiresAt ?? (ttl !== undefined && this.now ? this.now() + ttl : undefined);
     const job: Job = {
       seq: this.seq++,
       req,
       priority,
       dedupeKey: opts.dedupeKey,
-      expiresAt: opts.expiresAt,
+      expiresAt,
+      enqueuedAtMs: this.clockMs(),
       promise,
       resolve,
       reject,
@@ -190,8 +234,10 @@ export class PriorityLlmQueue implements LlmQueue {
       req.signal.addEventListener('abort', job.onAbort, { once: true });
     }
     if (job.dedupeKey) this.byKey.set(job.dedupeKey, job);
+    this.taskStat(req.task);
     this.pending.push(job);
     this.pump();
+    this.shed();
     return promise;
   }
 
@@ -242,15 +288,16 @@ export class PriorityLlmQueue implements LlmQueue {
       totalLatencyMs: this.totalLatencyMs,
       totalTokens: this.totalTokens,
       lastReplyMs: this.lastReplyMs,
+      // Below a second of measured time the rate is noise (mock provider, cached answers).
       tokensPerSecond:
-        this.outputTokenLatencyMs > 0
+        this.outputTokenLatencyMs >= 1000
           ? Math.round((this.outputTokens / this.outputTokenLatencyMs) * 10_000) / 10
           : null,
       byTask,
     };
   }
 
-  /** Jobs dropped because they expired before starting. */
+  /** Jobs dropped before starting: expired, or shed because the queue was full. */
   get droppedCount(): number {
     return this.dropped;
   }
@@ -276,24 +323,64 @@ export class PriorityLlmQueue implements LlmQueue {
     if (job.onAbort) job.req.signal?.removeEventListener('abort', job.onAbort);
   }
 
+  /** Base priority plus an aging bonus, so low-priority work is not starved forever. */
+  private effectivePriority(job: Job, nowMs: number): number {
+    const boost = Math.min(this.maxAgingBoost, Math.floor((nowMs - job.enqueuedAtMs) / this.agingMs));
+    return job.priority + boost;
+  }
+
   private takeNext(): Job | undefined {
+    const nowMs = this.clockMs();
     let best = -1;
+    let bestPrio = -Infinity;
     for (let i = 0; i < this.pending.length; i++) {
       const j = this.pending[i]!;
-      const b = best >= 0 ? this.pending[best]! : undefined;
-      if (!b || j.priority > b.priority || (j.priority === b.priority && j.seq < b.seq)) best = i;
+      const p = this.effectivePriority(j, nowMs);
+      if (p > bestPrio || (p === bestPrio && j.seq < this.pending[best]!.seq)) {
+        best = i;
+        bestPrio = p;
+      }
     }
     return best >= 0 ? this.pending.splice(best, 1)[0] : undefined;
+  }
+
+  private drop(job: Job, why: string): void {
+    this.forget(job);
+    this.dropped++;
+    job.reject(new LlmError('expired', `${job.req.task}: dropped, ${why}`));
+  }
+
+  private isExpired(job: Job): boolean {
+    return job.expiresAt !== undefined && this.now !== undefined && this.now() > job.expiresAt;
+  }
+
+  /** Drop expired jobs, then the lowest-priority ones while the queue is over `maxQueued`. */
+  private shed(): void {
+    if (this.pending.length <= this.maxQueued) return;
+    for (const job of this.pending.filter((j) => this.isExpired(j))) {
+      this.pending.splice(this.pending.indexOf(job), 1);
+      this.drop(job, 'expired before it started');
+    }
+    const nowMs = this.clockMs();
+    while (this.pending.length > this.maxQueued) {
+      let worst = 0;
+      for (let i = 1; i < this.pending.length; i++) {
+        const a = this.effectivePriority(this.pending[i]!, nowMs);
+        const w = this.effectivePriority(this.pending[worst]!, nowMs);
+        if (a < w || (a === w && this.pending[i]!.seq > this.pending[worst]!.seq)) worst = i;
+      }
+      const [job] = this.pending.splice(worst, 1);
+      log.debug(`queue full (${this.maxQueued}); dropping ${job!.req.task}`);
+      this.drop(job!, 'queue full');
+    }
   }
 
   private pump(): void {
     while (this.running < this.concurrency) {
       const job = this.takeNext();
       if (!job) break;
-      if (job.expiresAt !== undefined && this.now && this.now() > job.expiresAt) {
-        this.forget(job);
-        this.dropped++;
-        job.reject(new LlmError('expired', `${job.req.task}: dropped, expired before it started`));
+      if (this.isExpired(job)) {
+        this.drop(job, 'expired before it started');
         continue;
       }
       this.running++;
@@ -350,7 +437,9 @@ export class PriorityLlmQueue implements LlmQueue {
         const err = this.normalize(raw, callerSignal);
         if (err.kind === 'network' || err.kind === 'timeout' || err.status === 401 || err.status === 403)
           this.online = false;
-        if (!err.retryable || n >= this.maxRetries || callerSignal?.aborted) throw err;
+        // A timeout means the server is saturated; resending the same long job only adds load.
+        if (!err.retryable || err.kind === 'timeout' || n >= this.maxRetries || callerSignal?.aborted)
+          throw err;
         const backoff = this.retryBaseMs * 2 ** n * (0.75 + 0.5 * this.random());
         const delay = Math.min(this.maxRetryDelayMs, err.retryAfterMs ?? backoff);
         log.debug(`${label}: ${err.message}; retry ${n + 1}/${this.maxRetries} in ${Math.round(delay)} ms`);

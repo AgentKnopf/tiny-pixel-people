@@ -22,13 +22,19 @@ export type FakeHandler = (req: RecordedRequest) => FakeReply | Promise<FakeRepl
 export interface FakeServer {
   url: string;
   requests: RecordedRequest[];
+  /** Resolves true once a client disconnects before its response was sent. */
+  waitForClientAbort(timeoutMs: number): Promise<boolean>;
   close(): Promise<void>;
 }
 
 /** A local HTTP server that records requests and answers with scripted provider responses. */
 export async function startFakeServer(handler: FakeHandler): Promise<FakeServer> {
   const requests: RecordedRequest[] = [];
+  let aborted = 0;
   const server = createServer((req, res) => {
+    res.on('close', () => {
+      if (!res.writableFinished) aborted++;
+    });
     const chunks: Buffer[] = [];
     req.on('data', (c: Buffer) => chunks.push(c));
     req.on('end', () => {
@@ -60,6 +66,11 @@ export async function startFakeServer(handler: FakeHandler): Promise<FakeServer>
   return {
     url: `http://127.0.0.1:${port}`,
     requests,
+    waitForClientAbort: async (timeoutMs) => {
+      const until = Date.now() + timeoutMs;
+      while (aborted === 0 && Date.now() < until) await new Promise((r) => setTimeout(r, 10));
+      return aborted > 0;
+    },
     close: () =>
       new Promise<void>((r) => {
         server.closeAllConnections();
