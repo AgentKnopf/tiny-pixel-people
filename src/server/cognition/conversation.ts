@@ -72,9 +72,11 @@ export class LlmConversationRunner implements ConversationRunner {
     }
     const names: Record<VillagerId, string> = { [a.id]: a.profile.name, [b.id]: b.profile.name };
     const load = this.load();
+    const shy = !!a.romance.shyWith(b.id);
     const maxTurns = Math.min(
       this.settings.maxConversationTurns,
       load === 'normal' ? Infinity : load === 'busy' ? 4 : 3,
+      shy ? (this.deps.config.romance?.shyMaxTurns ?? 3) : Infinity,
     );
     const endBy = conversation.startedAt + this.settings.maxConversationGameMinutes;
     for (let turn = conversation.messages.length; turn < maxTurns; turn++) {
@@ -93,6 +95,7 @@ export class LlmConversationRunner implements ConversationRunner {
         turn,
         maxTurns,
         endBy,
+        shy,
       );
       if (conversation.status !== 'active') break;
       const msg: ConversationMessage = {
@@ -119,6 +122,9 @@ export class LlmConversationRunner implements ConversationRunner {
         if (findMention(o.text, conversation.messages, self.id)) markTold(o.memory, other.id);
     }
     if (conversation.messages.length > 0) await this.wrapUp(conversation, pair, news, names);
+    // After the summary, so this chat already counts toward the talks a date needs.
+    a.romance.afterConversation(b.id, conversation);
+    b.romance.afterConversation(a.id, conversation);
     return conversation;
   }
 
@@ -156,6 +162,7 @@ export class LlmConversationRunner implements ConversationRunner {
     turn: number,
     maxTurns: number,
     endBy: number,
+    shy = false,
   ): Promise<{ say: string; end: boolean; source: Provenance }> {
     const view = speaker.lastView;
     const now = this.deps.now();
@@ -188,6 +195,7 @@ export class LlmConversationRunner implements ConversationRunner {
       maxTurns,
       ...(justHeard ? { justHeard: justHeard.text } : {}),
       keep: keepLines(keep, (id) => speaker.nameOf(id, view)),
+      shy,
     });
     const said = new Set(
       transcript.filter((m) => m.speakerId === speaker.id).map((m) => m.text.toLowerCase()),

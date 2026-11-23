@@ -17,6 +17,8 @@ export interface TurnPromptInput {
   justHeard?: string;
   /** Laude's Keep lookup (spec v2 §8.3). */
   keep?: string;
+  /** The slow-burn shy pair (spec v2 §7.1). */
+  shy?: boolean;
 }
 
 export function transcriptLines(
@@ -32,6 +34,8 @@ export function convoTurnPrompt(i: TurnPromptInput): { system: string; user: str
     `You meet ${i.partnerName} at ${i.place}. You were: ${i.activity}. ${i.relationship}`,
     `What you remember about this:\n${memoryLines(i.memories, false, 6)}`,
     i.keep,
+    i.shy &&
+      `You are secretly sweet on ${i.partnerName} and very shy around them: keep it short, a little awkward and kind.`,
     i.news.length > 0 &&
       (i.turn <= 1
         ? `Tell ${i.partnerName} this news in your own words: ${i.news[0]}`
