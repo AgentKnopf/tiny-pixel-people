@@ -7,7 +7,7 @@ export const ICON = 16;
  * Icons are drawn from character masks. Each mask is up to 16×16; '.' or ' ' is transparent.
  * An outline is added automatically, so masks stay one pixel inside the frame.
  */
-interface IconDef {
+export interface IconDef {
   rows: string[];
   colors: Record<string, Color>;
   outline?: boolean;

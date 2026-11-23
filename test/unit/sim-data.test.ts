@@ -8,11 +8,11 @@ const map = loadMap();
 const profiles = loadProfiles(map);
 
 describe('map data (data/map/village.json)', () => {
-  it('is a 48x30 map with consistent layers', () => {
-    expect(map.width).toBe(48);
-    expect(map.height).toBe(30);
-    expect(map.collision).toHaveLength(48 * 30);
-    for (const layer of Object.values(map.layers)) expect(layer).toHaveLength(48 * 30);
+  it('is a 128x60 map with consistent layers', () => {
+    expect(map.width).toBe(128);
+    expect(map.height).toBe(60);
+    expect(map.collision).toHaveLength(128 * 60);
+    for (const layer of Object.values(map.layers)) expect(layer).toHaveLength(128 * 60);
   });
 
   it('has the reference locations and camera scenes inside the map', () => {
