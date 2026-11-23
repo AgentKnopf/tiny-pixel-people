@@ -18,13 +18,27 @@ export function fitZoom(rw: number, rh: number, vw: number, vh: number, minVisib
   return clampZoom(z);
 }
 
+/**
+ * Zoom that shows the whole `rw`×`rh` rect. Uses the largest integer zoom (crisp pixels) when that
+ * fills at least `minFill` of the viewport; otherwise the exact fractional ratio, so the overview
+ * fills the screen instead of shrinking to a small 1× island with wide margins.
+ */
+export function containZoom(rw: number, rh: number, vw: number, vh: number, minFill = 0.85): number {
+  if (rw <= 0 || rh <= 0 || vw <= 0 || vh <= 0) return MIN_ZOOM;
+  const ratio = Math.min(vw / rw, vh / rh);
+  const lo = Math.floor(ratio);
+  if (lo >= 1 && lo / ratio >= minFill) return Math.min(MAX_ZOOM, lo);
+  return Math.min(MAX_ZOOM, ratio);
+}
+
 export function clampZoom(z: number): number {
   return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round(z)));
 }
 
 /**
- * Orthographic camera over the world in art pixels. `zoom` is an integer number of device pixels
- * per art pixel and the view offset is snapped to whole art pixels, so tiles stay crisp.
+ * Orthographic camera over the world in art pixels. `zoom` is device pixels per art pixel: an
+ * integer everywhere except a whole-town overview that only fits at a fractional zoom. The view
+ * offset is snapped to whole art pixels, so tiles stay crisp.
  */
 export class Camera {
   /** Current centre (art px). */
@@ -40,6 +54,8 @@ export class Camera {
   worldH = 1;
   /** Rect (art px) the camera keeps framed on resize until the user pans or zooms. */
   follow: Rect | null = null;
+  /** Whether `follow` is framed to show the whole rect rather than fill the screen. */
+  followContain = false;
 
   setWorld(w: number, h: number): void {
     this.worldW = w;
@@ -50,13 +66,19 @@ export class Camera {
     const changed = w !== this.viewW || h !== this.viewH;
     this.viewW = Math.max(1, w);
     this.viewH = Math.max(1, h);
-    if (changed && this.follow) this.frame(this.follow, true);
+    if (changed && this.follow) this.frame(this.follow, true, this.followContain);
   }
 
-  /** Frame an art-px rect at its fit zoom; eases unless `instant`. */
-  frame(rect: Rect, instant = false): void {
+  /**
+   * Frame an art-px rect at its fit zoom; eases unless `instant`. With `contain` the whole rect
+   * stays visible (the town overview); otherwise edges may be cropped for a closer view.
+   */
+  frame(rect: Rect, instant = false, contain = false): void {
     this.follow = rect;
-    this.zoom = fitZoom(rect.w, rect.h, this.viewW, this.viewH);
+    this.followContain = contain;
+    this.zoom = contain
+      ? containZoom(rect.w, rect.h, this.viewW, this.viewH)
+      : fitZoom(rect.w, rect.h, this.viewW, this.viewH);
     this.tx = rect.x + rect.w / 2;
     this.ty = rect.y + rect.h / 2;
     this.clampTarget();
@@ -79,7 +101,14 @@ export class Camera {
 
   /** Change zoom by `delta` steps, keeping the art point under `anchor` (device px) in place. */
   zoomBy(delta: number, anchor?: Point): void {
-    const next = clampZoom(this.zoom + delta);
+    // From a fractional overview zoom, step to the neighbouring integer zoom first.
+    const base = delta > 0 ? Math.floor(this.zoom) : Math.ceil(this.zoom);
+    this.zoomTo(base + delta, anchor);
+  }
+
+  /** Set an integer zoom, keeping the art point under `anchor` (device px) in place. */
+  zoomTo(zoom: number, anchor?: Point): void {
+    const next = clampZoom(zoom);
     if (next === this.zoom) return;
     this.follow = null;
     const a = anchor ?? { x: this.viewW / 2, y: this.viewH / 2 };
@@ -126,11 +155,11 @@ export class Camera {
 
   /** Device-pixel translation for drawing, snapped to whole art pixels. */
   get offsetX(): number {
-    return Math.round(this.viewW / 2) - Math.round(this.x) * this.zoom;
+    return Math.round(Math.round(this.viewW / 2) - Math.round(this.x) * this.zoom);
   }
 
   get offsetY(): number {
-    return Math.round(this.viewH / 2) - Math.round(this.y) * this.zoom;
+    return Math.round(Math.round(this.viewH / 2) - Math.round(this.y) * this.zoom);
   }
 
   worldToScreen(p: Point): Point {

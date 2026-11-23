@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createPlaceholderMap } from '../../src/server/sim/placeholder.ts';
 import { bubbleAlpha, layoutBubbles, wrapText } from '../../src/client/render/bubbles.ts';
-import { Camera, fitZoom } from '../../src/client/render/camera.ts';
+import { Camera, containZoom, fitZoom } from '../../src/client/render/camera.ts';
 import { eventEmoji, isFestive } from '../../src/client/render/effects.ts';
 import { doorHitBox, hitTest } from '../../src/client/render/hit.ts';
 import { nightFactor, tintColor, useLitTiles } from '../../src/client/render/lighting.ts';
@@ -31,6 +31,47 @@ describe('camera', () => {
     // Home scene (16×12 tiles) zooms in to 4×, like reference frame 03.
     expect(fitZoom(256, 192, 1440, 754)).toBe(4);
     expect(fitZoom(0, 10, 100, 100)).toBe(1);
+  });
+
+  it('shows the whole 48×30 town in the overview, at an integer zoom when it nearly fills', () => {
+    expect(containZoom(768, 480, 1440, 800)).toBeCloseTo(800 / 480);
+    expect(containZoom(768, 480, 1440, 754)).toBeCloseTo(754 / 480);
+    // Retina 1440×800: 3× uses 90% of the height, so stay crisp.
+    expect(containZoom(768, 480, 2880, 1600)).toBe(3);
+    expect(containZoom(768, 480, 1536, 960)).toBe(2);
+    // Smaller than the town: shrink below 1× rather than crop.
+    expect(containZoom(768, 480, 640, 400)).toBeCloseTo(400 / 480);
+  });
+
+  it('frames the whole town with contain and steps to integer zooms from there', () => {
+    const c = new Camera();
+    c.setWorld(768, 480);
+    for (const [w, h] of <[number, number][]>[
+      [1440, 800],
+      [1440, 754],
+      [2880, 1600],
+      [1024, 768],
+    ]) {
+      c.setViewport(w, h);
+      c.frame({ x: 0, y: 0, w: 768, h: 480 }, true, true);
+      const tl = c.screenToWorld({ x: 0, y: 0 });
+      const br = c.screenToWorld({ x: w, y: h });
+      expect(tl.x).toBeLessThanOrEqual(0.5);
+      expect(tl.y).toBeLessThanOrEqual(0.5);
+      expect(br.x).toBeGreaterThanOrEqual(767.5);
+      expect(br.y).toBeGreaterThanOrEqual(479.5);
+      expect(Number.isInteger(c.offsetX) && Number.isInteger(c.offsetY)).toBe(true);
+    }
+    c.setViewport(1440, 800);
+    c.frame({ x: 0, y: 0, w: 768, h: 480 }, true, true);
+    // Resizing keeps the whole town in view.
+    c.setViewport(1440, 754);
+    expect(c.zoom).toBeCloseTo(754 / 480);
+    c.zoomBy(1);
+    expect(c.zoom).toBe(2);
+    c.frame({ x: 0, y: 0, w: 768, h: 480 }, true, true);
+    c.zoomBy(-1);
+    expect(c.zoom).toBe(1);
   });
 
   it('frames rects, clamps to the world and snaps offsets to whole art pixels', () => {
