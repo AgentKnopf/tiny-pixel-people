@@ -6,6 +6,7 @@ import {
   ConfigError,
   DEFAULT_BASE_URLS,
   loadConfig,
+  OLLAMA_DEFAULT_CONCURRENCY,
   redactConfig,
   resolveApiKey,
   resolveEmbeddingProvider,
@@ -25,7 +26,26 @@ describe('loadConfig', () => {
     expect(cfg.sourcePath).toBeNull();
     expect(cfg.llm.provider).toBe('ollama');
     expect(cfg.llm.baseUrl).toBe(DEFAULT_BASE_URLS.ollama);
-    expect(cfg.llm.concurrency).toBe(2);
+    expect(cfg.llm.concurrency).toBe(OLLAMA_DEFAULT_CONCURRENCY);
+    expect(cfg.sim.wakeUpTimeoutSec).toBe(300);
+  });
+
+  it('defaults llm.concurrency to 1 for ollama and 2 for other providers unless set', () => {
+    const empty = mkdtempSync(join(tmpdir(), 'tpp-empty-'));
+    expect(OLLAMA_DEFAULT_CONCURRENCY).toBe(1);
+    expect(loadConfig({ cwd: empty, env: { TPP_LLM_PROVIDER: 'openai' } }).llm.concurrency).toBe(2);
+    expect(loadConfig({ cwd: empty, env: {}, overrides: { llm: { concurrency: 3 } } }).llm.concurrency).toBe(
+      3,
+    );
+    const { dir } = tmpConfig({ llm: { provider: 'ollama', concurrency: 2 } });
+    expect(loadConfig({ cwd: dir, env: {} }).llm.concurrency).toBe(2);
+  });
+
+  it('accepts sim.wakeUpTimeoutSec 0 (hold disabled) and rejects negatives', () => {
+    const off = tmpConfig({ sim: { wakeUpTimeoutSec: 0 } });
+    expect(loadConfig({ cwd: off.dir, env: {} }).sim.wakeUpTimeoutSec).toBe(0);
+    const bad = tmpConfig({ sim: { wakeUpTimeoutSec: -1 } });
+    expect(() => loadConfig({ cwd: bad.dir, env: {} })).toThrow(/sim\.wakeUpTimeoutSec/);
   });
 
   it('merges a partial config file over defaults', () => {

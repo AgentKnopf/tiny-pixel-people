@@ -1,0 +1,2463 @@
+{
+  "image": "tiles/village.png",
+  "tileSize": 16,
+  "columns": 16,
+  "count": 582,
+  "tiles": {
+    "grass_0": 0,
+    "grass_1": 1,
+    "grass_2": 2,
+    "grass_3": 3,
+    "grass_4": 4,
+    "grass_5": 5,
+    "path_0": 6,
+    "path_1": 7,
+    "path_2": 8,
+    "path_3": 9,
+    "path_4": 10,
+    "path_5": 11,
+    "path_6": 12,
+    "path_7": 13,
+    "path_8": 14,
+    "path_9": 15,
+    "path_10": 16,
+    "path_11": 17,
+    "path_12": 18,
+    "path_13": 19,
+    "path_14": 20,
+    "path_15": 21,
+    "sand_0": 22,
+    "sand_1": 23,
+    "sand_2": 24,
+    "sand_3": 25,
+    "sand_4": 26,
+    "sand_5": 27,
+    "sand_6": 28,
+    "sand_7": 29,
+    "sand_8": 30,
+    "sand_9": 31,
+    "sand_10": 32,
+    "sand_11": 33,
+    "sand_12": 34,
+    "sand_13": 35,
+    "sand_14": 36,
+    "sand_15": 37,
+    "water_0": 38,
+    "water_1": 39,
+    "water_2": 40,
+    "water_3": 41,
+    "water_4": 42,
+    "water_5": 43,
+    "water_6": 44,
+    "water_7": 45,
+    "water_8": 46,
+    "water_9": 47,
+    "water_10": 48,
+    "water_11": 49,
+    "water_12": 50,
+    "water_13": 51,
+    "water_14": 52,
+    "water_15": 53,
+    "soil_0": 54,
+    "soil_1": 55,
+    "soil_2": 56,
+    "soil_3": 57,
+    "soil_4": 58,
+    "soil_5": 59,
+    "soil_6": 60,
+    "soil_7": 61,
+    "soil_8": 62,
+    "soil_9": 63,
+    "soil_10": 64,
+    "soil_11": 65,
+    "soil_12": 66,
+    "soil_13": 67,
+    "soil_14": 68,
+    "soil_15": 69,
+    "fence_0": 70,
+    "fence_1": 71,
+    "fence_2": 72,
+    "fence_3": 73,
+    "fence_4": 74,
+    "fence_5": 75,
+    "fence_6": 76,
+    "fence_7": 77,
+    "fence_8": 78,
+    "fence_9": 79,
+    "fence_10": 80,
+    "fence_11": 81,
+    "fence_12": 82,
+    "fence_13": 83,
+    "fence_14": 84,
+    "fence_15": 85,
+    "tree_green_0_0": 86,
+    "tree_green_1_0": 87,
+    "tree_green_0_1": 88,
+    "tree_green_1_1": 89,
+    "tree_autumn_0_0": 90,
+    "tree_autumn_1_0": 91,
+    "tree_autumn_0_1": 92,
+    "tree_autumn_1_1": 93,
+    "tree_blossom_0_0": 94,
+    "tree_blossom_1_0": 95,
+    "tree_blossom_0_1": 96,
+    "tree_blossom_1_1": 97,
+    "bush_0_0": 98,
+    "bush_berries_0_0": 99,
+    "bush_flowers_0_0": 100,
+    "flowers_pink_0_0": 101,
+    "flowers_yellow_0_0": 102,
+    "flowers_blue_0_0": 103,
+    "rock_0_0": 104,
+    "lilypad_0_0": 105,
+    "lamp_0_0": 106,
+    "lamp_0_1": 107,
+    "bench_0_0": 108,
+    "bench_1_0": 109,
+    "crate_0_0": 110,
+    "barrel_0_0": 111,
+    "flowerpot_pink_0_0": 112,
+    "flowerpot_yellow_0_0": 113,
+    "mailbox_0_0": 114,
+    "well_0_0": 115,
+    "well_1_0": 116,
+    "well_0_1": 117,
+    "well_1_1": 118,
+    "stall_red_0_0": 119,
+    "stall_red_1_0": 120,
+    "stall_red_0_1": 121,
+    "stall_red_1_1": 122,
+    "stall_blue_0_0": 123,
+    "stall_blue_1_0": 124,
+    "stall_blue_0_1": 125,
+    "stall_blue_1_1": 126,
+    "fountain_0_0": 127,
+    "fountain_1_0": 128,
+    "fountain_2_0": 129,
+    "fountain_0_1": 130,
+    "fountain_1_1": 131,
+    "fountain_2_1": 132,
+    "fountain_0_2": 133,
+    "fountain_1_2": 134,
+    "fountain_2_2": 135,
+    "sign_town_0_0": 136,
+    "sign_town_1_0": 137,
+    "sign_town_2_0": 138,
+    "sign_town_3_0": 139,
+    "sign_town_4_0": 140,
+    "sign_town_0_1": 141,
+    "sign_town_1_1": 142,
+    "sign_town_2_1": 143,
+    "sign_town_3_1": 144,
+    "sign_town_4_1": 145,
+    "shed_0_0": 146,
+    "shed_1_0": 147,
+    "shed_0_1": 148,
+    "shed_1_1": 149,
+    "crop_sprout_0_0": 150,
+    "crop_cabbage_0_0": 151,
+    "crop_wheat_0_0": 152,
+    "crop_carrot_0_0": 153,
+    "crop_pumpkin_0_0": 154,
+    "deco_rug_0_0": 155,
+    "deco_rug_1_0": 156,
+    "deco_cushion_0_0": 157,
+    "deco_vase_0_0": 158,
+    "deco_lantern_0_0": 159,
+    "deco_lantern_lit": 160,
+    "deco_flowerpots_0_0": 161,
+    "deco_bench_0_0": 162,
+    "deco_bench_1_0": 163,
+    "deco_string_lights_0_0": 164,
+    "deco_string_lights_1_0": 165,
+    "deco_string_lights_2_0": 166,
+    "deco_string_lights_3_0": 167,
+    "deco_string_lights_4_0": 168,
+    "deco_mailbox_0_0": 169,
+    "deco_flag_0_0": 170,
+    "deco_flag_0_1": 171,
+    "deco_birdbath_0_0": 172,
+    "door_note_0_0": 173,
+    "house_brown_0_0": 174,
+    "house_brown_1_0": 175,
+    "house_brown_2_0": 176,
+    "house_brown_3_0": 177,
+    "house_brown_4_0": 178,
+    "house_brown_0_1": 179,
+    "house_brown_1_1": 180,
+    "house_brown_2_1": 181,
+    "house_brown_3_1": 182,
+    "house_brown_4_1": 183,
+    "house_brown_0_2": 184,
+    "house_brown_1_2": 185,
+    "house_brown_2_2": 186,
+    "house_brown_3_2": 187,
+    "house_brown_4_2": 188,
+    "house_brown_0_3": 189,
+    "house_brown_1_3": 190,
+    "house_brown_2_3": 191,
+    "house_brown_3_3": 192,
+    "house_brown_4_3": 193,
+    "house_brown_lit_0_0": 194,
+    "house_brown_lit_1_0": 195,
+    "house_brown_lit_2_0": 196,
+    "house_brown_lit_3_0": 197,
+    "house_brown_lit_4_0": 198,
+    "house_brown_lit_0_1": 199,
+    "house_brown_lit_1_1": 200,
+    "house_brown_lit_2_1": 201,
+    "house_brown_lit_3_1": 202,
+    "house_brown_lit_4_1": 203,
+    "house_brown_lit_0_2": 204,
+    "house_brown_lit_1_2": 205,
+    "house_brown_lit_2_2": 206,
+    "house_brown_lit_3_2": 207,
+    "house_brown_lit_4_2": 208,
+    "house_brown_lit_0_3": 209,
+    "house_brown_lit_1_3": 210,
+    "house_brown_lit_2_3": 211,
+    "house_brown_lit_3_3": 212,
+    "house_brown_lit_4_3": 213,
+    "house_blue_0_0": 214,
+    "house_blue_1_0": 215,
+    "house_blue_2_0": 216,
+    "house_blue_3_0": 217,
+    "house_blue_4_0": 218,
+    "house_blue_0_1": 219,
+    "house_blue_1_1": 220,
+    "house_blue_2_1": 221,
+    "house_blue_3_1": 222,
+    "house_blue_4_1": 223,
+    "house_blue_0_2": 224,
+    "house_blue_1_2": 225,
+    "house_blue_2_2": 226,
+    "house_blue_3_2": 227,
+    "house_blue_4_2": 228,
+    "house_blue_0_3": 229,
+    "house_blue_1_3": 230,
+    "house_blue_2_3": 231,
+    "house_blue_3_3": 232,
+    "house_blue_4_3": 233,
+    "house_blue_lit_0_0": 234,
+    "house_blue_lit_1_0": 235,
+    "house_blue_lit_2_0": 236,
+    "house_blue_lit_3_0": 237,
+    "house_blue_lit_4_0": 238,
+    "house_blue_lit_0_1": 239,
+    "house_blue_lit_1_1": 240,
+    "house_blue_lit_2_1": 241,
+    "house_blue_lit_3_1": 242,
+    "house_blue_lit_4_1": 243,
+    "house_blue_lit_0_2": 244,
+    "house_blue_lit_1_2": 245,
+    "house_blue_lit_2_2": 246,
+    "house_blue_lit_3_2": 247,
+    "house_blue_lit_4_2": 248,
+    "house_blue_lit_0_3": 249,
+    "house_blue_lit_1_3": 250,
+    "house_blue_lit_2_3": 251,
+    "house_blue_lit_3_3": 252,
+    "house_blue_lit_4_3": 253,
+    "house_teal_0_0": 254,
+    "house_teal_1_0": 255,
+    "house_teal_2_0": 256,
+    "house_teal_3_0": 257,
+    "house_teal_4_0": 258,
+    "house_teal_0_1": 259,
+    "house_teal_1_1": 260,
+    "house_teal_2_1": 261,
+    "house_teal_3_1": 262,
+    "house_teal_4_1": 263,
+    "house_teal_0_2": 264,
+    "house_teal_1_2": 265,
+    "house_teal_2_2": 266,
+    "house_teal_3_2": 267,
+    "house_teal_4_2": 268,
+    "house_teal_0_3": 269,
+    "house_teal_1_3": 270,
+    "house_teal_2_3": 271,
+    "house_teal_3_3": 272,
+    "house_teal_4_3": 273,
+    "house_teal_lit_0_0": 274,
+    "house_teal_lit_1_0": 275,
+    "house_teal_lit_2_0": 276,
+    "house_teal_lit_3_0": 277,
+    "house_teal_lit_4_0": 278,
+    "house_teal_lit_0_1": 279,
+    "house_teal_lit_1_1": 280,
+    "house_teal_lit_2_1": 281,
+    "house_teal_lit_3_1": 282,
+    "house_teal_lit_4_1": 283,
+    "house_teal_lit_0_2": 284,
+    "house_teal_lit_1_2": 285,
+    "house_teal_lit_2_2": 286,
+    "house_teal_lit_3_2": 287,
+    "house_teal_lit_4_2": 288,
+    "house_teal_lit_0_3": 289,
+    "house_teal_lit_1_3": 290,
+    "house_teal_lit_2_3": 291,
+    "house_teal_lit_3_3": 292,
+    "house_teal_lit_4_3": 293,
+    "house_purple_0_0": 294,
+    "house_purple_1_0": 295,
+    "house_purple_2_0": 296,
+    "house_purple_3_0": 297,
+    "house_purple_4_0": 298,
+    "house_purple_0_1": 299,
+    "house_purple_1_1": 300,
+    "house_purple_2_1": 301,
+    "house_purple_3_1": 302,
+    "house_purple_4_1": 303,
+    "house_purple_0_2": 304,
+    "house_purple_1_2": 305,
+    "house_purple_2_2": 306,
+    "house_purple_3_2": 307,
+    "house_purple_4_2": 308,
+    "house_purple_0_3": 309,
+    "house_purple_1_3": 310,
+    "house_purple_2_3": 311,
+    "house_purple_3_3": 312,
+    "house_purple_4_3": 313,
+    "house_purple_lit_0_0": 314,
+    "house_purple_lit_1_0": 315,
+    "house_purple_lit_2_0": 316,
+    "house_purple_lit_3_0": 317,
+    "house_purple_lit_4_0": 318,
+    "house_purple_lit_0_1": 319,
+    "house_purple_lit_1_1": 320,
+    "house_purple_lit_2_1": 321,
+    "house_purple_lit_3_1": 322,
+    "house_purple_lit_4_1": 323,
+    "house_purple_lit_0_2": 324,
+    "house_purple_lit_1_2": 325,
+    "house_purple_lit_2_2": 326,
+    "house_purple_lit_3_2": 327,
+    "house_purple_lit_4_2": 328,
+    "house_purple_lit_0_3": 329,
+    "house_purple_lit_1_3": 330,
+    "house_purple_lit_2_3": 331,
+    "house_purple_lit_3_3": 332,
+    "house_purple_lit_4_3": 333,
+    "house_red_0_0": 334,
+    "house_red_1_0": 335,
+    "house_red_2_0": 336,
+    "house_red_3_0": 337,
+    "house_red_4_0": 338,
+    "house_red_0_1": 339,
+    "house_red_1_1": 340,
+    "house_red_2_1": 341,
+    "house_red_3_1": 342,
+    "house_red_4_1": 343,
+    "house_red_0_2": 344,
+    "house_red_1_2": 345,
+    "house_red_2_2": 346,
+    "house_red_3_2": 347,
+    "house_red_4_2": 348,
+    "house_red_0_3": 349,
+    "house_red_1_3": 350,
+    "house_red_2_3": 351,
+    "house_red_3_3": 352,
+    "house_red_4_3": 353,
+    "house_red_lit_0_0": 354,
+    "house_red_lit_1_0": 355,
+    "house_red_lit_2_0": 356,
+    "house_red_lit_3_0": 357,
+    "house_red_lit_4_0": 358,
+    "house_red_lit_0_1": 359,
+    "house_red_lit_1_1": 360,
+    "house_red_lit_2_1": 361,
+    "house_red_lit_3_1": 362,
+    "house_red_lit_4_1": 363,
+    "house_red_lit_0_2": 364,
+    "house_red_lit_1_2": 365,
+    "house_red_lit_2_2": 366,
+    "house_red_lit_3_2": 367,
+    "house_red_lit_4_2": 368,
+    "house_red_lit_0_3": 369,
+    "house_red_lit_1_3": 370,
+    "house_red_lit_2_3": 371,
+    "house_red_lit_3_3": 372,
+    "house_red_lit_4_3": 373,
+    "house_green_0_0": 374,
+    "house_green_1_0": 375,
+    "house_green_2_0": 376,
+    "house_green_3_0": 377,
+    "house_green_4_0": 378,
+    "house_green_0_1": 379,
+    "house_green_1_1": 380,
+    "house_green_2_1": 381,
+    "house_green_3_1": 382,
+    "house_green_4_1": 383,
+    "house_green_0_2": 384,
+    "house_green_1_2": 385,
+    "house_green_2_2": 386,
+    "house_green_3_2": 387,
+    "house_green_4_2": 388,
+    "house_green_0_3": 389,
+    "house_green_1_3": 390,
+    "house_green_2_3": 391,
+    "house_green_3_3": 392,
+    "house_green_4_3": 393,
+    "house_green_lit_0_0": 394,
+    "house_green_lit_1_0": 395,
+    "house_green_lit_2_0": 396,
+    "house_green_lit_3_0": 397,
+    "house_green_lit_4_0": 398,
+    "house_green_lit_0_1": 399,
+    "house_green_lit_1_1": 400,
+    "house_green_lit_2_1": 401,
+    "house_green_lit_3_1": 402,
+    "house_green_lit_4_1": 403,
+    "house_green_lit_0_2": 404,
+    "house_green_lit_1_2": 405,
+    "house_green_lit_2_2": 406,
+    "house_green_lit_3_2": 407,
+    "house_green_lit_4_2": 408,
+    "house_green_lit_0_3": 409,
+    "house_green_lit_1_3": 410,
+    "house_green_lit_2_3": 411,
+    "house_green_lit_3_3": 412,
+    "house_green_lit_4_3": 413,
+    "house_slate_0_0": 414,
+    "house_slate_1_0": 415,
+    "house_slate_2_0": 416,
+    "house_slate_3_0": 417,
+    "house_slate_4_0": 418,
+    "house_slate_0_1": 419,
+    "house_slate_1_1": 420,
+    "house_slate_2_1": 421,
+    "house_slate_3_1": 422,
+    "house_slate_4_1": 423,
+    "house_slate_0_2": 424,
+    "house_slate_1_2": 425,
+    "house_slate_2_2": 426,
+    "house_slate_3_2": 427,
+    "house_slate_4_2": 428,
+    "house_slate_0_3": 429,
+    "house_slate_1_3": 430,
+    "house_slate_2_3": 431,
+    "house_slate_3_3": 432,
+    "house_slate_4_3": 433,
+    "house_slate_lit_0_0": 434,
+    "house_slate_lit_1_0": 435,
+    "house_slate_lit_2_0": 436,
+    "house_slate_lit_3_0": 437,
+    "house_slate_lit_4_0": 438,
+    "house_slate_lit_0_1": 439,
+    "house_slate_lit_1_1": 440,
+    "house_slate_lit_2_1": 441,
+    "house_slate_lit_3_1": 442,
+    "house_slate_lit_4_1": 443,
+    "house_slate_lit_0_2": 444,
+    "house_slate_lit_1_2": 445,
+    "house_slate_lit_2_2": 446,
+    "house_slate_lit_3_2": 447,
+    "house_slate_lit_4_2": 448,
+    "house_slate_lit_0_3": 449,
+    "house_slate_lit_1_3": 450,
+    "house_slate_lit_2_3": 451,
+    "house_slate_lit_3_3": 452,
+    "house_slate_lit_4_3": 453,
+    "bakery_0_0": 454,
+    "bakery_1_0": 455,
+    "bakery_2_0": 456,
+    "bakery_3_0": 457,
+    "bakery_4_0": 458,
+    "bakery_5_0": 459,
+    "bakery_6_0": 460,
+    "bakery_7_0": 461,
+    "bakery_8_0": 462,
+    "bakery_0_1": 463,
+    "bakery_1_1": 464,
+    "bakery_2_1": 465,
+    "bakery_3_1": 466,
+    "bakery_4_1": 467,
+    "bakery_5_1": 468,
+    "bakery_6_1": 469,
+    "bakery_7_1": 470,
+    "bakery_8_1": 471,
+    "bakery_0_2": 472,
+    "bakery_1_2": 473,
+    "bakery_2_2": 474,
+    "bakery_3_2": 475,
+    "bakery_4_2": 476,
+    "bakery_5_2": 477,
+    "bakery_6_2": 478,
+    "bakery_7_2": 479,
+    "bakery_8_2": 480,
+    "bakery_0_3": 481,
+    "bakery_1_3": 482,
+    "bakery_2_3": 483,
+    "bakery_3_3": 484,
+    "bakery_4_3": 485,
+    "bakery_5_3": 486,
+    "bakery_6_3": 487,
+    "bakery_7_3": 488,
+    "bakery_8_3": 489,
+    "bakery_lit_0_0": 490,
+    "bakery_lit_1_0": 491,
+    "bakery_lit_2_0": 492,
+    "bakery_lit_3_0": 493,
+    "bakery_lit_4_0": 494,
+    "bakery_lit_5_0": 495,
+    "bakery_lit_6_0": 496,
+    "bakery_lit_7_0": 497,
+    "bakery_lit_8_0": 498,
+    "bakery_lit_0_1": 499,
+    "bakery_lit_1_1": 500,
+    "bakery_lit_2_1": 501,
+    "bakery_lit_3_1": 502,
+    "bakery_lit_4_1": 503,
+    "bakery_lit_5_1": 504,
+    "bakery_lit_6_1": 505,
+    "bakery_lit_7_1": 506,
+    "bakery_lit_8_1": 507,
+    "bakery_lit_0_2": 508,
+    "bakery_lit_1_2": 509,
+    "bakery_lit_2_2": 510,
+    "bakery_lit_3_2": 511,
+    "bakery_lit_4_2": 512,
+    "bakery_lit_5_2": 513,
+    "bakery_lit_6_2": 514,
+    "bakery_lit_7_2": 515,
+    "bakery_lit_8_2": 516,
+    "bakery_lit_0_3": 517,
+    "bakery_lit_1_3": 518,
+    "bakery_lit_2_3": 519,
+    "bakery_lit_3_3": 520,
+    "bakery_lit_4_3": 521,
+    "bakery_lit_5_3": 522,
+    "bakery_lit_6_3": 523,
+    "bakery_lit_7_3": 524,
+    "bakery_lit_8_3": 525,
+    "shop_0_0": 526,
+    "shop_1_0": 527,
+    "shop_2_0": 528,
+    "shop_3_0": 529,
+    "shop_4_0": 530,
+    "shop_5_0": 531,
+    "shop_6_0": 532,
+    "shop_0_1": 533,
+    "shop_1_1": 534,
+    "shop_2_1": 535,
+    "shop_3_1": 536,
+    "shop_4_1": 537,
+    "shop_5_1": 538,
+    "shop_6_1": 539,
+    "shop_0_2": 540,
+    "shop_1_2": 541,
+    "shop_2_2": 542,
+    "shop_3_2": 543,
+    "shop_4_2": 544,
+    "shop_5_2": 545,
+    "shop_6_2": 546,
+    "shop_0_3": 547,
+    "shop_1_3": 548,
+    "shop_2_3": 549,
+    "shop_3_3": 550,
+    "shop_4_3": 551,
+    "shop_5_3": 552,
+    "shop_6_3": 553,
+    "shop_lit_0_0": 554,
+    "shop_lit_1_0": 555,
+    "shop_lit_2_0": 556,
+    "shop_lit_3_0": 557,
+    "shop_lit_4_0": 558,
+    "shop_lit_5_0": 559,
+    "shop_lit_6_0": 560,
+    "shop_lit_0_1": 561,
+    "shop_lit_1_1": 562,
+    "shop_lit_2_1": 563,
+    "shop_lit_3_1": 564,
+    "shop_lit_4_1": 565,
+    "shop_lit_5_1": 566,
+    "shop_lit_6_1": 567,
+    "shop_lit_0_2": 568,
+    "shop_lit_1_2": 569,
+    "shop_lit_2_2": 570,
+    "shop_lit_3_2": 571,
+    "shop_lit_4_2": 572,
+    "shop_lit_5_2": 573,
+    "shop_lit_6_2": 574,
+    "shop_lit_0_3": 575,
+    "shop_lit_1_3": 576,
+    "shop_lit_2_3": 577,
+    "shop_lit_3_3": 578,
+    "shop_lit_4_3": 579,
+    "shop_lit_5_3": 580,
+    "shop_lit_6_3": 581
+  },
+  "lit": {
+    "159": 160,
+    "174": 194,
+    "175": 195,
+    "176": 196,
+    "177": 197,
+    "178": 198,
+    "179": 199,
+    "180": 200,
+    "181": 201,
+    "182": 202,
+    "183": 203,
+    "184": 204,
+    "185": 205,
+    "186": 206,
+    "187": 207,
+    "188": 208,
+    "189": 209,
+    "190": 210,
+    "191": 211,
+    "192": 212,
+    "193": 213,
+    "214": 234,
+    "215": 235,
+    "216": 236,
+    "217": 237,
+    "218": 238,
+    "219": 239,
+    "220": 240,
+    "221": 241,
+    "222": 242,
+    "223": 243,
+    "224": 244,
+    "225": 245,
+    "226": 246,
+    "227": 247,
+    "228": 248,
+    "229": 249,
+    "230": 250,
+    "231": 251,
+    "232": 252,
+    "233": 253,
+    "254": 274,
+    "255": 275,
+    "256": 276,
+    "257": 277,
+    "258": 278,
+    "259": 279,
+    "260": 280,
+    "261": 281,
+    "262": 282,
+    "263": 283,
+    "264": 284,
+    "265": 285,
+    "266": 286,
+    "267": 287,
+    "268": 288,
+    "269": 289,
+    "270": 290,
+    "271": 291,
+    "272": 292,
+    "273": 293,
+    "294": 314,
+    "295": 315,
+    "296": 316,
+    "297": 317,
+    "298": 318,
+    "299": 319,
+    "300": 320,
+    "301": 321,
+    "302": 322,
+    "303": 323,
+    "304": 324,
+    "305": 325,
+    "306": 326,
+    "307": 327,
+    "308": 328,
+    "309": 329,
+    "310": 330,
+    "311": 331,
+    "312": 332,
+    "313": 333,
+    "334": 354,
+    "335": 355,
+    "336": 356,
+    "337": 357,
+    "338": 358,
+    "339": 359,
+    "340": 360,
+    "341": 361,
+    "342": 362,
+    "343": 363,
+    "344": 364,
+    "345": 365,
+    "346": 366,
+    "347": 367,
+    "348": 368,
+    "349": 369,
+    "350": 370,
+    "351": 371,
+    "352": 372,
+    "353": 373,
+    "374": 394,
+    "375": 395,
+    "376": 396,
+    "377": 397,
+    "378": 398,
+    "379": 399,
+    "380": 400,
+    "381": 401,
+    "382": 402,
+    "383": 403,
+    "384": 404,
+    "385": 405,
+    "386": 406,
+    "387": 407,
+    "388": 408,
+    "389": 409,
+    "390": 410,
+    "391": 411,
+    "392": 412,
+    "393": 413,
+    "414": 434,
+    "415": 435,
+    "416": 436,
+    "417": 437,
+    "418": 438,
+    "419": 439,
+    "420": 440,
+    "421": 441,
+    "422": 442,
+    "423": 443,
+    "424": 444,
+    "425": 445,
+    "426": 446,
+    "427": 447,
+    "428": 448,
+    "429": 449,
+    "430": 450,
+    "431": 451,
+    "432": 452,
+    "433": 453,
+    "454": 490,
+    "455": 491,
+    "456": 492,
+    "457": 493,
+    "458": 494,
+    "459": 495,
+    "460": 496,
+    "461": 497,
+    "462": 498,
+    "463": 499,
+    "464": 500,
+    "465": 501,
+    "466": 502,
+    "467": 503,
+    "468": 504,
+    "469": 505,
+    "470": 506,
+    "471": 507,
+    "472": 508,
+    "473": 509,
+    "474": 510,
+    "475": 511,
+    "476": 512,
+    "477": 513,
+    "478": 514,
+    "479": 515,
+    "480": 516,
+    "481": 517,
+    "482": 518,
+    "483": 519,
+    "484": 520,
+    "485": 521,
+    "486": 522,
+    "487": 523,
+    "488": 524,
+    "489": 525,
+    "526": 554,
+    "527": 555,
+    "528": 556,
+    "529": 557,
+    "530": 558,
+    "531": 559,
+    "532": 560,
+    "533": 561,
+    "534": 562,
+    "535": 563,
+    "536": 564,
+    "537": 565,
+    "538": 566,
+    "539": 567,
+    "540": 568,
+    "541": 569,
+    "542": 570,
+    "543": 571,
+    "544": 572,
+    "545": 573,
+    "546": 574,
+    "547": 575,
+    "548": 576,
+    "549": 577,
+    "550": 578,
+    "551": 579,
+    "552": 580,
+    "553": 581
+  },
+  "objects": {
+    "tree_green": {
+      "w": 2,
+      "h": 2,
+      "layers": {
+        "overhead": [
+          [
+            "tree_green_0_0",
+            "tree_green_1_0"
+          ],
+          [
+            null,
+            null
+          ]
+        ],
+        "decor": [
+          [
+            null,
+            null
+          ],
+          [
+            "tree_green_0_1",
+            "tree_green_1_1"
+          ]
+        ]
+      },
+      "collision": [
+        [0, 0],
+        [1, 1]
+      ]
+    },
+    "tree_autumn": {
+      "w": 2,
+      "h": 2,
+      "layers": {
+        "overhead": [
+          [
+            "tree_autumn_0_0",
+            "tree_autumn_1_0"
+          ],
+          [
+            null,
+            null
+          ]
+        ],
+        "decor": [
+          [
+            null,
+            null
+          ],
+          [
+            "tree_autumn_0_1",
+            "tree_autumn_1_1"
+          ]
+        ]
+      },
+      "collision": [
+        [0, 0],
+        [1, 1]
+      ]
+    },
+    "tree_blossom": {
+      "w": 2,
+      "h": 2,
+      "layers": {
+        "overhead": [
+          [
+            "tree_blossom_0_0",
+            "tree_blossom_1_0"
+          ],
+          [
+            null,
+            null
+          ]
+        ],
+        "decor": [
+          [
+            null,
+            null
+          ],
+          [
+            "tree_blossom_0_1",
+            "tree_blossom_1_1"
+          ]
+        ]
+      },
+      "collision": [
+        [0, 0],
+        [1, 1]
+      ]
+    },
+    "bush": {
+      "w": 1,
+      "h": 1,
+      "layers": {
+        "overhead": [
+          [
+            null
+          ]
+        ],
+        "decor": [
+          [
+            "bush_0_0"
+          ]
+        ]
+      },
+      "collision": [
+        [1]
+      ]
+    },
+    "bush_berries": {
+      "w": 1,
+      "h": 1,
+      "layers": {
+        "overhead": [
+          [
+            null
+          ]
+        ],
+        "decor": [
+          [
+            "bush_berries_0_0"
+          ]
+        ]
+      },
+      "collision": [
+        [1]
+      ]
+    },
+    "bush_flowers": {
+      "w": 1,
+      "h": 1,
+      "layers": {
+        "overhead": [
+          [
+            null
+          ]
+        ],
+        "decor": [
+          [
+            "bush_flowers_0_0"
+          ]
+        ]
+      },
+      "collision": [
+        [1]
+      ]
+    },
+    "flowers_pink": {
+      "w": 1,
+      "h": 1,
+      "layers": {
+        "overhead": [
+          [
+            null
+          ]
+        ],
+        "decor": [
+          [
+            "flowers_pink_0_0"
+          ]
+        ]
+      },
+      "collision": [
+        [0]
+      ]
+    },
+    "flowers_yellow": {
+      "w": 1,
+      "h": 1,
+      "layers": {
+        "overhead": [
+          [
+            null
+          ]
+        ],
+        "decor": [
+          [
+            "flowers_yellow_0_0"
+          ]
+        ]
+      },
+      "collision": [
+        [0]
+      ]
+    },
+    "flowers_blue": {
+      "w": 1,
+      "h": 1,
+      "layers": {
+        "overhead": [
+          [
+            null
+          ]
+        ],
+        "decor": [
+          [
+            "flowers_blue_0_0"
+          ]
+        ]
+      },
+      "collision": [
+        [0]
+      ]
+    },
+    "rock": {
+      "w": 1,
+      "h": 1,
+      "layers": {
+        "overhead": [
+          [
+            null
+          ]
+        ],
+        "decor": [
+          [
+            "rock_0_0"
+          ]
+        ]
+      },
+      "collision": [
+        [1]
+      ]
+    },
+    "lilypad": {
+      "w": 1,
+      "h": 1,
+      "layers": {
+        "overhead": [
+          [
+            null
+          ]
+        ],
+        "decor": [
+          [
+            "lilypad_0_0"
+          ]
+        ]
+      },
+      "collision": [
+        [1]
+      ]
+    },
+    "lamp": {
+      "w": 1,
+      "h": 2,
+      "layers": {
+        "overhead": [
+          [
+            "lamp_0_0"
+          ],
+          [
+            null
+          ]
+        ],
+        "decor": [
+          [
+            null
+          ],
+          [
+            "lamp_0_1"
+          ]
+        ]
+      },
+      "collision": [
+        [0],
+        [1]
+      ]
+    },
+    "bench": {
+      "w": 2,
+      "h": 1,
+      "layers": {
+        "overhead": [
+          [
+            null,
+            null
+          ]
+        ],
+        "decor": [
+          [
+            "bench_0_0",
+            "bench_1_0"
+          ]
+        ]
+      },
+      "collision": [
+        [0, 0]
+      ]
+    },
+    "crate": {
+      "w": 1,
+      "h": 1,
+      "layers": {
+        "overhead": [
+          [
+            null
+          ]
+        ],
+        "decor": [
+          [
+            "crate_0_0"
+          ]
+        ]
+      },
+      "collision": [
+        [1]
+      ]
+    },
+    "barrel": {
+      "w": 1,
+      "h": 1,
+      "layers": {
+        "overhead": [
+          [
+            null
+          ]
+        ],
+        "decor": [
+          [
+            "barrel_0_0"
+          ]
+        ]
+      },
+      "collision": [
+        [1]
+      ]
+    },
+    "flowerpot_pink": {
+      "w": 1,
+      "h": 1,
+      "layers": {
+        "overhead": [
+          [
+            null
+          ]
+        ],
+        "decor": [
+          [
+            "flowerpot_pink_0_0"
+          ]
+        ]
+      },
+      "collision": [
+        [1]
+      ]
+    },
+    "flowerpot_yellow": {
+      "w": 1,
+      "h": 1,
+      "layers": {
+        "overhead": [
+          [
+            null
+          ]
+        ],
+        "decor": [
+          [
+            "flowerpot_yellow_0_0"
+          ]
+        ]
+      },
+      "collision": [
+        [1]
+      ]
+    },
+    "mailbox": {
+      "w": 1,
+      "h": 1,
+      "layers": {
+        "overhead": [
+          [
+            null
+          ]
+        ],
+        "decor": [
+          [
+            "mailbox_0_0"
+          ]
+        ]
+      },
+      "collision": [
+        [1]
+      ]
+    },
+    "well": {
+      "w": 2,
+      "h": 2,
+      "layers": {
+        "overhead": [
+          [
+            "well_0_0",
+            "well_1_0"
+          ],
+          [
+            null,
+            null
+          ]
+        ],
+        "decor": [
+          [
+            null,
+            null
+          ],
+          [
+            "well_0_1",
+            "well_1_1"
+          ]
+        ]
+      },
+      "collision": [
+        [0, 0],
+        [1, 1]
+      ]
+    },
+    "stall_red": {
+      "w": 2,
+      "h": 2,
+      "layers": {
+        "overhead": [
+          [
+            "stall_red_0_0",
+            "stall_red_1_0"
+          ],
+          [
+            null,
+            null
+          ]
+        ],
+        "decor": [
+          [
+            null,
+            null
+          ],
+          [
+            "stall_red_0_1",
+            "stall_red_1_1"
+          ]
+        ]
+      },
+      "collision": [
+        [0, 0],
+        [1, 1]
+      ]
+    },
+    "stall_blue": {
+      "w": 2,
+      "h": 2,
+      "layers": {
+        "overhead": [
+          [
+            "stall_blue_0_0",
+            "stall_blue_1_0"
+          ],
+          [
+            null,
+            null
+          ]
+        ],
+        "decor": [
+          [
+            null,
+            null
+          ],
+          [
+            "stall_blue_0_1",
+            "stall_blue_1_1"
+          ]
+        ]
+      },
+      "collision": [
+        [0, 0],
+        [1, 1]
+      ]
+    },
+    "fountain": {
+      "w": 3,
+      "h": 3,
+      "layers": {
+        "overhead": [
+          [
+            null,
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            null
+          ]
+        ],
+        "decor": [
+          [
+            "fountain_0_0",
+            "fountain_1_0",
+            "fountain_2_0"
+          ],
+          [
+            "fountain_0_1",
+            "fountain_1_1",
+            "fountain_2_1"
+          ],
+          [
+            "fountain_0_2",
+            "fountain_1_2",
+            "fountain_2_2"
+          ]
+        ]
+      },
+      "collision": [
+        [0, 1, 0],
+        [1, 1, 1],
+        [1, 1, 1]
+      ]
+    },
+    "sign_town": {
+      "w": 5,
+      "h": 2,
+      "layers": {
+        "overhead": [
+          [
+            null,
+            null,
+            null,
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            null,
+            null,
+            null
+          ]
+        ],
+        "decor": [
+          [
+            "sign_town_0_0",
+            "sign_town_1_0",
+            "sign_town_2_0",
+            "sign_town_3_0",
+            "sign_town_4_0"
+          ],
+          [
+            "sign_town_0_1",
+            "sign_town_1_1",
+            "sign_town_2_1",
+            "sign_town_3_1",
+            "sign_town_4_1"
+          ]
+        ]
+      },
+      "collision": [
+        [0, 0, 0, 0, 0],
+        [0, 1, 0, 1, 0]
+      ]
+    },
+    "shed": {
+      "w": 2,
+      "h": 2,
+      "layers": {
+        "overhead": [
+          [
+            "shed_0_0",
+            "shed_1_0"
+          ],
+          [
+            null,
+            null
+          ]
+        ],
+        "decor": [
+          [
+            null,
+            null
+          ],
+          [
+            "shed_0_1",
+            "shed_1_1"
+          ]
+        ]
+      },
+      "collision": [
+        [0, 0],
+        [1, 1]
+      ]
+    },
+    "crop_sprout": {
+      "w": 1,
+      "h": 1,
+      "layers": {
+        "overhead": [
+          [
+            null
+          ]
+        ],
+        "decor": [
+          [
+            "crop_sprout_0_0"
+          ]
+        ]
+      },
+      "collision": [
+        [0]
+      ]
+    },
+    "crop_cabbage": {
+      "w": 1,
+      "h": 1,
+      "layers": {
+        "overhead": [
+          [
+            null
+          ]
+        ],
+        "decor": [
+          [
+            "crop_cabbage_0_0"
+          ]
+        ]
+      },
+      "collision": [
+        [0]
+      ]
+    },
+    "crop_wheat": {
+      "w": 1,
+      "h": 1,
+      "layers": {
+        "overhead": [
+          [
+            null
+          ]
+        ],
+        "decor": [
+          [
+            "crop_wheat_0_0"
+          ]
+        ]
+      },
+      "collision": [
+        [0]
+      ]
+    },
+    "crop_carrot": {
+      "w": 1,
+      "h": 1,
+      "layers": {
+        "overhead": [
+          [
+            null
+          ]
+        ],
+        "decor": [
+          [
+            "crop_carrot_0_0"
+          ]
+        ]
+      },
+      "collision": [
+        [0]
+      ]
+    },
+    "crop_pumpkin": {
+      "w": 1,
+      "h": 1,
+      "layers": {
+        "overhead": [
+          [
+            null
+          ]
+        ],
+        "decor": [
+          [
+            "crop_pumpkin_0_0"
+          ]
+        ]
+      },
+      "collision": [
+        [0]
+      ]
+    },
+    "deco_rug": {
+      "w": 2,
+      "h": 1,
+      "layers": {
+        "overhead": [
+          [
+            null,
+            null
+          ]
+        ],
+        "decor": [
+          [
+            "deco_rug_0_0",
+            "deco_rug_1_0"
+          ]
+        ]
+      },
+      "collision": [
+        [0, 0]
+      ]
+    },
+    "deco_cushion": {
+      "w": 1,
+      "h": 1,
+      "layers": {
+        "overhead": [
+          [
+            null
+          ]
+        ],
+        "decor": [
+          [
+            "deco_cushion_0_0"
+          ]
+        ]
+      },
+      "collision": [
+        [0]
+      ]
+    },
+    "deco_vase": {
+      "w": 1,
+      "h": 1,
+      "layers": {
+        "overhead": [
+          [
+            null
+          ]
+        ],
+        "decor": [
+          [
+            "deco_vase_0_0"
+          ]
+        ]
+      },
+      "collision": [
+        [1]
+      ]
+    },
+    "deco_lantern": {
+      "w": 1,
+      "h": 1,
+      "layers": {
+        "overhead": [
+          [
+            null
+          ]
+        ],
+        "decor": [
+          [
+            "deco_lantern_0_0"
+          ]
+        ]
+      },
+      "collision": [
+        [1]
+      ]
+    },
+    "deco_flowerpots": {
+      "w": 1,
+      "h": 1,
+      "layers": {
+        "overhead": [
+          [
+            null
+          ]
+        ],
+        "decor": [
+          [
+            "deco_flowerpots_0_0"
+          ]
+        ]
+      },
+      "collision": [
+        [1]
+      ]
+    },
+    "deco_bench": {
+      "w": 2,
+      "h": 1,
+      "layers": {
+        "overhead": [
+          [
+            null,
+            null
+          ]
+        ],
+        "decor": [
+          [
+            "deco_bench_0_0",
+            "deco_bench_1_0"
+          ]
+        ]
+      },
+      "collision": [
+        [0, 0]
+      ]
+    },
+    "deco_string_lights": {
+      "w": 5,
+      "h": 1,
+      "layers": {
+        "overhead": [
+          [
+            "deco_string_lights_0_0",
+            "deco_string_lights_1_0",
+            "deco_string_lights_2_0",
+            "deco_string_lights_3_0",
+            "deco_string_lights_4_0"
+          ]
+        ],
+        "decor": [
+          [
+            null,
+            null,
+            null,
+            null,
+            null
+          ]
+        ]
+      },
+      "collision": [
+        [1, 0, 0, 0, 1]
+      ]
+    },
+    "deco_mailbox": {
+      "w": 1,
+      "h": 1,
+      "layers": {
+        "overhead": [
+          [
+            null
+          ]
+        ],
+        "decor": [
+          [
+            "deco_mailbox_0_0"
+          ]
+        ]
+      },
+      "collision": [
+        [1]
+      ]
+    },
+    "deco_flag": {
+      "w": 1,
+      "h": 2,
+      "layers": {
+        "overhead": [
+          [
+            "deco_flag_0_0"
+          ],
+          [
+            null
+          ]
+        ],
+        "decor": [
+          [
+            null
+          ],
+          [
+            "deco_flag_0_1"
+          ]
+        ]
+      },
+      "collision": [
+        [0],
+        [1]
+      ]
+    },
+    "deco_birdbath": {
+      "w": 1,
+      "h": 1,
+      "layers": {
+        "overhead": [
+          [
+            null
+          ]
+        ],
+        "decor": [
+          [
+            "deco_birdbath_0_0"
+          ]
+        ]
+      },
+      "collision": [
+        [1]
+      ]
+    },
+    "door_note": {
+      "w": 1,
+      "h": 1,
+      "layers": {
+        "overhead": [
+          [
+            null
+          ]
+        ],
+        "decor": [
+          [
+            "door_note_0_0"
+          ]
+        ]
+      },
+      "collision": [
+        [0]
+      ]
+    },
+    "house_brown": {
+      "w": 5,
+      "h": 4,
+      "layers": {
+        "overhead": [
+          [
+            "house_brown_0_0",
+            "house_brown_1_0",
+            "house_brown_2_0",
+            "house_brown_3_0",
+            "house_brown_4_0"
+          ],
+          [
+            "house_brown_0_1",
+            "house_brown_1_1",
+            "house_brown_2_1",
+            "house_brown_3_1",
+            "house_brown_4_1"
+          ],
+          [
+            null,
+            null,
+            null,
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            null,
+            null,
+            null
+          ]
+        ],
+        "decor": [
+          [
+            null,
+            null,
+            null,
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            null,
+            null,
+            null
+          ],
+          [
+            "house_brown_0_2",
+            "house_brown_1_2",
+            "house_brown_2_2",
+            "house_brown_3_2",
+            "house_brown_4_2"
+          ],
+          [
+            "house_brown_0_3",
+            "house_brown_1_3",
+            "house_brown_2_3",
+            "house_brown_3_3",
+            "house_brown_4_3"
+          ]
+        ]
+      },
+      "collision": [
+        [1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1],
+        [1, 1, 0, 1, 1]
+      ],
+      "anchors": {
+        "door": {
+          "x": 2,
+          "y": 3
+        }
+      }
+    },
+    "house_blue": {
+      "w": 5,
+      "h": 4,
+      "layers": {
+        "overhead": [
+          [
+            "house_blue_0_0",
+            "house_blue_1_0",
+            "house_blue_2_0",
+            "house_blue_3_0",
+            "house_blue_4_0"
+          ],
+          [
+            "house_blue_0_1",
+            "house_blue_1_1",
+            "house_blue_2_1",
+            "house_blue_3_1",
+            "house_blue_4_1"
+          ],
+          [
+            null,
+            null,
+            null,
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            null,
+            null,
+            null
+          ]
+        ],
+        "decor": [
+          [
+            null,
+            null,
+            null,
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            null,
+            null,
+            null
+          ],
+          [
+            "house_blue_0_2",
+            "house_blue_1_2",
+            "house_blue_2_2",
+            "house_blue_3_2",
+            "house_blue_4_2"
+          ],
+          [
+            "house_blue_0_3",
+            "house_blue_1_3",
+            "house_blue_2_3",
+            "house_blue_3_3",
+            "house_blue_4_3"
+          ]
+        ]
+      },
+      "collision": [
+        [1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1],
+        [1, 1, 0, 1, 1]
+      ],
+      "anchors": {
+        "door": {
+          "x": 2,
+          "y": 3
+        }
+      }
+    },
+    "house_teal": {
+      "w": 5,
+      "h": 4,
+      "layers": {
+        "overhead": [
+          [
+            "house_teal_0_0",
+            "house_teal_1_0",
+            "house_teal_2_0",
+            "house_teal_3_0",
+            "house_teal_4_0"
+          ],
+          [
+            "house_teal_0_1",
+            "house_teal_1_1",
+            "house_teal_2_1",
+            "house_teal_3_1",
+            "house_teal_4_1"
+          ],
+          [
+            null,
+            null,
+            null,
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            null,
+            null,
+            null
+          ]
+        ],
+        "decor": [
+          [
+            null,
+            null,
+            null,
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            null,
+            null,
+            null
+          ],
+          [
+            "house_teal_0_2",
+            "house_teal_1_2",
+            "house_teal_2_2",
+            "house_teal_3_2",
+            "house_teal_4_2"
+          ],
+          [
+            "house_teal_0_3",
+            "house_teal_1_3",
+            "house_teal_2_3",
+            "house_teal_3_3",
+            "house_teal_4_3"
+          ]
+        ]
+      },
+      "collision": [
+        [1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1],
+        [1, 1, 0, 1, 1]
+      ],
+      "anchors": {
+        "door": {
+          "x": 2,
+          "y": 3
+        }
+      }
+    },
+    "house_purple": {
+      "w": 5,
+      "h": 4,
+      "layers": {
+        "overhead": [
+          [
+            "house_purple_0_0",
+            "house_purple_1_0",
+            "house_purple_2_0",
+            "house_purple_3_0",
+            "house_purple_4_0"
+          ],
+          [
+            "house_purple_0_1",
+            "house_purple_1_1",
+            "house_purple_2_1",
+            "house_purple_3_1",
+            "house_purple_4_1"
+          ],
+          [
+            null,
+            null,
+            null,
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            null,
+            null,
+            null
+          ]
+        ],
+        "decor": [
+          [
+            null,
+            null,
+            null,
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            null,
+            null,
+            null
+          ],
+          [
+            "house_purple_0_2",
+            "house_purple_1_2",
+            "house_purple_2_2",
+            "house_purple_3_2",
+            "house_purple_4_2"
+          ],
+          [
+            "house_purple_0_3",
+            "house_purple_1_3",
+            "house_purple_2_3",
+            "house_purple_3_3",
+            "house_purple_4_3"
+          ]
+        ]
+      },
+      "collision": [
+        [1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1],
+        [1, 1, 0, 1, 1]
+      ],
+      "anchors": {
+        "door": {
+          "x": 2,
+          "y": 3
+        }
+      }
+    },
+    "house_red": {
+      "w": 5,
+      "h": 4,
+      "layers": {
+        "overhead": [
+          [
+            "house_red_0_0",
+            "house_red_1_0",
+            "house_red_2_0",
+            "house_red_3_0",
+            "house_red_4_0"
+          ],
+          [
+            "house_red_0_1",
+            "house_red_1_1",
+            "house_red_2_1",
+            "house_red_3_1",
+            "house_red_4_1"
+          ],
+          [
+            null,
+            null,
+            null,
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            null,
+            null,
+            null
+          ]
+        ],
+        "decor": [
+          [
+            null,
+            null,
+            null,
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            null,
+            null,
+            null
+          ],
+          [
+            "house_red_0_2",
+            "house_red_1_2",
+            "house_red_2_2",
+            "house_red_3_2",
+            "house_red_4_2"
+          ],
+          [
+            "house_red_0_3",
+            "house_red_1_3",
+            "house_red_2_3",
+            "house_red_3_3",
+            "house_red_4_3"
+          ]
+        ]
+      },
+      "collision": [
+        [1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1],
+        [1, 1, 0, 1, 1]
+      ],
+      "anchors": {
+        "door": {
+          "x": 2,
+          "y": 3
+        }
+      }
+    },
+    "house_green": {
+      "w": 5,
+      "h": 4,
+      "layers": {
+        "overhead": [
+          [
+            "house_green_0_0",
+            "house_green_1_0",
+            "house_green_2_0",
+            "house_green_3_0",
+            "house_green_4_0"
+          ],
+          [
+            "house_green_0_1",
+            "house_green_1_1",
+            "house_green_2_1",
+            "house_green_3_1",
+            "house_green_4_1"
+          ],
+          [
+            null,
+            null,
+            null,
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            null,
+            null,
+            null
+          ]
+        ],
+        "decor": [
+          [
+            null,
+            null,
+            null,
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            null,
+            null,
+            null
+          ],
+          [
+            "house_green_0_2",
+            "house_green_1_2",
+            "house_green_2_2",
+            "house_green_3_2",
+            "house_green_4_2"
+          ],
+          [
+            "house_green_0_3",
+            "house_green_1_3",
+            "house_green_2_3",
+            "house_green_3_3",
+            "house_green_4_3"
+          ]
+        ]
+      },
+      "collision": [
+        [1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1],
+        [1, 1, 0, 1, 1]
+      ],
+      "anchors": {
+        "door": {
+          "x": 2,
+          "y": 3
+        }
+      }
+    },
+    "house_slate": {
+      "w": 5,
+      "h": 4,
+      "layers": {
+        "overhead": [
+          [
+            "house_slate_0_0",
+            "house_slate_1_0",
+            "house_slate_2_0",
+            "house_slate_3_0",
+            "house_slate_4_0"
+          ],
+          [
+            "house_slate_0_1",
+            "house_slate_1_1",
+            "house_slate_2_1",
+            "house_slate_3_1",
+            "house_slate_4_1"
+          ],
+          [
+            null,
+            null,
+            null,
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            null,
+            null,
+            null
+          ]
+        ],
+        "decor": [
+          [
+            null,
+            null,
+            null,
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            null,
+            null,
+            null
+          ],
+          [
+            "house_slate_0_2",
+            "house_slate_1_2",
+            "house_slate_2_2",
+            "house_slate_3_2",
+            "house_slate_4_2"
+          ],
+          [
+            "house_slate_0_3",
+            "house_slate_1_3",
+            "house_slate_2_3",
+            "house_slate_3_3",
+            "house_slate_4_3"
+          ]
+        ]
+      },
+      "collision": [
+        [1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1],
+        [1, 1, 0, 1, 1]
+      ],
+      "anchors": {
+        "door": {
+          "x": 2,
+          "y": 3
+        }
+      }
+    },
+    "bakery": {
+      "w": 9,
+      "h": 4,
+      "layers": {
+        "overhead": [
+          [
+            "bakery_0_0",
+            "bakery_1_0",
+            "bakery_2_0",
+            "bakery_3_0",
+            "bakery_4_0",
+            "bakery_5_0",
+            "bakery_6_0",
+            "bakery_7_0",
+            "bakery_8_0"
+          ],
+          [
+            "bakery_0_1",
+            "bakery_1_1",
+            "bakery_2_1",
+            "bakery_3_1",
+            "bakery_4_1",
+            "bakery_5_1",
+            "bakery_6_1",
+            "bakery_7_1",
+            "bakery_8_1"
+          ],
+          [
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+          ]
+        ],
+        "decor": [
+          [
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+          ],
+          [
+            "bakery_0_2",
+            "bakery_1_2",
+            "bakery_2_2",
+            "bakery_3_2",
+            "bakery_4_2",
+            "bakery_5_2",
+            "bakery_6_2",
+            "bakery_7_2",
+            "bakery_8_2"
+          ],
+          [
+            "bakery_0_3",
+            "bakery_1_3",
+            "bakery_2_3",
+            "bakery_3_3",
+            "bakery_4_3",
+            "bakery_5_3",
+            "bakery_6_3",
+            "bakery_7_3",
+            "bakery_8_3"
+          ]
+        ]
+      },
+      "collision": [
+        [1, 1, 1, 1, 1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 0, 1, 1, 1, 1]
+      ],
+      "anchors": {
+        "door": {
+          "x": 4,
+          "y": 3
+        }
+      }
+    },
+    "shop": {
+      "w": 7,
+      "h": 4,
+      "layers": {
+        "overhead": [
+          [
+            "shop_0_0",
+            "shop_1_0",
+            "shop_2_0",
+            "shop_3_0",
+            "shop_4_0",
+            "shop_5_0",
+            "shop_6_0"
+          ],
+          [
+            "shop_0_1",
+            "shop_1_1",
+            "shop_2_1",
+            "shop_3_1",
+            "shop_4_1",
+            "shop_5_1",
+            "shop_6_1"
+          ],
+          [
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+          ]
+        ],
+        "decor": [
+          [
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+          ],
+          [
+            "shop_0_2",
+            "shop_1_2",
+            "shop_2_2",
+            "shop_3_2",
+            "shop_4_2",
+            "shop_5_2",
+            "shop_6_2"
+          ],
+          [
+            "shop_0_3",
+            "shop_1_3",
+            "shop_2_3",
+            "shop_3_3",
+            "shop_4_3",
+            "shop_5_3",
+            "shop_6_3"
+          ]
+        ]
+      },
+      "collision": [
+        [1, 1, 1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1, 1, 1],
+        [1, 1, 1, 0, 1, 1, 1]
+      ],
+      "anchors": {
+        "door": {
+          "x": 3,
+          "y": 3
+        }
+      }
+    }
+  }
+}

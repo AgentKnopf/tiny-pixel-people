@@ -1,0 +1,500 @@
+{
+  "note": "Suggested catalogues matching the art; sprite = \"<sheet json>#<name>\" or an object name in tiles/village.json.",
+  "lights": [
+    {
+      "x": 2,
+      "y": 4,
+      "kind": "window"
+    },
+    {
+      "x": 3,
+      "y": 4,
+      "kind": "window"
+    },
+    {
+      "x": 5,
+      "y": 4,
+      "kind": "window"
+    },
+    {
+      "x": 6,
+      "y": 4,
+      "kind": "window"
+    },
+    {
+      "x": 8,
+      "y": 4,
+      "kind": "window"
+    },
+    {
+      "x": 9,
+      "y": 4,
+      "kind": "window"
+    },
+    {
+      "x": 11,
+      "y": 4,
+      "kind": "window"
+    },
+    {
+      "x": 12,
+      "y": 4,
+      "kind": "window"
+    },
+    {
+      "x": 26,
+      "y": 4,
+      "kind": "window"
+    },
+    {
+      "x": 27,
+      "y": 4,
+      "kind": "window"
+    },
+    {
+      "x": 29,
+      "y": 4,
+      "kind": "window"
+    },
+    {
+      "x": 30,
+      "y": 4,
+      "kind": "window"
+    },
+    {
+      "x": 32,
+      "y": 4,
+      "kind": "window"
+    },
+    {
+      "x": 33,
+      "y": 4,
+      "kind": "window"
+    },
+    {
+      "x": 35,
+      "y": 4,
+      "kind": "window"
+    },
+    {
+      "x": 36,
+      "y": 4,
+      "kind": "window"
+    },
+    {
+      "x": 38,
+      "y": 4,
+      "kind": "window"
+    },
+    {
+      "x": 39,
+      "y": 4,
+      "kind": "window"
+    },
+    {
+      "x": 41,
+      "y": 4,
+      "kind": "window"
+    },
+    {
+      "x": 42,
+      "y": 4,
+      "kind": "window"
+    },
+    {
+      "x": 15,
+      "y": 4,
+      "kind": "window"
+    },
+    {
+      "x": 16,
+      "y": 4,
+      "kind": "window"
+    },
+    {
+      "x": 17,
+      "y": 4,
+      "kind": "window"
+    },
+    {
+      "x": 18,
+      "y": 4,
+      "kind": "window"
+    },
+    {
+      "x": 20,
+      "y": 4,
+      "kind": "window"
+    },
+    {
+      "x": 21,
+      "y": 4,
+      "kind": "window"
+    },
+    {
+      "x": 22,
+      "y": 4,
+      "kind": "window"
+    },
+    {
+      "x": 23,
+      "y": 4,
+      "kind": "window"
+    },
+    {
+      "x": 2,
+      "y": 25,
+      "kind": "window"
+    },
+    {
+      "x": 3,
+      "y": 25,
+      "kind": "window"
+    },
+    {
+      "x": 5,
+      "y": 25,
+      "kind": "window"
+    },
+    {
+      "x": 6,
+      "y": 25,
+      "kind": "window"
+    },
+    {
+      "x": 8,
+      "y": 25,
+      "kind": "window"
+    },
+    {
+      "x": 9,
+      "y": 25,
+      "kind": "window"
+    },
+    {
+      "x": 11,
+      "y": 25,
+      "kind": "window"
+    },
+    {
+      "x": 12,
+      "y": 25,
+      "kind": "window"
+    },
+    {
+      "x": 14,
+      "y": 25,
+      "kind": "window"
+    },
+    {
+      "x": 15,
+      "y": 25,
+      "kind": "window"
+    },
+    {
+      "x": 17,
+      "y": 25,
+      "kind": "window"
+    },
+    {
+      "x": 18,
+      "y": 25,
+      "kind": "window"
+    },
+    {
+      "x": 20,
+      "y": 25,
+      "kind": "window"
+    },
+    {
+      "x": 21,
+      "y": 25,
+      "kind": "window"
+    },
+    {
+      "x": 23,
+      "y": 25,
+      "kind": "window"
+    },
+    {
+      "x": 24,
+      "y": 25,
+      "kind": "window"
+    },
+    {
+      "x": 26,
+      "y": 25,
+      "kind": "window"
+    },
+    {
+      "x": 27,
+      "y": 25,
+      "kind": "window"
+    },
+    {
+      "x": 29,
+      "y": 25,
+      "kind": "window"
+    },
+    {
+      "x": 30,
+      "y": 25,
+      "kind": "window"
+    },
+    {
+      "x": 32,
+      "y": 25,
+      "kind": "window"
+    },
+    {
+      "x": 33,
+      "y": 25,
+      "kind": "window"
+    },
+    {
+      "x": 35,
+      "y": 25,
+      "kind": "window"
+    },
+    {
+      "x": 36,
+      "y": 25,
+      "kind": "window"
+    },
+    {
+      "x": 38,
+      "y": 25,
+      "kind": "window"
+    },
+    {
+      "x": 39,
+      "y": 25,
+      "kind": "window"
+    },
+    {
+      "x": 41,
+      "y": 25,
+      "kind": "window"
+    },
+    {
+      "x": 42,
+      "y": 25,
+      "kind": "window"
+    },
+    {
+      "x": 35,
+      "y": 12,
+      "kind": "window"
+    },
+    {
+      "x": 36,
+      "y": 12,
+      "kind": "window"
+    },
+    {
+      "x": 37,
+      "y": 12,
+      "kind": "window"
+    },
+    {
+      "x": 39,
+      "y": 12,
+      "kind": "window"
+    },
+    {
+      "x": 40,
+      "y": 12,
+      "kind": "window"
+    },
+    {
+      "x": 41,
+      "y": 12,
+      "kind": "window"
+    },
+    {
+      "x": 7,
+      "y": 5,
+      "kind": "lamp"
+    },
+    {
+      "x": 13,
+      "y": 5,
+      "kind": "lamp"
+    },
+    {
+      "x": 24,
+      "y": 5,
+      "kind": "lamp"
+    },
+    {
+      "x": 31,
+      "y": 5,
+      "kind": "lamp"
+    },
+    {
+      "x": 37,
+      "y": 5,
+      "kind": "lamp"
+    },
+    {
+      "x": 43,
+      "y": 5,
+      "kind": "lamp"
+    },
+    {
+      "x": 13,
+      "y": 22,
+      "kind": "lamp"
+    },
+    {
+      "x": 19,
+      "y": 22,
+      "kind": "lamp"
+    },
+    {
+      "x": 31,
+      "y": 22,
+      "kind": "lamp"
+    },
+    {
+      "x": 37,
+      "y": 22,
+      "kind": "lamp"
+    },
+    {
+      "x": 16,
+      "y": 18,
+      "kind": "lamp"
+    },
+    {
+      "x": 31,
+      "y": 17,
+      "kind": "lamp"
+    }
+  ],
+  "decorations": [
+    {
+      "id": "welcome_rug",
+      "name": "Welcome rug",
+      "emoji": "🟥",
+      "cost": 6,
+      "sprite": "deco_rug",
+      "slot": 0
+    },
+    {
+      "id": "porch_cushion",
+      "name": "Porch cushion",
+      "emoji": "🪑",
+      "cost": 6,
+      "sprite": "deco_cushion",
+      "slot": 1
+    },
+    {
+      "id": "flower_vase",
+      "name": "Flower vase",
+      "emoji": "🏺",
+      "cost": 8,
+      "sprite": "deco_vase",
+      "slot": 2
+    },
+    {
+      "id": "lanterns",
+      "name": "Lanterns",
+      "emoji": "🏮",
+      "cost": 10,
+      "sprite": "deco_lantern",
+      "slot": 3
+    },
+    {
+      "id": "flower_pots",
+      "name": "Flower pots",
+      "emoji": "🪴",
+      "cost": 8,
+      "sprite": "deco_flowerpots",
+      "slot": 4
+    },
+    {
+      "id": "garden_bench",
+      "name": "Garden bench",
+      "emoji": "🪵",
+      "cost": 12,
+      "sprite": "deco_bench",
+      "slot": 5
+    },
+    {
+      "id": "string_lights",
+      "name": "String lights",
+      "emoji": "✨",
+      "cost": 15,
+      "sprite": "deco_string_lights",
+      "slot": 6
+    },
+    {
+      "id": "mailbox",
+      "name": "Mailbox",
+      "emoji": "📮",
+      "cost": 6,
+      "sprite": "deco_mailbox",
+      "slot": 7
+    },
+    {
+      "id": "flag",
+      "name": "Flag",
+      "emoji": "🚩",
+      "cost": 6,
+      "sprite": "deco_flag",
+      "slot": 8
+    },
+    {
+      "id": "bird_bath",
+      "name": "Bird bath",
+      "emoji": "🐦",
+      "cost": 10,
+      "sprite": "deco_birdbath",
+      "slot": 9
+    }
+  ],
+  "items": [
+    {
+      "id": "flower",
+      "name": "Wild flower",
+      "emoji": "🌸",
+      "sprite": "ui/icons.json#flower"
+    },
+    {
+      "id": "apple",
+      "name": "Apple",
+      "emoji": "🍎",
+      "sprite": "ui/icons.json#apple"
+    },
+    {
+      "id": "seed",
+      "name": "Seed packet",
+      "emoji": "🌱",
+      "sprite": "ui/icons.json#seed"
+    },
+    {
+      "id": "gem",
+      "name": "Shiny pebble",
+      "emoji": "💎",
+      "sprite": "ui/icons.json#gem"
+    },
+    {
+      "id": "bread",
+      "name": "Bread",
+      "emoji": "🍞",
+      "sprite": "ui/icons.json#bread"
+    },
+    {
+      "id": "honey",
+      "name": "Honey jar",
+      "emoji": "🍯",
+      "sprite": "ui/icons.json#honey"
+    }
+  ],
+  "pet": {
+    "name": "Pip",
+    "species": "cat",
+    "sprite": "characters/pet-pip.png"
+  }
+}

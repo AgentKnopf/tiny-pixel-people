@@ -1,0 +1,8 @@
+[
+  { "id": "flower", "name": "Wild flower", "emoji": "🌸", "sprite": "ui/icons.json#flower" },
+  { "id": "apple", "name": "Apple", "emoji": "🍎", "sprite": "ui/icons.json#apple" },
+  { "id": "seed", "name": "Seed packet", "emoji": "🌱", "sprite": "ui/icons.json#seed" },
+  { "id": "gem", "name": "Shiny pebble", "emoji": "💎", "sprite": "ui/icons.json#gem" },
+  { "id": "bread", "name": "Bread", "emoji": "🍞", "sprite": "ui/icons.json#bread" },
+  { "id": "honey", "name": "Honey jar", "emoji": "🍯", "sprite": "ui/icons.json#honey" }
+]

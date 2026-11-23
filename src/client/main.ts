@@ -1,51 +1,75 @@
-import type { ServerMessage } from '../shared/protocol.ts';
-import { formatClock } from '../shared/time.ts';
-import type { WorldMap } from '../shared/types.ts';
 import { connect } from './net.ts';
+import { loadFonts } from './render/fonts.ts';
+import { WorldRenderer } from './render/renderer.ts';
+import { HOME_SCENE_ID } from './render/scenes.ts';
+import { GameStore, type ClientApp } from './state.ts';
+import { mountUi } from './ui/index.ts';
 
-// Skeleton client: draws the collision grid and locations. WP4 replaces this with the real renderer.
-const canvas = document.querySelector<HTMLCanvasElement>('#world')!;
-const ctx = canvas.getContext('2d')!;
-const clockEl = document.querySelector<HTMLElement>('#clock')!;
-const statusEl = document.querySelector<HTMLElement>('#status')!;
-const SCALE = 2;
-
-let map: WorldMap | null = null;
-
-function draw(): void {
-  if (!map) return;
-  const ts = map.tileSize * SCALE;
-  canvas.width = map.width * ts;
-  canvas.height = map.height * ts;
-  for (let y = 0; y < map.height; y++) {
-    for (let x = 0; x < map.width; x++) {
-      ctx.fillStyle = map.collision[y * map.width + x] ? '#3a3a3a' : '#4c9a4c';
-      ctx.fillRect(x * ts, y * ts, ts, ts);
-    }
-  }
-  ctx.font = '14px monospace';
-  for (const loc of map.locations) {
-    ctx.fillStyle = 'rgba(230, 200, 120, 0.5)';
-    ctx.fillRect(loc.area.x * ts, loc.area.y * ts, loc.area.w * ts, loc.area.h * ts);
-    ctx.fillStyle = '#000';
-    ctx.fillText(loc.name, loc.area.x * ts + 4, loc.area.y * ts + 16);
+declare global {
+  interface Window {
+    tpp?: ClientApp;
   }
 }
 
-function onMessage(msg: ServerMessage): void {
-  switch (msg.type) {
-    case 'hello':
-      map = msg.map;
-      clockEl.textContent = formatClock(msg.snapshot.time);
-      statusEl.textContent = `connected · ${msg.llm.provider}/${msg.llm.model}`;
-      draw();
+const canvas = document.querySelector<HTMLCanvasElement>('#world')!;
+const store = new GameStore();
+const renderer = new WorldRenderer(canvas, store);
+
+let net: ReturnType<typeof connect> | null = null;
+const ui = mountUi(document.querySelector<HTMLElement>('#ui')!, {
+  send: (m) => net?.send(m),
+  camera: {
+    zoomIn: () => renderer.zoomIn(),
+    zoomOut: () => renderer.zoomOut(),
+    fit: () => renderer.fit(),
+    showScene: (id) => renderer.showScene(id),
+    followVillager: (id) => renderer.followVillager(id),
+    focusTile: (tile) => renderer.focusTile(tile),
+  },
+});
+
+net = connect(
+  (msg) => {
+    store.apply(msg, performance.now());
+    ui.handleMessage(msg);
+  },
+  (status, text) => {
+    store.setConnection(status, text);
+    ui.setConnectionStatus(status);
+  },
+);
+window.tpp = { store, net, renderer };
+
+renderer.on('villager', (id) => ui.selectVillager(id));
+renderer.on('door', (houseId) => ui.openDoorNote(houseId));
+renderer.on('ground', ({ tile, blocked }) => {
+  if (!blocked) net?.send({ type: 'player.move', to: tile });
+});
+renderer.on('scene', (id) => ui.setActiveScene(id));
+renderer.on('userPan', () => ui.setActiveScene(null));
+ui.onSelectionChange((id) => store.select(id));
+
+window.addEventListener('keydown', (ev) => {
+  if (ui.capturesKeyboard() || ev.metaKey || ev.ctrlKey || ev.altKey) return;
+  switch (ev.key) {
+    case '+':
+    case '=':
+      renderer.zoomIn();
       break;
-    case 'tick':
-      clockEl.textContent = formatClock(msg.time);
+    case '-':
+    case '_':
+      renderer.zoomOut();
+      break;
+    case '0':
+      renderer.fit();
+      break;
+    case 'h':
+      renderer.showScene(HOME_SCENE_ID);
       break;
     default:
-      break;
+      return;
   }
-}
+  ev.preventDefault();
+});
 
-connect(onMessage, (s) => (statusEl.textContent = s));
+void loadFonts().finally(() => renderer.start());
