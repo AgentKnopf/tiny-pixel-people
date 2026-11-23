@@ -92,19 +92,25 @@ afterEach(() => {
 });
 
 describe('AC1: one-command start (npm start entry point, mock provider)', () => {
-  it('serves /api/health, /api/state and a WebSocket hello', async () => {
+  it('serves /api/health, /api/snapshot, /api/state and a WebSocket hello', async () => {
     const s = await startMain('mock-a');
     const health = (await (await fetch(`${s.url}/api/health`)).json()) as {
       ok: boolean;
       llm: { model: string };
     };
     expect(health.ok).toBe(true);
-    const state = (await (await fetch(`${s.url}/api/state`)).json()) as {
+    const snapshot = (await (await fetch(`${s.url}/api/snapshot`)).json()) as {
       time: number;
       player: { id: string };
     };
-    expect(typeof state.time).toBe('number');
-    expect(state.player.id).toBe('player');
+    expect(typeof snapshot.time).toBe('number');
+    expect(snapshot.player.id).toBe('player');
+    const state = (await (await fetch(`${s.url}/api/state`)).json()) as {
+      time: string;
+      agents: { id: string }[];
+    };
+    expect(state.time).toMatch(/^\d{2}:\d{2}$/);
+    expect(state.agents.length).toBeGreaterThan(0);
     const h = await hello(s.url);
     expect(h.protocolVersion).toBe(1);
     expect(h.map.width).toBeGreaterThan(0);
