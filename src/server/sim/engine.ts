@@ -32,6 +32,8 @@ import type {
   VillagerMind,
   WorldView,
 } from '../cognition/types.ts';
+import { createConversationRunner } from '../cognition/conversation.ts';
+import { createMind, Mind } from '../cognition/mind.ts';
 import type { AppConfig } from '../config.ts';
 import type { LlmQueue } from '../llm/types.ts';
 import { createLogger } from '../log.ts';
@@ -52,7 +54,7 @@ import { CONVERSATION_SOCIAL_BONUS, initialNeeds, updateNeeds } from './needs.ts
 import { PathFinder } from './pathfinding.ts';
 import { isAwakeAt } from './plan.ts';
 import { Rng } from './rng.ts';
-import { createStubConversationRunner, createStubMind } from './stub-mind.ts';
+import { createStubConversationRunner } from './stub-mind.ts';
 import type { AdvanceOptions, SimEngine, SimEngineOptions } from './types.ts';
 import { isAt, loadMap, loadProfiles, locationAt, locationById, nearestWalkable } from './world.ts';
 
@@ -221,18 +223,28 @@ export class Engine implements SimEngine, SimHost {
     if (restore) this.rng.state = restore.rngState;
     this.paths = new PathFinder(this.map);
     this.queue = new FallbackLlmQueue(opts.providers, cfg.llm.concurrency);
-    this.createMindFn = opts.createMind ?? createStubMind;
-    this.runner = opts.createConversationRunner
-      ? opts.createConversationRunner({
-          config: cfg,
-          queue: this.queue,
-          now: () => this.now(),
-          emit: (m) => this.broadcast(m),
-        })
-      : createStubConversationRunner(
-          (id) => this.nameOf(id),
-          () => this.now(),
-        );
+    this.createMindFn = opts.createMind ?? createMind;
+    const runnerDeps = {
+      config: cfg,
+      queue: this.queue,
+      now: () => this.now(),
+      emit: (m: ServerMessage) => this.broadcast(m),
+    };
+    const stubRunner = createStubConversationRunner(
+      (id) => this.nameOf(id),
+      () => this.now(),
+    );
+    if (opts.createConversationRunner) this.runner = opts.createConversationRunner(runnerDeps);
+    else {
+      // WP3's runner only talks for its own minds; custom minds (tests, headless tools) get small talk.
+      const llmRunner = createConversationRunner(runnerDeps);
+      this.runner = {
+        run: (c, minds) =>
+          minds[0] instanceof Mind && minds[1] instanceof Mind
+            ? llmRunner.run(c, minds)
+            : stubRunner.run(c, minds),
+      };
+    }
     this.store = new JsonSaveStore({ dir: cfg.persistence.dir, slot: cfg.persistence.slot });
     this.autosaver = new Autosaver({
       store: this.store,
