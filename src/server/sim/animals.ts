@@ -10,6 +10,7 @@
 import {
   FARM_CAP_PER_SPECIES,
   FARM_SPECIES,
+  FOREST_SPECIES,
   type AnimalFrame,
   type AnimalSpecies,
   type AnimalState,
@@ -24,10 +25,12 @@ import {
   type Point,
   type Rect,
   type WorldMap,
+  type ZooSpecies,
 } from '../../shared/types.ts';
 import { dayOf, MINUTES_PER_DAY, minuteOfDay, parseClock } from '../../shared/time.ts';
 import type { AppConfig } from '../config.ts';
 import { Rng } from './rng.ts';
+import { DEFAULT_AMBIENT_DATA, DEFAULT_ZOO_DATA, type AmbientData, type ZooData } from './world.ts';
 import type { AnimalChange, AnimalSim } from './types.ts';
 
 // ---------- static tables ----------
@@ -105,20 +108,11 @@ const AWAKE: Record<string, [number, number]> = {
   crow: [360, 1200],
 };
 
-export const FOREST_COUNTS: Record<ForestSpecies, number> = {
-  deer: 3,
-  rabbit: 5,
-  squirrel: 4,
-  hedgehog: 2,
-  fox: 2,
-  bird: 6,
-  duck: 5,
-};
-
 /** Species that may stand on blocked tiles of their pen (water, trees). */
 const ANY_TILE = new Set<AnimalSpecies>(['penguin', 'hippo', 'crocodile', 'flamingo', 'bird', 'squirrel']);
 
-const NAMES: Partial<Record<AnimalSpecies, string[]>> = {
+/** Farm animal names; zoo names come from data/zoo.json. */
+const FARM_NAMES: Record<FarmSpecies, string[]> = {
   cow: [
     'Bessie',
     'Daisy',
@@ -161,18 +155,6 @@ const NAMES: Partial<Record<AnimalSpecies, string[]>> = {
     'Mo',
     'Biscuit',
   ],
-  lion: ['Leo', 'Nala'],
-  elephant: ['Ellie', 'Jumbo'],
-  giraffe: ['Gigi', 'Stretch'],
-  zebra: ['Ziggy', 'Stripes'],
-  penguin: ['Pingu', 'Waddles', 'Flipper'],
-  monkey: ['Momo', 'Coco'],
-  panda: ['Bao', 'Mei'],
-  flamingo: ['Rosa', 'Flo', 'Pinky'],
-  kangaroo: ['Joey', 'Skip'],
-  polar_bear: ['Frost', 'Nanook'],
-  hippo: ['Gloria', 'Hugo'],
-  crocodile: ['Snappy', 'Chomp'],
 };
 
 // ---------- helpers ----------
@@ -261,8 +243,10 @@ export interface AnimalSimOptions {
   escortPosition?: () => Point | null;
   /** Optional path finder for the walk to the butcher (e.g. the engine's cached A*). */
   findPath?: (from: Point, to: Point) => Point[] | null;
-  /** Default "Quill" (data/ambient.json). */
-  crowName?: string;
+  /** Zoo population and names; default DEFAULT_ZOO_DATA (the engine loads data/zoo.json). */
+  zoo?: ZooData;
+  /** Forest animal counts and the crow's name; default DEFAULT_AMBIENT_DATA (data/ambient.json). */
+  ambient?: AmbientData;
 }
 
 // ---------- the sim ----------
@@ -274,6 +258,8 @@ export class DeterministicAnimalSim implements AnimalSim {
   private readonly cap: number;
   private readonly butcherTime: number;
   private readonly opts: AnimalSimOptions;
+  private readonly zoo: ZooData;
+  private readonly ambient: AmbientData;
   private readonly locations = new Map<LocationId, Location>();
   private readonly habitats = new Map<string, Habitat>();
   private readonly runtimes = new Map<string, Runtime>();
@@ -289,6 +275,8 @@ export class DeterministicAnimalSim implements AnimalSim {
 
   constructor(opts: AnimalSimOptions) {
     this.opts = opts;
+    this.zoo = opts.zoo ?? DEFAULT_ZOO_DATA;
+    this.ambient = opts.ambient ?? DEFAULT_AMBIENT_DATA;
     this.cfg = opts.config;
     this.map = opts.map;
     this.seed = opts.config.sim.seed;
@@ -435,7 +423,9 @@ export class DeterministicAnimalSim implements AnimalSim {
   }
 
   private pickName(species: AnimalSpecies, rng: Rng): string | undefined {
-    const pool = NAMES[species];
+    const pool =
+      (FARM_NAMES as Partial<Record<AnimalSpecies, string[]>>)[species] ??
+      (this.zoo.names as Partial<Record<AnimalSpecies, string[]>>)[species];
     if (!pool) return undefined;
     const used = new Set(
       [...this.runtimes.values()].filter((r) => r.s.species === species).map((r) => r.s.name),
@@ -450,7 +440,8 @@ export class DeterministicAnimalSim implements AnimalSim {
     const rng = new Rng(streamSeed(this.seed, 'zoo'));
     for (const loc of this.map.locations) {
       if (loc.kind !== 'zoo' || !loc.species || !loc.pen) continue;
-      const n = loc.species === 'penguin' || loc.species === 'flamingo' ? 3 : rng.int(1, 2);
+      const [min, max] = this.zoo.defaultCount;
+      const n = this.zoo.counts[loc.species as ZooSpecies] ?? rng.int(min, max);
       const hab = this.habitatFor(loc.species, loc);
       for (let i = 0; i < n; i++) {
         const pos = rng.pick(hab.tiles) ?? { x: loc.pen.x, y: loc.pen.y };
@@ -499,11 +490,12 @@ export class DeterministicAnimalSim implements AnimalSim {
     const forest = this.locations.get('forest');
     const lake = this.locations.get('forest_lake');
     const rng = new Rng(streamSeed(this.seed, 'forest'));
-    for (const sp of Object.keys(FOREST_COUNTS) as ForestSpecies[]) {
+    const counts = this.ambient.forest;
+    for (const sp of FOREST_SPECIES) {
       const loc = sp === 'duck' ? lake : forest;
       if (!loc?.pen) continue;
       const hab = sp === 'duck' ? this.duckHabitat(loc, minuteOfDay(this.lastNow)) : this.habitatFor(sp, loc);
-      for (let i = 0; i < FOREST_COUNTS[sp]; i++) {
+      for (let i = 0; i < counts[sp]; i++) {
         const pos = rng.pick(hab.tiles);
         if (!pos) continue;
         this.addRuntime(
@@ -543,7 +535,7 @@ export class DeterministicAnimalSim implements AnimalSim {
         id: 'crow',
         species: 'crow',
         group: 'ambient',
-        name: this.opts.crowName ?? 'Quill',
+        name: this.ambient.crow.name,
         homeId: post.id,
         pos: { ...perch[0]! },
         facing: 'down',

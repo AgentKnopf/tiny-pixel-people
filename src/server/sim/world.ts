@@ -1,13 +1,18 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import type {
-  Location,
-  LocationId,
-  Point,
-  RomanceStage,
-  VillagerId,
-  VillagerProfile,
-  WorldMap,
+import { z } from 'zod';
+import {
+  FOREST_SPECIES,
+  ZOO_SPECIES,
+  type ForestSpecies,
+  type Location,
+  type LocationId,
+  type Point,
+  type RomanceStage,
+  type VillagerId,
+  type VillagerProfile,
+  type WorldMap,
+  type ZooSpecies,
 } from '../../shared/types.ts';
 import { isWalkable } from './pathfinding.ts';
 
@@ -15,9 +20,117 @@ export const DEFAULT_MAP_PATH = fileURLToPath(new URL('../../../data/map/village
 export const DEFAULT_VILLAGERS_PATH = fileURLToPath(new URL('../../../data/villagers.json', import.meta.url));
 
 export const DEFAULT_ROMANCE_PATH = fileURLToPath(new URL('../../../data/romance.json', import.meta.url));
+export const DEFAULT_ZOO_PATH = fileURLToPath(new URL('../../../data/zoo.json', import.meta.url));
+export const DEFAULT_AMBIENT_PATH = fileURLToPath(new URL('../../../data/ambient.json', import.meta.url));
 
 export class WorldDataError extends Error {}
 
+/** Zoo population (data/zoo.json, spec v2 §3.2). */
+export interface ZooData {
+  /** Animals per enclosure, inclusive [min, max], for species without an entry in `counts`. */
+  defaultCount: [number, number];
+  counts: Partial<Record<ZooSpecies, number>>;
+  names: Partial<Record<ZooSpecies, string[]>>;
+}
+
+/** Forest animals and the crow (data/ambient.json, spec v2 §3.5–3.6). */
+export interface AmbientData {
+  crow: { name: string };
+  forest: Record<ForestSpecies, number>;
+}
+
+export const DEFAULT_ZOO_DATA: ZooData = {
+  defaultCount: [1, 2],
+  counts: { penguin: 3, flamingo: 3 },
+  names: {
+    lion: ['Leo', 'Nala'],
+    elephant: ['Ellie', 'Jumbo'],
+    giraffe: ['Gigi', 'Stretch'],
+    zebra: ['Ziggy', 'Stripes'],
+    penguin: ['Pingu', 'Waddles', 'Flipper'],
+    monkey: ['Momo', 'Coco'],
+    panda: ['Bao', 'Mei'],
+    flamingo: ['Rosa', 'Flo', 'Pinky'],
+    kangaroo: ['Joey', 'Skip'],
+    polar_bear: ['Frost', 'Nanook'],
+    hippo: ['Gloria', 'Hugo'],
+    crocodile: ['Snappy', 'Chomp'],
+  },
+};
+
+export const DEFAULT_AMBIENT_DATA: AmbientData = {
+  crow: { name: 'Quill' },
+  forest: { deer: 3, rabbit: 5, squirrel: 4, hedgehog: 2, fox: 2, bird: 6, duck: 5 },
+};
+
+const count = z.number().int().min(0).max(20);
+const animalName = z.string().trim().min(1).max(32);
+const zooSchema = z
+  .object({
+    defaultCount: z
+      .tuple([count, count])
+      .refine(([a, b]) => a <= b, 'min must not exceed max')
+      .optional(),
+    counts: z.partialRecord(z.enum(ZOO_SPECIES), count).optional(),
+    names: z.partialRecord(z.enum(ZOO_SPECIES), z.array(animalName).min(1)).optional(),
+  })
+  .strict();
+const ambientSchema = z
+  .object({
+    crow: z.object({ name: animalName }).strict().optional(),
+    forest: z.partialRecord(z.enum(FOREST_SPECIES), count).optional(),
+  })
+  .strict();
+const romanceSchema = z.array(
+  z
+    .object({
+      pair: z.tuple([z.string().min(1), z.string().min(1)]),
+      stage: z.enum(['crush', 'dating', 'couple', 'ended']),
+      crushFrom: z.array(z.string().min(1)).max(2),
+      shy: z.boolean().optional(),
+    })
+    .strict(),
+);
+
+/** Parsed JSON, or null when the file does not exist. */
+function readJson(path: string, what: string): unknown {
+  if (!existsSync(path)) return null;
+  try {
+    return JSON.parse(readFileSync(path, 'utf8'));
+  } catch (err) {
+    throw new WorldDataError(`${what} (${path}) is not valid JSON: ${(err as Error).message}`);
+  }
+}
+
+function check<T>(schema: z.ZodType<T>, data: unknown, what: string): T {
+  const res = schema.safeParse(data);
+  if (res.success) return res.data;
+  const problems = res.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`);
+  throw new WorldDataError(`Invalid ${what}:\n  - ${problems.join('\n  - ')}`);
+}
+
+/** data/zoo.json merged over the defaults; a missing file means the defaults. */
+export function loadZooData(path: string = DEFAULT_ZOO_PATH): ZooData {
+  const raw = readJson(path, 'zoo data');
+  if (raw === null) return structuredClone(DEFAULT_ZOO_DATA);
+  const d = check(zooSchema, raw, 'zoo data');
+  return {
+    defaultCount: d.defaultCount ?? [...DEFAULT_ZOO_DATA.defaultCount],
+    counts: { ...DEFAULT_ZOO_DATA.counts, ...d.counts },
+    names: { ...structuredClone(DEFAULT_ZOO_DATA.names), ...d.names },
+  };
+}
+
+/** data/ambient.json merged over the defaults; a missing file means the defaults. */
+export function loadAmbientData(path: string = DEFAULT_AMBIENT_PATH): AmbientData {
+  const raw = readJson(path, 'ambient data');
+  if (raw === null) return structuredClone(DEFAULT_AMBIENT_DATA);
+  const d = check(ambientSchema, raw, 'ambient data');
+  return {
+    crow: { name: d.crow?.name ?? DEFAULT_AMBIENT_DATA.crow.name },
+    forest: { ...DEFAULT_AMBIENT_DATA.forest, ...d.forest },
+  };
+}
 /** A pre-seeded romance (data/romance.json, spec v2 §7.1). */
 export interface RomanceSeed {
   pair: [VillagerId, VillagerId];
@@ -26,17 +139,24 @@ export interface RomanceSeed {
   shy?: boolean;
 }
 
+/** data/romance.json; a missing file means no seeded romances. */
 export function loadRomanceSeeds(path: string = DEFAULT_ROMANCE_PATH): RomanceSeed[] {
-  const seeds = JSON.parse(readFileSync(path, 'utf8')) as RomanceSeed[];
+  const raw = readJson(path, 'romance seeds');
+  if (raw === null) return [];
+  const seeds: RomanceSeed[] = check(romanceSchema, raw, 'romance seeds').map((s) => ({
+    pair: s.pair,
+    stage: s.stage,
+    crushFrom: s.crushFrom,
+    ...(s.shy !== undefined ? { shy: s.shy } : {}),
+  }));
   for (const s of seeds) {
-    if (!Array.isArray(s.pair) || s.pair.length !== 2 || s.pair[0] === s.pair[1])
+    if (s.pair[0] === s.pair[1])
       throw new WorldDataError(`Invalid romance seed pair ${JSON.stringify(s.pair)}`);
     if (!s.crushFrom.every((id) => s.pair.includes(id)))
       throw new WorldDataError(`Romance seed ${s.pair.join('/')}: crushFrom must be in the pair`);
   }
   return seeds;
 }
-
 /** Load and sanity-check a WorldMap JSON file. */
 export function loadMap(path: string = DEFAULT_MAP_PATH): WorldMap {
   const map = JSON.parse(readFileSync(path, 'utf8')) as WorldMap;

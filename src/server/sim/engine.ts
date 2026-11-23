@@ -76,7 +76,11 @@ import {
   isAt,
   loadMap,
   loadProfiles,
+  loadAmbientData,
   loadRomanceSeeds,
+  loadZooData,
+  type AmbientData,
+  type ZooData,
   type RomanceSeed,
   locationAt,
   locationById,
@@ -84,6 +88,11 @@ import {
 } from './world.ts';
 
 const log = createLogger('sim');
+
+/** SimEngineOptions plus data-file overrides (default: data/romance.json, zoo.json, ambient.json). */
+export interface EngineOptions extends SimEngineOptions {
+  worldData?: { romances?: RomanceSeed[]; zoo?: ZooData; ambient?: AmbientData };
+}
 
 /** Villager walking speed in tiles per game minute. */
 export const WALK_TILES_PER_GAME_MINUTE = 1.5;
@@ -281,7 +290,7 @@ export class Engine implements SimEngine, SimHost {
   private romanceList: Romance[] = [];
   private worldDraws = { minute: -1, n: 0 };
 
-  constructor(opts: SimEngineOptions) {
+  constructor(opts: EngineOptions) {
     const cfg = opts.config;
     this.config = cfg;
     this.map = opts.map ?? loadMap();
@@ -371,7 +380,7 @@ export class Engine implements SimEngine, SimHost {
     }
     this.moveIn(restore, profiles);
     this.romanceList = structuredClone(restore?.romances ?? []);
-    this.seedRomances(loadRomanceSeeds());
+    this.seedRomances(opts.worldData?.romances ?? loadRomanceSeeds());
     const farmer = [...this.runtimes.values()].find((r) => /farmer/i.test(r.profile.occupation));
     this.animals = createAnimalSim({
       config: cfg,
@@ -380,6 +389,8 @@ export class Engine implements SimEngine, SimHost {
       ...(restore ? { restore: { animals: restore.animals, farm: restore.farm } } : {}),
       ...(farmer ? { farmerName: farmer.profile.name.split(' ')[0]! } : {}),
       findPath: (from, to) => this.paths.find(from, to),
+      zoo: opts.worldData?.zoo ?? loadZooData(),
+      ambient: opts.worldData?.ambient ?? loadAmbientData(),
       burgerStock: () => this.playerWorld.farm.stock()['burger_joint']?.['burger'] ?? 0,
     });
     const hasStation = this.map.locations.some((l) => l.kind === 'station');
@@ -660,7 +671,7 @@ export class Engine implements SimEngine, SimHost {
       if (!pair.every((id) => this.runtimes.has(id))) continue;
       if (this.romanceList.some((r) => r.pair[0] === pair[0] && r.pair[1] === pair[1])) continue;
       this.romanceList.push({
-        id: `romance_${pair[0]}_${pair[1]}`,
+        id: `romance-${pair[0]}-${pair[1]}`,
         pair,
         stage: seed.stage,
         since: now,
@@ -2348,4 +2359,4 @@ function settle(): Promise<void> {
   return new Promise((r) => setImmediate(r));
 }
 
-export const createSimEngine = (opts: SimEngineOptions): Engine => new Engine(opts);
+export const createSimEngine = (opts: EngineOptions): Engine => new Engine(opts);
