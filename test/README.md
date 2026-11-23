@@ -1,6 +1,6 @@
 # Tests
 
-`npm test` runs everything here with the deterministic `mock` LLM provider. No network, no real model.
+`npm test` runs the functional tests here with the deterministic `mock` LLM provider. No network, no real model. The timing checks run separately with `npm run test:perf` (a Vitest project of their own, one file at a time). `npm run check` runs `npm test`, then `npm run test:perf`, one after the other. Don't use a bare `npx vitest run`: it runs both projects at the same time, so the timing checks measure a busy machine.
 
 | Path                     | What                                                                                                                                                                                                      |
 | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -14,11 +14,13 @@
 
 v2 options of `createTestWorld`: `affinities: mutualAffinity('laude', 'franzi', 8)` presets relationships (scripted affinities), `patchSave(save)` edits the starting save (e.g. preset romances), and `neverAnswer: true` uses a model that never answers (requests hang until the queue times them out; the clock does not wait on the LLM). v2 suites gate on `readyV2(...)`, which also waits for the 128×60 map.
 
-Run every acceptance suite even if a feature file is missing (missing features then fail instead of skip):
+Full validation runs every acceptance suite even if a feature file is missing (missing features then fail instead of skip), plus the timing checks, which `npm test` leaves out:
 
 ```sh
-TPP_ACCEPTANCE_STRICT=1 npm test
+TPP_ACCEPTANCE_STRICT=1 npm test && npm run test:perf
 ```
+
+`TPP_ACCEPTANCE_STRICT=1 npm run check` does the same, with lint, typecheck and the build.
 
 ## Mock provider
 

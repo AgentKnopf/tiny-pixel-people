@@ -108,11 +108,14 @@ AC6 (inspector) is covered by the `inspect.data` checks in the acceptance suites
 inspector tests.
 
 A suite that needs code from a work package that hasn't landed yet is **skipped**, and its title
-says what it waits for. To make missing features fail instead of skip:
+says what it waits for. A full validation makes missing features fail instead of skip, and runs
+the timing checks too, because `npm test` alone leaves them out:
 
 ```sh
-TPP_ACCEPTANCE_STRICT=1 npm test
+TPP_ACCEPTANCE_STRICT=1 npm test && npm run test:perf
 ```
+
+`TPP_ACCEPTANCE_STRICT=1 npm run check` does the same, with lint, typecheck and the build around it.
 
 How the mock provider answers each task, and how tests script it, is described in
 [`test/README.md`](../test/README.md) and at the top of `src/server/llm/providers/mock.ts`.
