@@ -1,20 +1,30 @@
 import {
   PLAYER_HOME_ID,
   PLAYER_ID,
+  type AnimalId,
   type Location,
   type LocationId,
   type Point,
   type VillagerId,
   type WorldMap,
 } from '../../shared/types.ts';
-import { entityPos, isMoving, type Entity, type GameStore } from '../state.ts';
+import { entityPos, isMoving, type AnimalView, type Entity, type GameStore } from '../state.ts';
+import {
+  FLY_LIFT,
+  animalHitBox,
+  animalTopLeft,
+  animationFor,
+  isAerial,
+  pickAnimalColumn,
+  type AnimalSheetInfo,
+} from './animals.ts';
 import { Assets, type Drawable, type LightSpot, type TileObject, type LoadedTileset } from './assets.ts';
 import { layoutBubbles, bubbleAlpha, wrapText } from './bubbles.ts';
 import { Camera, fitZoom } from './camera.ts';
 import { drawConfetti, drawRain, eventEmoji, isFestive } from './effects.ts';
 import { hitTest, type HitResult } from './hit.ts';
 import { nightFactor, tintColor, useLitTiles } from './lighting.ts';
-import { DEFAULT_SCENE_ID, findScene, sceneRectPx } from './scenes.ts';
+import { DEFAULT_SCENE_ID, OVERVIEW_SCENE_ID, findScene, sceneRectPx } from './scenes.ts';
 import {
   FRAME_H,
   FRAME_W,
@@ -38,7 +48,9 @@ const DRAG_THRESHOLD = 5;
 
 export interface RendererEvents {
   villager: VillagerId;
-  door: LocationId;
+  animal: AnimalId;
+  /** `canEnter`: the location has an interior (houses, hotel, post office). */
+  door: { houseId: LocationId; canEnter: boolean };
   ground: { tile: Point; blocked: boolean };
   player: null;
   scene: string;
@@ -56,6 +68,16 @@ interface Drawn {
   sheet: Drawable;
   kind: PlaceholderKind;
   hidden: boolean;
+}
+
+interface DrawnAnimal {
+  id: AnimalId;
+  view: AnimalView;
+  pos: Point;
+  image: Drawable;
+  info: AnimalSheetInfo;
+  aerial: boolean;
+  lift: number;
 }
 
 export interface RendererOptions {
@@ -149,8 +171,10 @@ export class WorldRenderer {
     this.followId = null;
     this.sceneId = scene.id;
     const rect = sceneRectPx(scene, map.tileSize);
-    const wholeTown = rect.w >= map.width * map.tileSize && rect.h >= map.height * map.tileSize;
-    this.camera.frame(rect, instant, wholeTown);
+    const wholeMap = rect.w >= map.width * map.tileSize && rect.h >= map.height * map.tileSize;
+    // Overviews show their whole rect (fractional zoom allowed); close-up scenes may crop edges.
+    const contain = wholeMap || scene.id === DEFAULT_SCENE_ID || scene.id === OVERVIEW_SCENE_ID;
+    this.camera.frame(rect, instant, contain);
     this.emit('scene', scene.id);
     return true;
   }
@@ -163,9 +187,11 @@ export class WorldRenderer {
     this.camera.zoomBy(-1);
   }
 
-  /** Frame the whole town (the toolbar's fit button). */
+  /** Frame the whole map (the toolbar's fit button): the `overview` scene, or the plaza on v1 maps. */
   fit(): void {
-    this.showScene(DEFAULT_SCENE_ID);
+    const map = this.store.map;
+    const hasOverview = !!map?.scenes.some((s) => s.id === OVERVIEW_SCENE_ID);
+    this.showScene(hasOverview ? OVERVIEW_SCENE_ID : DEFAULT_SCENE_ID);
   }
 
   /** Pan to a villager (or the player) and keep following it; false when it is unknown. */
@@ -220,8 +246,21 @@ export class WorldRenderer {
     const villagers = this.collect(now, map)
       .filter((d) => !d.hidden && d.kind !== 'pet' && d.id !== PLAYER_ID)
       .map((d) => ({ id: d.id, pos: d.pos }));
+    const animals = this.collectAnimals(now, map, null).map((a) => ({
+      id: a.id,
+      box: animalHitBox(a.pos, map.tileSize, a.info, a.lift),
+      y: a.pos.y + (a.aerial ? 1000 : 0),
+    }));
     const pe = this.store.playerEntity;
-    return hitTest(map, world, villagers, pe ? { id: PLAYER_ID, pos: entityPos(pe, now) } : null);
+    return hitTest(map, world, villagers, pe ? { id: PLAYER_ID, pos: entityPos(pe, now) } : null, animals);
+  }
+
+  /** Whether the player can walk into a location (it has an interior). */
+  canEnter(locationId: LocationId): boolean {
+    const loc = this.store.map?.locations.find((l) => l.id === locationId);
+    if (!loc) return false;
+    if (loc.interiorId) return true;
+    return (loc.id === 'hotel' || loc.id === 'post_office') && !!this.store.map?.interiors?.length;
   }
 
   // ---------- Frame ----------
@@ -315,6 +354,82 @@ export class WorldRenderer {
     return out;
   }
 
+  /** Animals to draw; `view` (art px) culls those far off screen. */
+  private collectAnimals(
+    now: number,
+    map: WorldMap,
+    view: { x: number; y: number; w: number; h: number } | null,
+  ): DrawnAnimal[] {
+    const out: DrawnAnimal[] = [];
+    const ts = map.tileSize;
+    const pad = 3;
+    for (const view_ of this.store.animals.values()) {
+      const pos = entityPos(view_.e, now);
+      if (
+        view &&
+        (pos.x * ts < view.x - pad * ts ||
+          pos.y * ts < view.y - pad * ts ||
+          pos.x * ts > view.x + view.w + pad * ts ||
+          pos.y * ts > view.y + view.h + pad * ts)
+      )
+        continue;
+      const s = view_.state;
+      const sheet = this.assets.animalSheet(s.species, s.stage, hashString(s.id));
+      const aerial = isAerial(s.species);
+      out.push({
+        id: s.id,
+        view: view_,
+        pos,
+        image: sheet.image,
+        info: sheet.info,
+        aerial,
+        lift: s.status === 'flying' ? FLY_LIFT : 0,
+      });
+    }
+    return out;
+  }
+
+  private drawAnimal(a: DrawnAnimal, now: number, ts: number): void {
+    const { ctx } = this;
+    const { info } = a;
+    const s = a.view.state;
+    const moving = isMoving(a.view.e, now);
+    const emoting = this.store.bubbles.has(a.id);
+    const anim = animationFor(s.status, moving, emoting);
+    const col = pickAnimalColumn(info, anim, now, hashString(a.id) % 1000);
+    const row = info.rows[a.view.side];
+    const tl = animalTopLeft(a.pos, ts, info);
+    const w = Math.round(info.w * info.scale);
+    const h = Math.round(info.h * info.scale);
+    if (!a.aerial || a.lift > 0) {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.18)';
+      const sw = Math.max(4, Math.round(w * 0.5));
+      ctx.fillRect(tl.x + Math.round((w - sw) / 2), tl.y + h - 2 + (a.lift > 0 ? 0 : 0), sw, 2);
+    }
+    ctx.drawImage(a.image, col * info.w, row * info.h, info.w, info.h, tl.x, tl.y - a.lift, w, h);
+  }
+
+  /** Draws the visible chunks of a static layer in screen px, edges rounded so chunks never seam. */
+  private drawLayer(which: 'below' | 'above', lit: boolean, ts: number, budget: { builds: number }): void {
+    const { ctx, camera } = this;
+    if (!this.layers) return;
+    const z = camera.zoom;
+    const ox = camera.offsetX;
+    const oy = camera.offsetY;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    for (const ref of this.layers.visible(camera.visibleRect())) {
+      const c = this.layers.chunkBudgeted(which, lit, ref, budget);
+      const x0 = Math.round(ox + ref.x * ts * z);
+      const y0 = Math.round(oy + ref.y * ts * z);
+      const x1 = Math.round(ox + (ref.x + ref.w) * ts * z);
+      const y1 = Math.round(oy + (ref.y + ref.h) * ts * z);
+      ctx.drawImage(c, 0, 0, c.width, c.height, x0, y0, x1 - x0, y1 - y0);
+    }
+    ctx.setTransform(z, 0, 0, z, ox, oy);
+    ctx.imageSmoothingEnabled = false;
+  }
+
   private draw(now: number, map: WorldMap | null): void {
     const { ctx, canvas, camera } = this;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -326,28 +441,32 @@ export class WorldRenderer {
     if (!map || !this.layers) return;
 
     const z = camera.zoom;
-    const ox = camera.offsetX;
-    const oy = camera.offsetY;
     const gameTime = this.store.gameTimeAt(now);
     const night = nightFactor(gameTime);
     const lit = useLitTiles(night);
     const ts = map.tileSize;
     const drawn = this.collect(now, map).filter((d) => !d.hidden);
+    const animals = this.collectAnimals(now, map, camera.visibleRect());
 
     // World pass in art px.
-    ctx.setTransform(z, 0, 0, z, ox, oy);
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(this.layers.get('below', lit), 0, 0);
+    const budget = { builds: 2 };
+    this.drawLayer('below', lit, ts, budget);
     const decos = this.placedDecorations(map);
     for (const d of decos) this.drawDecoration(d, 'decor', lit, ts);
     this.drawItems(map, now);
     this.drawDoorNotes(map, now, 'paper');
 
-    drawn.sort((a, b) => a.pos.y - b.pos.y);
-    for (const d of drawn) this.drawCharacter(d, now, ts);
+    const sorted: { y: number; c?: Drawn; a?: DrawnAnimal }[] = drawn.map((c) => ({ y: c.pos.y, c }));
+    for (const a of animals) if (!a.aerial) sorted.push({ y: a.pos.y, a });
+    sorted.sort((p, q) => p.y - q.y);
+    for (const s of sorted) {
+      if (s.c) this.drawCharacter(s.c, now, ts);
+      else if (s.a) this.drawAnimal(s.a, now, ts);
+    }
 
-    ctx.drawImage(this.layers.get('above', lit), 0, 0);
+    this.drawLayer('above', lit, ts, budget);
     for (const d of decos) this.drawDecoration(d, 'overhead', lit, ts);
+    for (const a of animals) if (a.aerial) this.drawAnimal(a, now, ts);
 
     // Lighting and weather in screen px.
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -369,7 +488,7 @@ export class WorldRenderer {
     this.drawEventMarkers(map, now);
     this.drawSleepers(map, now);
     for (const d of drawn) this.drawLabels(d, now, ts);
-    this.drawBubbles(drawn, now, ts);
+    this.drawBubbles(drawn, animals, now, ts);
   }
 
   // ---------- Characters ----------
@@ -484,10 +603,15 @@ export class WorldRenderer {
     return true;
   }
 
-  private drawBubbles(drawn: Drawn[], now: number, ts: number): void {
+  private drawBubbles(drawn: Drawn[], animals: DrawnAnimal[], now: number, ts: number): void {
     const { ctx, camera } = this;
     const z = camera.zoom;
-    const byId = new Map(drawn.map((d) => [d.id, d]));
+    const heads = new Map<string, Point>();
+    for (const d of drawn) heads.set(d.id, { x: feetPoint(d.pos, ts).x, y: spriteTopLeft(d.pos, ts).y + 4 });
+    for (const a of animals) {
+      const tl = animalTopLeft(a.pos, ts, a.info);
+      heads.set(a.id, { x: tl.x + (a.info.w * a.info.scale) / 2, y: tl.y - a.lift + 2 });
+    }
     const px = this.fontPx(5.5, 11);
     ctx.font = `${px}px ${WORLD_FONT}`;
     const measure = (s: string) => ctx.measureText(s).width;
@@ -497,9 +621,9 @@ export class WorldRenderer {
     const maxW = Math.max(120 * this.dpr(), 96 * z);
     const boxes: (Parameters<typeof layoutBubbles>[0][number] & { lines: string[]; alpha: number })[] = [];
     for (const b of this.store.activeBubbles(now)) {
-      const d = byId.get(b.speakerId);
-      if (!d) continue;
-      const head = camera.worldToScreen({ x: feetPoint(d.pos, ts).x, y: spriteTopLeft(d.pos, ts).y + 4 });
+      const anchor = heads.get(b.speakerId);
+      if (!anchor) continue;
+      const head = camera.worldToScreen(anchor);
       if (
         head.x < -maxW ||
         head.x > this.canvas.width + maxW ||
@@ -843,7 +967,8 @@ export class WorldRenderer {
         return;
       }
       this.hover = this.hitAt(ev.clientX, ev.clientY);
-      c.style.cursor = this.hover.kind === 'villager' || this.hover.kind === 'door' ? 'pointer' : 'default';
+      const k = this.hover.kind;
+      c.style.cursor = k === 'villager' || k === 'animal' || k === 'door' ? 'pointer' : 'default';
     };
     const up = (ev: PointerEvent) => {
       const p = this.pointer;
@@ -856,8 +981,11 @@ export class WorldRenderer {
         case 'villager':
           this.emit('villager', hit.id);
           break;
+        case 'animal':
+          this.emit('animal', hit.id);
+          break;
         case 'door':
-          this.emit('door', hit.houseId);
+          this.emit('door', { houseId: hit.houseId, canEnter: this.canEnter(hit.houseId) });
           break;
         case 'ground':
           this.emit('ground', { tile: hit.tile, blocked: hit.blocked });
