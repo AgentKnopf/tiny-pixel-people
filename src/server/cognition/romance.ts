@@ -256,7 +256,7 @@ export class RomanceAgent {
     const since = view.now - CRUSH_WINDOW;
     let best: { id: VillagerId; a: number } | null = null;
     for (const [id, rel] of Object.entries(view.self.relationships)) {
-      if (id === me || !this.mind.town.minds.has(id) || !this.eligible(id)) continue;
+      if (id === me || !this.present(id, view) || !this.eligible(id)) continue;
       if (rel.affinity < (this.cfg?.crushAffinity ?? 6)) continue;
       const theirs = this.book.of(id).filter(isActive);
       if (theirs.some((r) => r.stage === 'couple' && !r.pair.includes(me))) continue;
@@ -338,14 +338,17 @@ export class RomanceAgent {
     for (const r of recs) {
       if (!isActive(r)) continue;
       const other = partnerOf(r, this.mind.id);
-      const mind = this.mind.town.minds.get(other);
-      if (mind && !mind.profile.transient) continue;
-      const gone =
-        !mind ||
-        !(other in view.villagerNames) ||
-        (mind.lastView !== null && view.now - mind.lastView.now > DEPARTED_AFTER);
-      if (gone) this.write({ ...r, stage: 'ended' });
+      if (!this.present(other, view)) this.write({ ...r, stage: 'ended' });
     }
+  }
+
+  private present(id: VillagerId, view: WorldView): boolean {
+    const mind = this.mind.town.minds.get(id);
+    if (!mind) return false;
+    if (!mind.profile.transient) return true;
+    return (
+      id in view.villagerNames && (mind.lastView === null || view.now - mind.lastView.now <= DEPARTED_AFTER)
+    );
   }
 
   private maybeEnd(view: WorldView, r: Romance): void {
