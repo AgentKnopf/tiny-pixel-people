@@ -56,6 +56,8 @@ import { PathFinder } from './pathfinding.ts';
 import { isAwakeAt } from './plan.ts';
 import { Rng } from './rng.ts';
 import { createStubConversationRunner } from './stub-mind.ts';
+import { TownLog } from './town-log.ts';
+import { recordTownLog } from './town-recorder.ts';
 import type { AdvanceOptions, SimEngine, SimEngineOptions } from './types.ts';
 import { isAt, loadMap, loadProfiles, locationAt, locationById, nearestWalkable } from './world.ts';
 
@@ -187,6 +189,8 @@ export class Engine implements SimEngine, SimHost {
   readonly playerWorld: PlayerWorld;
   readonly restoredFrom: SaveData | null;
   readonly store: JsonSaveStore;
+  /** Town event log and game-to-real time anchors (observer API). */
+  readonly townLog: TownLog;
 
   private readonly clock: SimClock;
   private readonly rng: Rng;
@@ -231,6 +235,12 @@ export class Engine implements SimEngine, SimHost {
       nightSpeedMultiplier: cfg.sim.nightSpeedMultiplier,
     });
     this.lastMinute = Math.floor(startAt);
+    this.townLog = new TownLog({
+      size: cfg.observer?.logSize ?? 5000,
+      now: () => this.clock.time,
+      realMsPerGameMinute: (cfg.sim.dayLengthMinutes * 60_000) / MINUTES_PER_DAY,
+      restore: restore?.observer,
+    });
     this.rng = new Rng(cfg.sim.seed);
     if (restore) this.rng.state = restore.rngState;
     this.paths = new PathFinder(this.map);
@@ -290,6 +300,8 @@ export class Engine implements SimEngine, SimHost {
       this.addRuntime(p, saved ? this.restoreState(saved) : this.initialState(p), snapshot);
     }
     this.registerBuiltins();
+    recordTownLog(this, this.townLog);
+    this.townLog.anchor(true);
   }
 
   // ---------- SimEngine ----------
@@ -300,6 +312,15 @@ export class Engine implements SimEngine, SimHost {
 
   get player(): Readonly<PlayerState> {
     return this.playerWorld.state;
+  }
+
+  get speed(): number {
+    return this.clock.speed;
+  }
+
+  /** True while the clock holds at 06:00 for the day plans. */
+  get wakingUp(): boolean {
+    return this.wakeHold !== null;
   }
 
   now(): GameMinutes {
@@ -322,6 +343,7 @@ export class Engine implements SimEngine, SimHost {
 
   start(): void {
     if (this.interval) return;
+    this.townLog.anchor(true);
     this.lastRealMs = performance.now();
     this.lastStatsMs = this.lastRealMs;
     this.interval = setInterval(() => this.realTick(), this.config.sim.tickMs);
@@ -330,9 +352,11 @@ export class Engine implements SimEngine, SimHost {
   stop(): void {
     if (this.interval) clearInterval(this.interval);
     this.interval = null;
+    this.townLog.anchor(true);
   }
 
   setSpeed(speed: number): void {
+    this.townLog.anchor(true);
     this.clock.speed = Math.max(0, speed);
     this.emitTick(true);
   }
@@ -410,6 +434,7 @@ export class Engine implements SimEngine, SimHost {
       notes: this.noteList,
       conversations: this.conversations().filter((c) => c.startedAt >= now - 2 * MINUTES_PER_DAY),
       ...this.playerWorld.serialize(),
+      observer: this.townLog.serialize(),
     });
   }
 
@@ -682,7 +707,9 @@ export class Engine implements SimEngine, SimHost {
     return {
       setPlan: (plan) => {
         const rt = this.runtimes.get(id);
-        if (rt) rt.state.plan = plan;
+        if (!rt) return;
+        rt.state.plan = plan;
+        this.bus.emit('plan.changed', { villagerId: id, plan });
       },
       setThought: (text) => {
         const rt = this.runtimes.get(id);
@@ -737,7 +764,9 @@ export class Engine implements SimEngine, SimHost {
       villagers: () => [...this.runtimes.values()].map((r) => r.state),
       setPlan: (id, plan) => {
         const rt = this.runtimes.get(id);
-        if (rt) rt.state.plan = plan;
+        if (!rt) return;
+        rt.state.plan = plan;
+        this.bus.emit('plan.changed', { villagerId: id, plan });
       },
       profile: (id) => this.profile(id),
       addMemory: (id, obs) => this.observe(id, obs),
@@ -836,6 +865,7 @@ export class Engine implements SimEngine, SimHost {
     const nowMs = performance.now();
     if (!this.wakeHold || this.wakeHold.day !== day) {
       this.wakeHold = { day, startedMs: nowMs, ready: -1, rounds: 0 };
+      this.townLog.anchor(true);
       this.log('info', 'Villagers are waking up…');
       // Minds start their day plans from update(); on a fresh world nobody has thought yet.
       for (const rt of [...this.runtimes.values()]) this.think(rt);
@@ -885,6 +915,7 @@ export class Engine implements SimEngine, SimHost {
     this.wokeDay = Math.max(this.wokeDay, day);
     if (!this.wakeHold) return;
     this.wakeHold = null;
+    this.townLog.anchor(true);
     const { ready, total } = this.wakeUpCounts(day);
     if (timedOut) log.warn(`wake-up: only ${ready}/${total} plans ready, starting the day anyway`);
     this.broadcastSimStatus('running', ready, total);
@@ -918,6 +949,7 @@ export class Engine implements SimEngine, SimHost {
       if (dt > 0) {
         const prevDay = dayOf(this.clock.time);
         this.clock.time += dt;
+        this.townLog.anchor();
         const day = dayOf(this.clock.time);
         if (day !== prevDay) this.onNewDay(day);
         this.updateNeedsAndBlocks(dt);

@@ -125,6 +125,17 @@ Invalid configuration in /path/config.json:
 | `randomWeather` | `false` | Rain may start on its own during the day (about a 6 % chance per game hour, 07:00–19:00). |
 | `llmStrangers`  | `false` | The model invents each stranger. Off: strangers come from `data/strangers.json`.          |
 
+## `observer`: read-only API for other programs
+
+| Key           | Default       | Meaning                                                                                     |
+| ------------- | ------------- | ------------------------------------------------------------------------------------------- |
+| `enabled`     | `true`        | Serve the [observer API](../observer-api.md).                                               |
+| `port`        | `null`        | `null`: on the game server. A number: separate listener on that port (0 picks a free port). |
+| `host`        | `"127.0.0.1"` | Address of the separate listener.                                                           |
+| `allowRemote` | `false`       | Accept clients from other machines; only together with `token`.                             |
+| `token`       | `""`          | Bearer token required on every observer request when set (`OBSERVER_TOKEN` overrides it).   |
+| `logSize`     | `5000`        | Town log entries kept.                                                                      |
+
 ## `debug`
 
 | Key     | Default | Meaning                                                                                                     |
@@ -148,6 +159,8 @@ Invalid configuration in /path/config.json:
 | `TPP_DAY_LENGTH_MINUTES` | `sim.dayLengthMinutes`                    |
 | `TPP_VILLAGERS`          | `sim.villagers`                           |
 | `TPP_DEBUG`              | `debug` (`1`, `true` or `yes` turn it on) |
+| `TPP_OBSERVER_PORT`      | `observer.port`                           |
+| `OBSERVER_TOKEN`         | `observer.token`                          |
 
 Empty variables are ignored. Any other variable can hold an API key and be referenced with
 `llm.apiKeyEnv` / `embeddings.apiKeyEnv`, for example `OPENROUTER_API_KEY`. Without

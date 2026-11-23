@@ -85,9 +85,18 @@ async function main(): Promise<void> {
     },
     engine,
     replayFile: () => engine.store.replayPath,
+    observer: { config: cfg.observer, source: engine },
   });
   engine.start();
   log.info(`Tiny Pixel People running at ${server.url}`);
+  if (cfg.observer.enabled) {
+    const where = server.observerUrl ?? server.url;
+    log.info(
+      `observer API (read-only) at ${where}/api/state${cfg.observer.token ? ' (bearer token required)' : ''}`,
+    );
+    if (cfg.observer.allowRemote && !cfg.observer.token)
+      log.warn('observer.allowRemote is ignored without a token (set OBSERVER_TOKEN)');
+  }
 
   installShutdownSave(
     () => {
