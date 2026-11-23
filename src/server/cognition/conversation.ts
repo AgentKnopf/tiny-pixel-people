@@ -17,6 +17,7 @@ import { Mind, PRIORITY, cleanLine } from './mind.ts';
 import { bestSentence, findMention, newsText } from './gossip.ts';
 import { convoSummarizePrompt, convoTurnPrompt } from './prompts/social.ts';
 import { settingsFromConfig } from './settings.ts';
+import { villageFor } from './village.ts';
 import type {
   ConversationRunner,
   ConversationRunnerDeps,
@@ -140,6 +141,7 @@ export class LlmConversationRunner implements ConversationRunner {
   }
 
   private load(): LoadLevel {
+    if (villageFor(this.deps.queue).dawnRush()) return 'overloaded';
     return loadTracker(this.deps.queue).level(this.deps.now());
   }
 

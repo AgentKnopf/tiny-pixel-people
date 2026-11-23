@@ -59,11 +59,17 @@ describe('Mind planning', () => {
     const plan = v.worlds.get('ben')!.plan!;
     expect(plan.source).toBe('fallback');
     expect(plan.blocks.some((b) => b.locationId === 'farm')).toBe(true);
-    // one attempt + one repair, then one retry an hour later
+    // Two attempts (each with a repair) at dawn, then background retries every half hour until noon.
+    const asked = () =>
+      v.queue.requests.filter((r) => r.task === 'plan.day' && r.meta?.villagerId === 'ben').length;
     await v.advanceTo(at(0, '07:10'));
-    expect(v.queue.requests.filter((r) => r.task === 'plan.day' && r.meta?.villagerId === 'ben').length).toBe(
-      4,
-    );
+    expect(asked()).toBe(8);
+    await v.advanceTo(at(0, '12:30'));
+    const byNoon = asked();
+    expect(byNoon).toBeLessThanOrEqual(16);
+    await v.advanceTo(at(0, '15:00'));
+    expect(asked()).toBe(byNoon);
+    expect(v.worlds.get('ben')!.plan!.source).toBe('fallback');
   });
 
   it('goes home and sleeps at night, summarises the day and prepares tomorrow', async () => {

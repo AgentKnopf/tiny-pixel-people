@@ -10,6 +10,7 @@ import type { Embedder } from './memory.ts';
 interface MindLike {
   readonly id: VillagerId;
   readonly profile: VillagerProfile;
+  dawnPlanPending?(): boolean;
 }
 
 const HOSTY =
@@ -44,6 +45,12 @@ export class Village<M extends MindLike = MindLike> {
       if (!best || s > best.s) best = { id: m.id, s };
     }
     return best?.id ?? null;
+  }
+
+  /** Some villager is still waiting for this morning's plan: other LLM work stands aside. */
+  dawnRush(): boolean {
+    for (const m of this.minds.values()) if (m.dawnPlanPending?.()) return true;
+    return false;
   }
 
   proposalsOn(day: number): number {
