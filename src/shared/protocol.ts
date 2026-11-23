@@ -3,6 +3,24 @@
  * Every message is a JSON text frame with a `type` discriminator.
  */
 import type {
+  AnimalFrame,
+  AnimalId,
+  AnimalRemovalReason,
+  AnimalSpecies,
+  AnimalState,
+  FoodStock,
+  HotelState,
+  HouseVisit,
+  ItemId,
+  KeepEntry,
+  KeepEntryKind,
+  Letter,
+  LetterId,
+  Notice,
+  RideState,
+  Romance,
+  TrainState,
+  VisitorInfo,
   Conversation,
   ConversationId,
   DoorNote,
@@ -29,6 +47,7 @@ import type {
   WorldSnapshot,
 } from './types.ts';
 
+/** Becomes 2 (spec v2 §14) with the WP2 PR that first sends v2 messages; the v2 types below are additive. */
 export const PROTOCOL_VERSION = 1;
 export const WS_PATH = '/ws';
 
@@ -38,7 +57,7 @@ export type Speed = (typeof SPEEDS)[number];
 /** Profile fields safe to show in the client. */
 export type VillagerProfilePublic = Pick<
   VillagerProfile,
-  'id' | 'name' | 'age' | 'occupation' | 'bio' | 'traits' | 'homeId' | 'sprite' | 'transient'
+  'id' | 'name' | 'age' | 'occupation' | 'bio' | 'traits' | 'homeId' | 'sprite' | 'transient' | 'visitor'
 >;
 
 export interface VillagerFrame {
@@ -84,6 +103,8 @@ export interface TickMessage {
   time: GameMinutes;
   speed: number;
   villagers: VillagerFrame[];
+  /** v2: only animals that moved or changed status since the last tick. */
+  animals?: AnimalFrame[];
 }
 
 export interface ConversationMessageMsg {
@@ -122,6 +143,9 @@ export interface InspectDataMsg {
   memories: Omit<Memory, 'embedding'>[];
   relationships: Record<VillagerId, Relationship>;
   currentConversation?: Conversation;
+  /** v2 */
+  romance?: Romance | null;
+  visitor?: VisitorInfo | null;
 }
 
 export interface StatsMsg {
@@ -184,6 +208,80 @@ export interface SimStatusMsg {
   villagers: number;
 }
 
+// ---------- v2 server -> client (spec v2 §14) ----------
+
+export interface AnimalsChangedMsg {
+  type: 'animals.changed';
+  added: AnimalState[];
+  removed: { id: AnimalId; species: AnimalSpecies; reason: AnimalRemovalReason }[];
+  updated: AnimalState[];
+}
+
+export interface AnimalEmoteMsg {
+  type: 'animal.emote';
+  animalId: AnimalId;
+  emote: string;
+}
+
+export interface RideUpdatedMsg {
+  type: 'ride.updated';
+  ride: RideState;
+}
+
+export interface TrainUpdatedMsg {
+  type: 'train.updated';
+  train: TrainState;
+}
+
+export interface HotelUpdatedMsg {
+  type: 'hotel.updated';
+  hotel: HotelState;
+}
+
+export interface VisitorUpdatedMsg {
+  type: 'visitor.updated';
+  visitor: VisitorInfo;
+}
+
+export interface RomanceUpdatedMsg {
+  type: 'romance.updated';
+  romance: Romance;
+}
+
+export interface VisitUpdatedMsg {
+  type: 'visit.updated';
+  visit: HouseVisit;
+}
+
+export interface StockUpdatedMsg {
+  type: 'stock.updated';
+  stock: FoodStock;
+}
+
+export interface LetterUpdatedMsg {
+  type: 'letter.updated';
+  letter: Letter;
+}
+
+export interface NoticeUpdatedMsg {
+  type: 'notice.updated';
+  notice: Notice;
+  removed?: boolean;
+}
+
+export interface KeepAddedMsg {
+  type: 'keep.added';
+  entry: KeepEntry;
+}
+
+/** Direct reply to keep.open. */
+export interface KeepDataMsg {
+  type: 'keep.data';
+  entries: KeepEntry[];
+  total: number;
+  offset: number;
+  requestId?: string;
+}
 export interface ErrorMsg {
   type: 'error';
   message: string;
@@ -208,6 +306,19 @@ export type ServerMessage =
   | VillagersChangedMsg
   | LogMsg
   | SimStatusMsg
+  | AnimalsChangedMsg
+  | AnimalEmoteMsg
+  | RideUpdatedMsg
+  | TrainUpdatedMsg
+  | HotelUpdatedMsg
+  | VisitorUpdatedMsg
+  | RomanceUpdatedMsg
+  | VisitUpdatedMsg
+  | StockUpdatedMsg
+  | LetterUpdatedMsg
+  | NoticeUpdatedMsg
+  | KeepAddedMsg
+  | KeepDataMsg
   | ErrorMsg;
 
 // ---------- Client -> server ----------
@@ -297,6 +408,52 @@ export interface PetCmd extends Base {
   name?: string;
 }
 
+// ---------- v2 client -> server (spec v2 §14) ----------
+
+export interface PlayerEnterCmd extends Base {
+  type: 'player.enter';
+  locationId: LocationId;
+}
+
+export interface PlayerExitCmd extends Base {
+  type: 'player.exit';
+}
+
+export interface PlayerRideCmd extends Base {
+  type: 'player.ride';
+  locationId: LocationId;
+}
+
+export interface PlayerBuyCmd extends Base {
+  type: 'player.buy';
+  locationId: LocationId;
+  itemId: ItemId;
+}
+
+export interface LetterSendCmd extends Base {
+  type: 'letter.send';
+  to: VillagerId;
+  text: string;
+}
+
+export interface LetterReadCmd extends Base {
+  type: 'letter.read';
+  letterId: LetterId;
+}
+
+export interface NoticePostCmd extends Base {
+  type: 'notice.post';
+  text: string;
+}
+
+export interface KeepOpenCmd extends Base {
+  type: 'keep.open';
+  query?: string;
+  kind?: KeepEntryKind;
+  offset?: number;
+  /** ≤ KEEP_PAGE_MAX */
+  limit?: number;
+}
 export type ClientMessage =
   | InspectCmd
   | SpeedCmd
@@ -311,7 +468,17 @@ export type ClientMessage =
   | DecorToggleCmd
   | PetCmd
   | DebugInjectCmd
-  | DebugJumpCmd;
+  | DebugJumpCmd
+  | PlayerEnterCmd
+  | PlayerExitCmd
+  | PlayerRideCmd
+  | PlayerBuyCmd
+  | LetterSendCmd
+  | LetterReadCmd
+  | NoticePostCmd
+  | KeepOpenCmd;
 
 export const NOTE_MAX_LENGTH = 500;
 export const SAY_MAX_LENGTH = 300;
+export const NOTICE_MAX_LENGTH = 200;
+export const KEEP_PAGE_MAX = 50;

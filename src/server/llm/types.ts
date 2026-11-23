@@ -22,6 +22,13 @@ export type LlmTask =
   | 'player.reply'
   | 'task.decide'
   | 'stranger.create'
+  // v2 (spec v2 §11)
+  | 'visit.greet'
+  | 'letter.reply'
+  | 'letter.write'
+  | 'visitor.create'
+  | 'date.ask'
+  | 'date.decide'
   | 'health';
 
 export interface ChatMessage {
@@ -90,6 +97,12 @@ export const TASK_PRIORITY: Record<LlmTask, number> = {
   'event.propose': 40,
   'importance.rate': 30,
   'day.summarize': 20,
+  'visit.greet': 105,
+  'letter.reply': 90,
+  'date.decide': 80,
+  'visitor.create': 75,
+  'date.ask': 65,
+  'letter.write': 45,
   health: 100,
 };
 
