@@ -307,7 +307,11 @@ export function parsePlan(
     ? raw
     : asArray(pick(r, 'blocks', 'plan', 'schedule', 'activities', 'items'));
   const blocks: PlanBlock[] = [];
-  for (const item of list) {
+  for (const raw of list) {
+    // Compact form: ["07:00","11:00","bakery","bake bread"(, "🍞")].
+    const item = Array.isArray(raw)
+      ? { start: raw[0], end: raw[1], location: raw[2], activity: raw[3], emoji: raw[4] }
+      : raw;
     const b = asRecord(item);
     if (!b) continue;
     const start = parseClockLoose(pick(b, 'start', 'from', 'startTime', 'time', 'begin'));

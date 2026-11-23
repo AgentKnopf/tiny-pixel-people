@@ -98,6 +98,8 @@ export class MemoryStore implements MemoryStream {
     const candidates = this.memories.filter((m) => isRetrievable(m, now, opts));
     if (candidates.length === 0) return [];
     const embedding = this.opts.embedder ? await this.opts.embedder.embedQuery(query) : null;
+    // Memories whose embedding batch failed transiently get another try.
+    if (embedding) for (const m of candidates) if (!m.embedding) this.opts.embedder?.request(m);
     const top = scoreMemories(
       candidates,
       now,

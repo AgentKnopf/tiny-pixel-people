@@ -13,6 +13,8 @@ export interface TurnPromptInput {
   names: Readonly<Record<string, string>>;
   turn: number;
   maxTurns: number;
+  /** The partner just told you this news. */
+  justHeard?: string;
 }
 
 export function transcriptLines(
@@ -28,7 +30,10 @@ export function convoTurnPrompt(i: TurnPromptInput): { system: string; user: str
     `You meet ${i.partnerName} at ${i.place}. You were: ${i.activity}. ${i.relationship}`,
     `What you remember about this:\n${memoryLines(i.memories, false, 6)}`,
     i.news.length > 0 &&
-      `News you might share (mention one naturally if it fits):\n${i.news.map((n) => `- ${n}`).join('\n')}`,
+      (i.turn <= 1
+        ? `Tell ${i.partnerName} this news in your own words: ${i.news[0]}`
+        : `News you might share (mention one naturally if it fits):\n${i.news.map((n) => `- ${n}`).join('\n')}`),
+    i.justHeard && `${i.partnerName} just told you: ${i.justHeard} React to it and repeat the key detail.`,
     i.transcript.length > 0
       ? `Conversation so far:\n${transcriptLines(i.transcript, i.names)}`
       : `You speak first. Greet ${i.partnerName}.`,

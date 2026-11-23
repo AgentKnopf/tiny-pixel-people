@@ -3,11 +3,17 @@
  * that stores conversation + heard memories for both villagers and propagates gossip origin ids.
  * The runner only appends to `conversation.messages`; the engine broadcasts them.
  */
-import type { Conversation, ConversationMessage, Memory, VillagerId } from '../../shared/types.ts';
+import type {
+  Conversation,
+  ConversationMessage,
+  Memory,
+  Provenance,
+  VillagerId,
+} from '../../shared/types.ts';
 import { asArray, asBool, asNumber, asRecord, asString, clamp, pick } from './json.ts';
 import { extractKeywords, keywordOverlap } from './keywords.ts';
-import { ask } from './llm.ts';
-import { Mind, cleanLine } from './mind.ts';
+import { ask, loadTracker, type LoadLevel } from './llm.ts';
+import { Mind, PRIORITY, cleanLine } from './mind.ts';
 import { bestSentence, findMention, newsText } from './gossip.ts';
 import { convoSummarizePrompt, convoTurnPrompt } from './prompts/social.ts';
 import { settingsFromConfig } from './settings.ts';
@@ -52,23 +58,47 @@ export class LlmConversationRunner implements ConversationRunner {
       conversation.endedAt ??= this.deps.now();
       return conversation;
     }
-    const pair: [Mind, Mind] = [a, b];
-    const names: Record<VillagerId, string> = { [a.id]: a.profile.name, [b.id]: b.profile.name };
     const start = this.deps.now();
-    const news: [Offered[], Offered[]] = [
-      a.newsFor(b.id, start).map((m) => ({ id: m.id, text: newsText(m), by: a.id, memory: m })),
-      b.newsFor(a.id, start).map((m) => ({ id: m.id, text: newsText(m), by: b.id, memory: m })),
-    ];
-    const maxTurns = this.settings.maxConversationTurns;
+    const offer = (m: Mind, other: Mind): Offered[] =>
+      m.newsFor(other.id, start).map((x) => ({ id: x.id, text: newsText(x), by: m.id, memory: x }));
+    let pair: [Mind, Mind] = [a, b];
+    let news: [Offered[], Offered[]] = [offer(a, b), offer(b, a)];
+    // Whoever has news opens, so it is said even if the chat is cut short.
+    if (news[0].length === 0 && news[1].length > 0 && conversation.messages.length === 0) {
+      pair = [b, a];
+      news = [news[1], news[0]];
+    }
+    const names: Record<VillagerId, string> = { [a.id]: a.profile.name, [b.id]: b.profile.name };
+    const load = this.load();
+    const maxTurns = Math.min(
+      this.settings.maxConversationTurns,
+      load === 'normal' ? Infinity : load === 'busy' ? 4 : 3,
+    );
+    const endBy = conversation.startedAt + this.settings.maxConversationGameMinutes;
     for (let turn = conversation.messages.length; turn < maxTurns; turn++) {
       if (conversation.status !== 'active') break;
-      if (this.deps.now() - conversation.startedAt > this.settings.maxConversationGameMinutes) break;
+      if (this.deps.now() > endBy) break;
       const si = turn % 2;
       const speaker = pair[si]!;
       const listener = pair[1 - si]!;
-      const res = await this.turn(conversation, speaker, listener, news[si]!, names, turn, maxTurns);
+      const res = await this.turn(
+        conversation,
+        speaker,
+        listener,
+        news[si]!,
+        news[1 - si]!,
+        names,
+        turn,
+        maxTurns,
+        endBy,
+      );
       if (conversation.status !== 'active') break;
-      const msg: ConversationMessage = { speakerId: speaker.id, text: res.say, at: this.deps.now() };
+      const msg: ConversationMessage = {
+        speakerId: speaker.id,
+        text: res.say,
+        at: this.deps.now(),
+        source: res.source,
+      };
       conversation.messages.push(msg);
       if (res.end && turn >= 1) break;
     }
@@ -78,17 +108,34 @@ export class LlmConversationRunner implements ConversationRunner {
     return conversation;
   }
 
+  private load(): LoadLevel {
+    return loadTracker(this.deps.queue).level(this.deps.now());
+  }
+
   private async turn(
     conv: Conversation,
     speaker: Mind,
     listener: Mind,
     offered: Offered[],
+    heard: Offered[],
     names: Record<VillagerId, string>,
     turn: number,
     maxTurns: number,
-  ): Promise<{ say: string; end: boolean }> {
+    endBy: number,
+  ): Promise<{ say: string; end: boolean; source: Provenance }> {
     const view = speaker.lastView;
     const now = this.deps.now();
+    const load = this.load();
+    const fallback = () => fallbackTurn(speaker, listener, offered, heard, conv.messages, turn, maxTurns);
+    // The speaker's first line with news always gets a real model attempt (the canned line is
+    // only the safety net); other lines are canned when the model is overloaded.
+    const firstNews = offered.length > 0 && !conv.messages.some((m) => m.speakerId === speaker.id);
+    if (load === 'overloaded' && !firstNews) return { ...fallback(), source: 'fallback' };
+    const last = conv.messages.at(-1);
+    const justHeard =
+      last?.speakerId === listener.id
+        ? heard.find((h) => findMention(h.text, [last], listener.id))
+        : undefined;
     const place = conv.locationId ? speaker.locName(view, conv.locationId) : 'the village path';
     const memories = await speaker.memory.retrieve(`${listener.profile.name} ${place}`, now, { k: 5 });
     const transcript = conv.messages.slice();
@@ -104,6 +151,7 @@ export class LlmConversationRunner implements ConversationRunner {
       names,
       turn,
       maxTurns,
+      ...(justHeard ? { justHeard: justHeard.text } : {}),
     });
     const said = new Set(
       transcript.filter((m) => m.speakerId === speaker.id).map((m) => m.text.toLowerCase()),
@@ -133,12 +181,34 @@ export class LlmConversationRunner implements ConversationRunner {
         const say = cleanLine(t.split('\n')[0]);
         return say ? { say, end: false } : null;
       },
-      fallback: () => fallbackTurn(speaker, listener, offered, conv.messages, turn, maxTurns),
+      fallback,
       shape: '{"say":"...","end":false}',
+      now: () => this.deps.now(),
+      // A line that comes too late is replaced by a canned one so the chat keeps moving.
+      deadline: Math.max(now + 20, Math.min(endBy, now + (load === 'normal' || firstNews ? 45 : 20))),
+      noRepair: load !== 'normal',
+      ...(firstNews ? { priority: PRIORITY.convoFirstNews } : {}),
       temperature: this.settings.temperature,
-      maxTokens: 120,
+      maxTokens: 70,
     });
-    return res.value;
+    const out = { ...res.value, source: res.source };
+    // Short chats under load may not get another chance: news the model left out is appended.
+    const carried = offered.find((o) =>
+      findMention(o.text, [{ speakerId: speaker.id, text: out.say, at: now }], speaker.id, 0.3),
+    );
+    if (firstNews && load !== 'normal' && !carried) {
+      const item = offered.find((o) => o.memory.kind !== 'reflection') ?? offered[0]!;
+      return { say: `${out.say} Did you hear? ${item.text}`.slice(0, 300), end: false, source: 'fallback' };
+    }
+    // News that is not acknowledged does not stick: a reply that ignores it gets a short echo.
+    // The patched line is partly canned, so it counts as a fallback.
+    if (
+      justHeard &&
+      res.source === 'llm' &&
+      !findMention(justHeard.text, [{ ...last!, speakerId: speaker.id, text: out.say }], speaker.id, 0.3)
+    )
+      return { ...out, say: `${echoLine(justHeard.text)} ${out.say}`.slice(0, 300), source: 'fallback' };
+    return out;
   }
 
   private async wrapUp(
@@ -171,6 +241,9 @@ export class LlmConversationRunner implements ConversationRunner {
         return fa || fb ? { forA: fa ?? emptySide(), forB: fb ?? emptySide() } : null;
       },
       fallback: () => ({ forA: emptySide(), forB: emptySide() }),
+      // Under load the heuristic summary (offered news that was demonstrably said) is enough.
+      offline: this.load() !== 'normal',
+      now: () => this.deps.now(),
       shape:
         '{"forA":{"summary":"...","learned":[],"affinityDelta":1},"forB":{"summary":"...","learned":[],"affinityDelta":1}}',
       temperature: 0.2,
@@ -321,6 +394,7 @@ function fallbackTurn(
   speaker: Mind,
   listener: Mind,
   offered: Offered[],
+  heard: Offered[],
   messages: readonly ConversationMessage[],
   turn: number,
   maxTurns: number,
@@ -329,13 +403,26 @@ function fallbackTurn(
   const act = speaker.lastView?.self.activity.text || 'going about my day';
   const mine = messages.filter((m) => m.speakerId === speaker.id).length;
   const pickOne = (xs: string[]) => xs[(speaker.id.length + turn) % xs.length]!;
+  // React to news the partner just told, repeating it (that is how it sticks and spreads).
+  const last = messages.at(-1);
+  if (last && last.speakerId === listener.id) {
+    const news = heard.find((h) => findMention(h.text, [last], listener.id));
+    const echoed = news && findMention(news.text, messages, speaker.id);
+    if (news && !echoed) return { say: `${echoLine(news.text)} I had no idea!`, end: false };
+  }
   if (turn >= maxTurns - 1 || turn >= 3)
     return { say: `Well, I should get going. See you later, ${p}!`, end: true };
-  const item = offered[mine];
+  // Reflections read oddly as canned news; canned lines only pass on concrete facts.
+  const item = offered.filter((o) => o.memory.kind !== 'reflection')[mine];
   if (item)
     return { say: `${mine === 0 && turn === 0 ? `Hi ${p}! ` : ''}Did you hear? ${item.text}`, end: false };
   if (turn === 0) return { say: pickOne(GREETINGS).replace('{p}', p), end: false };
   return { say: pickOne(SMALL_TALK).replace('{a}', act), end: false };
+}
+
+function echoLine(fact: string): string {
+  const f = fact.replace(/[.!]+$/, '').trim();
+  return `Really? ${f.charAt(0).toUpperCase()}${f.slice(1)}?`;
 }
 
 export const createConversationRunner: CreateConversationRunner = (deps) => new LlmConversationRunner(deps);
