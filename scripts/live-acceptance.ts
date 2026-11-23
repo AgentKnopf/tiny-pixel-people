@@ -34,10 +34,12 @@ import {
   checkNote,
   checkPlans,
   formatReport,
+  gossipMentions,
   planAdherence,
   type AdherenceSample,
   type CheckResult,
 } from '../test/helpers/checks.ts';
+import { attachProvenance } from '../test/helpers/provenance.ts';
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const FACT = "The mayor's cat is named Biscuit.";
@@ -270,11 +272,9 @@ async function main(): Promise<void> {
     log(`stopped at game time ${formatClock(last.time)} (real-time limit ${args.maxMinutes} min)`);
 
   const midday = samples.find((s) => s.time >= t('12:00'));
+  const judgedVillagers = midday?.villagers ?? last.villagers;
   results.push(
-    checkPlans(
-      { ...last, villagers: midday?.villagers ?? last.villagers },
-      planAdherence(samples, hello.map.locations),
-    ),
+    checkPlans({ ...last, villagers: judgedVillagers }, planAdherence(samples, hello.map.locations)),
   );
 
   const wsLines = messages.filter((m): m is ConversationMessageMsg => m.type === 'conversation.message');
@@ -287,8 +287,12 @@ async function main(): Promise<void> {
       listenerId: c.participants.find((p) => p !== m.speakerId) ?? '',
       text: m.text,
       time: m.at,
+      ...(m.source ? { source: m.source } : {}),
     })),
   );
+  const gossipHits = factSource
+    ? gossipMentions([...wsLines, ...apiLines], FACT_KEYWORD, factSource, t('08:00'), t('20:00'))
+    : [];
   results.push(
     factSource
       ? checkGossip([...wsLines, ...apiLines], FACT_KEYWORD, factSource, t('08:00'), t('20:00'))
@@ -309,7 +313,15 @@ async function main(): Promise<void> {
   );
   ws.close();
   printDiagnostics(lastStats, messages);
-  finish(results, args, cleanup);
+  const stats = lastStats as StatsMsg | null;
+  const attributed = attachProvenance(results, {
+    plans: judgedVillagers.map((v) => v.plan),
+    gossipHits,
+    note,
+    goodEvents: last.events.filter((e) => e.status === 'done' && new Set(e.attendees).size >= 3),
+    taskStats: stats?.queue.byTask,
+  });
+  finish(attributed, args, cleanup);
 }
 
 /** Queue stats and server warnings, to tell a slow model (timeouts, fallbacks) from a logic bug. */
