@@ -116,7 +116,8 @@ gives much better results. Setting `llm.temperature` to 0.5 can also help.
 
 **My door note is never read.**
 The owner reads notes only when it **arrives** home while awake. If it is out all day, the note
-waits until evening. Check the owner's plan in the inspector.
+waits until evening. Check the owner's plan in the inspector. Once read, a note always gets a
+reply: from the model, or a simple one after about 3 game hours if the model is too slow.
 
 **A rumor doesn't spread.**
 Villagers pass news on in conversations, and conversations need the model. Give it time (a few game

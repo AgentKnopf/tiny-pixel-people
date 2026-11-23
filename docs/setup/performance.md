@@ -109,7 +109,11 @@ settings lively; above 20 seconds, use the CPU settings above.
   doesn't expire). A job that hasn't started by then is dropped, and the villager uses its fallback
   instead, such as a default day plan. With `TPP_DEBUG=1` the log shows each one as
   `<task>: request failed (<task>: dropped, expired before it started); using fallback`. Your
-  chats, door-note replies and requests never expire.
+  chats, door-note replies and requests never expire in the queue, but a door-note reply that
+  hasn't come back after 3 game hours is replaced by a simple reply that mentions the note.
+- **Memory lookups don't wait long.** A villager looking up memories waits at most 4 real seconds
+  (or 10 game minutes) for the embedding model, then ranks memories by keywords instead, so a
+  busy model server doesn't hold up replies and plans.
 - **The queue is capped.** At most 64 jobs wait at once; beyond that the lowest-priority job is
   dropped the same way. Dropped jobs are not counted as failed on the stats card.
 - **Timeouts are not retried.** A call that takes longer than `llm.timeoutMs` (2 minutes) is

@@ -95,7 +95,9 @@ _Generative Agents_ (Park et al., 2023), scaled down to small local models:
 - **Retrieval.** Score = recency + importance + relevance, each normalised to 0–1 and weighted by
   `cognition.retrievalWeights`. Recency decays by 0.995 per game hour since last access. Relevance
   is cosine similarity of embeddings, or a keyword score when embeddings are off or missing. The
-  top `cognition.retrievalK` memories go into the prompt.
+  query embedding is awaited for at most 4 s real time (`EMBED_QUERY_TIMEOUT` in
+  `cognition/village.ts`) or 10 game minutes (`RECALL_MAX_WAIT` in `cognition/mind.ts`); after that
+  the lookup ranks by keywords. The top `cognition.retrievalK` memories go into the prompt.
 - **Reflection.** When the summed importance of new memories reaches
   `cognition.reflectionThreshold`, the villager writes 2–3 insights citing the memories behind
   them.
@@ -121,7 +123,10 @@ _Generative Agents_ (Park et al., 2023), scaled down to small local models:
   come back by 13:00 (at least an hour after asking), a default event is created. Invitees decide with a model call; accepting inserts a plan block.
   Attendance counts villagers inside the area for at least half the window.
 - **Door notes.** A note waits on the door until the owner next arrives home awake, becomes an
-  importance-8 memory, and gets a reply that refers to its content.
+  importance-8 memory, and gets a reply that refers to its content. The `note.reply` call has a
+  180-game-minute deadline; when it passes, or the call fails, a canned reply that quotes the note
+  is posted with `replySource: 'fallback'`. A note that is `read` but has no reply (a lost job, or a
+  save taken between reading and replying) is answered on the owner's next arrival home.
 - **Next day.** In the last 90 minutes before bedtime (unless overloaded) and again overnight, the
   villager asks for tomorrow's plan. While asleep: a day summary and pruning of old trivial
   observations from retrieval.

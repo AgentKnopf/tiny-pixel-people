@@ -147,6 +147,10 @@ Every house has a door. Click a door (or use **Visit their home**) to open the n
   because of it, may tell others about it, and writes a reply that refers to what you wrote.
 - When the reply is ready, the door shows a reply marker. Click the door: the window lists your
   notes with their status (`pinned, not read yet`, `read`, `replied`) and the owner's reply.
+- If the model takes more than about 3 game hours to write the reply, the owner posts a simple
+  reply of its own that still mentions your note. A note that was read but not answered yet (for
+  example because the server was restarted in between) gets its reply the next time the owner
+  comes home.
 - You can pin several notes on the same door. The owner reads them oldest first.
 
 A note is also a rumor: the rumor tracker follows it once the owner has read it.
