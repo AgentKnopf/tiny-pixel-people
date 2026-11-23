@@ -261,10 +261,14 @@ One WebSocket at `/ws`, JSON text frames with a `type` field (`PROTOCOL_VERSION 
   `pet.command`, and with `debug: true` also `debug.inject` and `debug.jump`. Any command may carry
   a `requestId`, echoed in an `error` reply.
 
-HTTP endpoints: `GET /` (the built client), `GET /api/health`, `GET /api/state` (JSON snapshot),
-`GET /api/conversations?since=`, `GET /api/rumors`, `GET /api/catalog` (items and decorations for
-the UI), `GET /api/replay` (download `replay.jsonl`, 404 until the first save). Other `/api/*` paths
-return 404; every other path serves the client.
+HTTP endpoints: `GET /` (the built client), `GET /api/health`, `GET /api/snapshot` (full
+`WorldSnapshot`, as in `hello`), `GET /api/rumors`, `GET /api/catalog` (items and decorations for
+the UI), `GET /api/replay` (download `replay.jsonl`, 404 until the first save). The read-only
+observer API (`/api/state`, `/api/agents/{id}[/memories]`, `/api/conversations`, `/api/notes`,
+`/api/events`, `/api/stats`, `/api/screenshot`; `src/server/net/observer*.ts`) is described in
+[observer-api.md](observer-api.md); its town log lives in `src/server/sim/town-log.ts` and is saved
+with the world. Non-GET/HEAD requests to `/api/*` return 405, other `/api/*` paths 404; every
+other path serves the client.
 
 ## Persistence
 

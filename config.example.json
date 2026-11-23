@@ -72,5 +72,13 @@
     "randomWeather": false,
     "llmStrangers": false
   },
+  "observer": {
+    "enabled": true,
+    "host": "127.0.0.1",
+    "port": null,
+    "allowRemote": false,
+    "token": "",
+    "logSize": 5000
+  },
   "debug": false
 }
