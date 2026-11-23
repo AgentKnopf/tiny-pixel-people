@@ -20,6 +20,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:live": "tsx scripts/live-acceptance.ts",
+    "art": "tsx scripts/art/generate.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check": "npm run lint && npm run typecheck && npm test && npm run build"

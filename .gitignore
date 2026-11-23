@@ -6,5 +6,3 @@ config.json
 .env
 *.log
 .DS_Store
-# Reference video is large; keep it out of git unless git-lfs is set up.
-docs/reference/*.mp4

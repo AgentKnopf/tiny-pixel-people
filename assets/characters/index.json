@@ -1,0 +1,134 @@
+{
+  "frameWidth": 16,
+  "frameHeight": 24,
+  "anchor": {
+    "x": 8,
+    "y": 22
+  },
+  "framesPerDirection": 4,
+  "rows": [
+    "down",
+    "left",
+    "right",
+    "up"
+  ],
+  "walkFps": 8,
+  "idleFrame": 0,
+  "characters": [
+    {
+      "sprite": "characters/villager-01.png",
+      "description": "white chef hat, white apron over red shirt",
+      "suggestedRole": "baker"
+    },
+    {
+      "sprite": "characters/villager-02.png",
+      "description": "straw hat, green shirt, brown trousers",
+      "suggestedRole": "gardener / farmer"
+    },
+    {
+      "sprite": "characters/villager-03.png",
+      "description": "long blonde hair, pink dress",
+      "suggestedRole": "florist"
+    },
+    {
+      "sprite": "characters/villager-04.png",
+      "description": "grey beard, glasses, brown coat",
+      "suggestedRole": "retired teacher / librarian"
+    },
+    {
+      "sprite": "characters/villager-05.png",
+      "description": "dark bun, teal blouse",
+      "suggestedRole": "shopkeeper"
+    },
+    {
+      "sprite": "characters/villager-06.png",
+      "description": "red cap, yellow shirt, blue jeans",
+      "suggestedRole": "courier / postman"
+    },
+    {
+      "sprite": "characters/villager-07.png",
+      "description": "ginger ponytail, purple top",
+      "suggestedRole": "musician"
+    },
+    {
+      "sprite": "characters/villager-08.png",
+      "description": "spiky black hair, orange hoodie",
+      "suggestedRole": "student / kid"
+    },
+    {
+      "sprite": "characters/villager-09.png",
+      "description": "curly brown hair, blue shirt, beard",
+      "suggestedRole": "carpenter"
+    },
+    {
+      "sprite": "characters/villager-10.png",
+      "description": "white bob hair, lavender cardigan, glasses",
+      "suggestedRole": "grandmother / storyteller"
+    },
+    {
+      "sprite": "characters/villager-11.png",
+      "description": "green beanie, brown jacket",
+      "suggestedRole": "fisher / painter"
+    },
+    {
+      "sprite": "characters/villager-12.png",
+      "description": "long black hair, white shirt, red skirt",
+      "suggestedRole": "barista / café owner"
+    },
+    {
+      "sprite": "characters/villager-13.png",
+      "description": "blonde short hair, mint shirt",
+      "suggestedRole": "doctor / nurse"
+    },
+    {
+      "sprite": "characters/villager-14.png",
+      "description": "auburn bun, mustard dress, bow",
+      "suggestedRole": "tailor"
+    },
+    {
+      "sprite": "characters/villager-15.png",
+      "description": "curly black hair, red overalls",
+      "suggestedRole": "blacksmith / mechanic"
+    },
+    {
+      "sprite": "characters/villager-16.png",
+      "description": "silver ponytail, navy coat",
+      "suggestedRole": "mayor"
+    },
+    {
+      "sprite": "characters/villager-17.png",
+      "description": "brown bob, sky-blue dress",
+      "suggestedRole": "teacher"
+    },
+    {
+      "sprite": "characters/villager-18.png",
+      "description": "bald, big beard, green apron",
+      "suggestedRole": "grocer"
+    },
+    {
+      "sprite": "characters/villager-19.png",
+      "description": "pink spiky hair, black tee",
+      "suggestedRole": "artist"
+    },
+    {
+      "sprite": "characters/villager-20.png",
+      "description": "grey curly hair, olive vest",
+      "suggestedRole": "beekeeper"
+    },
+    {
+      "sprite": "characters/player.png",
+      "description": "player avatar: yellow shirt with star, dark hair",
+      "suggestedRole": "player"
+    },
+    {
+      "sprite": "characters/stranger.png",
+      "description": "hooded traveller in a purple cloak with a wizard hat",
+      "suggestedRole": "event: stranger"
+    },
+    {
+      "sprite": "characters/pet-pip.png",
+      "description": "orange cat \"Pip\", the player pet",
+      "suggestedRole": "pet"
+    }
+  ]
+}
