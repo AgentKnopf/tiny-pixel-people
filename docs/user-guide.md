@@ -504,8 +504,9 @@ Romance is light and wholesome: crushes, dates, holding hands, and couples. Only
 older) take part.
 
 1. **Crushes.** A villager who really likes someone (affinity 6 or more, `romance.crushAffinity`)
-   and has talked with them at least twice in the last three days may develop a crush overnight.
-   Everyone has at most one crush.
+   and has talked with them at least twice in the last three days may develop a crush overnight:
+   a 30 % chance each night, and certain on the third night in a row that this still holds. A night
+   when it doesn't hold starts the count again. Everyone has at most one crush.
 2. **Asking out.** After a chat with its crush, a villager may ask it on a date: to the zoo, the
    Burger Joint, a ride, an ice cream truck, the park, the forest grove or the lake. The other one
    decides, mostly by how much it likes the asker.

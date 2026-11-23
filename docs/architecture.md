@@ -245,7 +245,8 @@ departing → away` around each time in `train.arrivals`. `TrainState` carries t
   owner comes home; witnesses within 6 tiles get an observation that spreads as gossip). The hotel
   and post office are public and cause no reaction.
 - **Romance** (`cognition/romance.ts`, stored by the engine as `Romance` records). Crushes and
-  couples are decided by rules at night; date invitations and answers use `date.ask` and
+  couples are decided by rules at night (a crush has a 30 % chance per eligible night and is certain
+  on the third eligible night in a row; the streak is saved with the mind state); date invitations and answers use `date.ask` and
   `date.decide`. A date is a `VillageEvent` of kind `date` that uses the normal event flow but is
   private. Witnesses within 8 tiles get an observation, so dates become gossip. Laude and Franzi
   start with a seeded shy crush from `data/romance.json` with its own slower rules.

@@ -82,7 +82,7 @@ npm run check            # lint, typecheck, tests and build
 | `visitors.test.ts`          | AC12: trains, visitor counts, check-in, conversations, departure; fallback profiles.                         |
 | `visitor-gossip.test.ts`    | AC13: a fact told to a visitor reaches residents.                                                            |
 | `interiors.test.ts`         | AC14: visits, greetings, snooping, witnesses, exit, public interiors, fallback greeting, door notes.         |
-| `romance.test.ts`           | AC15: crush, date invitation and answer, the date, gossip about it, couple, eligibility.                     |
+| `romance.test.ts`           | AC15: a crush within 3 nights, date invitation and answer, the date, gossip about it, couple, eligibility.   |
 | `slow-model-v2.test.ts`     | AC16: 30 s per call; new tasks fall back or are skipped as documented.                                       |
 | `save-migration.test.ts`    | AC17: a v1 save fixture loads and runs; Laude and Franzi move in; v2 round trip.                             |
 | `perf-v2.test.ts`           | AC18: sim step time, A\* and message sizes.                                                                  |
