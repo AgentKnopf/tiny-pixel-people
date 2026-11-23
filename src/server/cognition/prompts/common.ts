@@ -32,9 +32,23 @@ export function memoryLines(memories: readonly Memory[], numbered = false, max =
     .join('\n');
 }
 
-export function locationLines(locations: readonly Location[], homeId: string, max = 24): string {
-  const list = locations.filter((l) => l.kind !== 'house' || l.id === homeId).slice(0, max);
-  return list.map((l) => `${l.id} (${l.id === homeId ? 'your home' : l.name})`).join(', ');
+/** Places nobody plans for: the butcher is off-screen, the hotel is only the visitors' home. */
+const UNPLANNED = new Set(['butcher', 'hotel']);
+
+/**
+ * The places a villager may use in a plan. Zoo enclosures are listed as one compact group and
+ * opening hours are shown, so the bigger v2 map stays within a small prompt.
+ */
+export function locationLines(locations: readonly Location[], homeId: string, max = 32): string {
+  const usable = locations.filter((l) => l.id === homeId || (l.kind !== 'house' && !UNPLANNED.has(l.id)));
+  const enclosures = usable.filter((l) => l.kind === 'zoo' && l.species);
+  const list = usable.filter((l) => !enclosures.includes(l)).slice(0, max);
+  const parts = list.map((l) => {
+    const name = l.id === homeId ? 'your home' : l.name;
+    return `${l.id} (${name}${l.hours ? `, open ${l.hours.open}-${l.hours.close}` : ''})`;
+  });
+  if (enclosures.length) parts.push(`zoo animals to watch: ${enclosures.map((l) => l.id).join(' ')}`);
+  return parts.join(', ');
 }
 
 export function needsLine(needs: Needs | undefined): string {

@@ -92,7 +92,10 @@ describe.skipIf(!ready(...BAG))(`§14.1 backpack and gifts${waitingFor(...BAG)}`
 
   it('gifts a picked-up item to a villager', async () => {
     // No respawn, so walking to the villager cannot pick up a second item of the same kind.
-    w = await createTestWorld({ startAt: '08:00', config: { economy: { itemRespawnGameMinutes: 1_000_000 } } });
+    w = await createTestWorld({
+      startAt: '08:00',
+      config: { economy: { itemRespawnGameMinutes: 1_000_000 } },
+    });
     const { item } = await pickUpFirst(w);
     await w.advance(60);
     const v = w.state().villagers.find(awake)!;

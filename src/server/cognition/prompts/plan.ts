@@ -22,6 +22,8 @@ export interface PlanPromptInput {
   needs?: Needs;
   weather?: Weather;
   allowProposal: boolean;
+  /** Extra context lines (visitor stay, partner, shy crush). */
+  context?: readonly string[];
 }
 
 const EVENT_HINT =
@@ -33,6 +35,7 @@ export function planDayPrompt(i: PlanPromptInput): { system: string; user: strin
   );
   const user = lines(
     `Plan your day ${i.day + 1}. You wake at ${formatClock(i.window.wake)} and go to bed at ${formatClock(i.window.sleep)}.`,
+    ...(i.context ?? []),
     i.yesterday && `Yesterday: ${i.yesterday.slice(0, 200)}`,
     `On your mind:\n${memoryLines(i.memories, false, 5)}`,
     ev.length > 0 && `Events you will attend (keep them in the plan):\n${ev.join('\n')}`,
