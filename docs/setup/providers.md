@@ -29,13 +29,20 @@ OPENAI_API_KEY=sk-...
 
 How the key is found, first match wins:
 
-1. `TPP_LLM_API_KEY` (environment) — overrides `llm.apiKey`.
+1. `TPP_LLM_API_KEY` (environment), which overrides `llm.apiKey`.
 2. `llm.apiKey` (a literal key in the config file).
 3. The environment variable named by `llm.apiKeyEnv`.
+4. The provider's usual variable, when `apiKey` and `apiKeyEnv` are both empty:
+   `ANTHROPIC_API_KEY` for `anthropic`, `GEMINI_API_KEY` or else `GOOGLE_API_KEY` for `gemini`,
+   and `OPENAI_API_KEY` for `openai`, but only when `baseUrl` is `api.openai.com`. Your OpenAI key
+   is never sent to another OpenAI-compatible server (OpenRouter, Groq, a local server) by accident;
+   for those, name the variable in `apiKeyEnv`.
 
-The same applies to embeddings with `TPP_EMBED_API_KEY`, `embeddings.apiKey` and
-`embeddings.apiKeyEnv`. Keys are never sent to the browser and never written to logs or to the
-optional prompt log (`llm.logFile`).
+Embeddings look up `TPP_EMBED_API_KEY`, `embeddings.apiKey` and `embeddings.apiKeyEnv` first.
+If none is set and the embeddings use the same provider and endpoint as the chat model, they reuse
+the chat key; otherwise the provider's usual variable from step 4 applies. Ollama needs no key.
+Keys are never sent to the browser and never written to logs or to the optional prompt log
+(`llm.logFile`).
 
 ## Examples
 
@@ -52,14 +59,13 @@ Embeddings default to Ollama's `nomic-embed-text`. See [Ollama setup](ollama.md)
 ### OpenAI
 
 ```json
-{
-  "llm": { "provider": "openai", "model": "gpt-4o-mini", "apiKeyEnv": "OPENAI_API_KEY" },
-  "embeddings": { "model": "text-embedding-3-small", "apiKeyEnv": "OPENAI_API_KEY" }
-}
+{ "llm": { "provider": "openai", "model": "gpt-4o-mini" } }
 ```
 
-`embeddings.provider` is `auto`, which means "the same provider as `llm`". Set the embedding model
-explicitly, because the default `nomic-embed-text` is an Ollama model name.
+With `OPENAI_API_KEY` set in your shell or `.env`, that is all you need. `embeddings.provider` is
+`auto`, which means "the same provider as `llm`". When `embeddings.model` is left at its default
+(`nomic-embed-text`, an Ollama name) and the endpoint is `api.openai.com`, the game uses
+`text-embedding-3-small` instead. Set `embeddings.model` to pick another one.
 
 ### LM Studio
 
@@ -82,9 +88,13 @@ is the identifier LM Studio shows for the loaded model.
 }
 ```
 
-No key is needed for local servers. Some local servers reject OpenAI's JSON mode
-(`response_format`); `jsonMode: false` leaves it out and the game parses JSON from plain text
-instead.
+No key is needed for local servers. For a server other than `api.openai.com`, set
+`embeddings.model` to an embedding model that server has loaded; the default `nomic-embed-text` is
+sent unchanged. Some local servers reject OpenAI's JSON mode (`response_format`). If a server
+answers HTTP 400 and the error names `response_format`, the game retries once without it and keeps
+it off for the rest of the run; `jsonMode: false` turns it off from the start. In both cases the
+game parses JSON from plain text. The same automatic adjustment happens when a server rejects
+`max_tokens` (renamed to `max_completion_tokens`) or `temperature` (left out).
 
 ### vLLM
 
@@ -154,19 +164,21 @@ key via `apiKeyEnv`. For example Groq: `"baseUrl": "https://api.groq.com/openai/
 Use a model id from Anthropic's model list; small, fast models are a good fit because the game
 makes many short calls. Anthropic has no embeddings API: with `embeddings.provider: "auto"` the game
 switches embeddings off and uses keyword recall. The example above takes embeddings from a local
-Ollama instead. `llm.maxTokens` is sent as Anthropic's required `max_tokens`.
+Ollama instead. `llm.maxTokens` is sent as Anthropic's required `max_tokens`, and `llm.temperature`
+is capped at 1, the highest value Anthropic accepts. If `apiKey` and `apiKeyEnv` are empty, the key
+comes from `ANTHROPIC_API_KEY`, so `apiKeyEnv` above is optional.
 
 ### Google Gemini
 
 ```json
-{
-  "llm": { "provider": "gemini", "model": "gemini-2.5-flash", "apiKeyEnv": "GEMINI_API_KEY" },
-  "embeddings": { "model": "text-embedding-004", "apiKeyEnv": "GEMINI_API_KEY" }
-}
+{ "llm": { "provider": "gemini", "model": "gemini-2.5-flash" } }
 ```
 
-Get a key at <https://aistudio.google.com/apikey>. Use model ids from Google's model list; set the
-embedding model explicitly, because the default `nomic-embed-text` is an Ollama name.
+Get a key at <https://aistudio.google.com/apikey> and set it as `GEMINI_API_KEY` (or
+`GOOGLE_API_KEY`), or name another variable in `llm.apiKeyEnv`. Use model ids from Google's model
+list; `models/gemini-2.5-flash` works too. Embeddings come from Gemini as well: when
+`embeddings.model` is left at the Ollama default `nomic-embed-text`, the game uses
+`gemini-embedding-001`.
 
 ### Mock (no model)
 
@@ -201,6 +213,7 @@ and memories without a matching embedding fall back to keyword recall.
 
 A game day with 10 villagers makes roughly 200 short calls (a few hundred tokens each), plus your
 own chats. At 8× speed that's a day every couple of minutes. With a paid API, watch the call
-counter on the stats card. Rate-limit errors (HTTP 429) are retried with backoff, and villagers
-fall back to simple behaviour while the model is unavailable. Lower `llm.concurrency` if you hit
+counter on the stats card. Rate-limit errors (HTTP 429), server errors (5xx), timeouts and network
+errors are retried up to twice with backoff, honouring the server's `retry-after` (capped at 30
+seconds). Villagers fall back to simple behaviour while the model is unavailable. Lower `llm.concurrency` if you hit
 limits often.

@@ -154,13 +154,26 @@ _Generative Agents_ (Park et al., 2023), scaled down to small local models:
 - Every call names a **task** (`plan.day`, `convo.turn`, `note.reply`, `player.reply`, …). The
   **LlmQueue** runs at most `llm.concurrency` calls at once, ordered by priority (the player's
   replies first, then conversation turns, note replies, decisions, plans, summaries, reflections,
-  importance ratings and day summaries last). Duplicate jobs are coalesced, stale ones dropped.
-  Retryable errors (429, 5xx, network) are retried twice with backoff, honouring `retry-after`.
+  importance ratings and day summaries last). Duplicate jobs are coalesced, and jobs whose
+  `expiresAt` game time has passed before they start are dropped. Retryable errors (408, 409, 429,
+  5xx, network, timeout) are retried twice with jittered exponential backoff from 500 ms, honouring
+  `retry-after` up to 30 s. Errors are `LlmError`s of kind `network`, `http`, `timeout`, `parse`,
+  `config`, `expired` (dropped before it started) or `aborted` (cancelled by the caller).
+  Embeddings run in their own lane (batches of up to 16 texts, `embeddings.concurrency` in
+  parallel); a permanent embeddings error (unknown model, bad key) switches retrieval to keywords
+  for the rest of the run. With `llm.logFile` set, each call is appended as one JSONL line.
+- Missing API keys fall back to the conventional variables (`ANTHROPIC_API_KEY`,
+  `GEMINI_API_KEY`/`GOOGLE_API_KEY`, `OPENAI_API_KEY` only for `api.openai.com`). An
+  `embeddings.model` left at `nomic-embed-text` becomes `gemini-embedding-001` for Gemini and
+  `text-embedding-3-small` for `api.openai.com`.
+- The OpenAI-compatible provider adapts once to servers that reject `response_format`,
+  `max_tokens` (switches to `max_completion_tokens`) or `temperature`, and remembers it.
 - Structured output is parsed tolerantly (code fences stripped, first JSON object taken),
   validated with zod, retried once with a repair prompt, and otherwise replaced by the caller's
   fallback.
-- At startup the server runs a health check (for Ollama: is the model pulled?). A failure doesn't
-  stop the server; villagers use fallbacks and the UI shows the model as offline.
+- At startup the server runs a health check (Ollama: `GET /api/tags` and is the model pulled;
+  OpenAI-compatible: `GET /models`; Anthropic and Gemini: look up the model). A failure doesn't
+  stop the server; villagers use fallbacks and the UI shows the model as unreachable.
 - With 10 villagers a game day costs roughly 200 calls plus player chats.
 
 ## Protocol

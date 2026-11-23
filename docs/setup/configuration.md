@@ -27,13 +27,13 @@ Invalid configuration in /path/config.json:
 | `baseUrl`     | `""`           | API endpoint. Empty means the provider's default: `http://127.0.0.1:11434`, `https://api.openai.com/v1`, `https://api.anthropic.com`, `https://generativelanguage.googleapis.com/v1beta`. OpenAI-compatible URLs end in `/v1`. |
 | `model`       | `"qwen2.5:7b"` | Model name as the provider knows it. Must not be empty.                                                                                                                                                                        |
 | `apiKey`      | `""`           | Literal API key. Prefer `apiKeyEnv`.                                                                                                                                                                                           |
-| `apiKeyEnv`   | `""`           | Name of an environment variable holding the key, e.g. `"OPENAI_API_KEY"`. Used when `apiKey` is empty.                                                                                                                         |
+| `apiKeyEnv`   | `""`           | Name of an environment variable holding the key, e.g. `"OPENROUTER_API_KEY"`. Used when `apiKey` is empty. If both are empty, the provider's usual variable is used (see [API keys](providers.md#api-keys)).                   |
 | `temperature` | `0.7`          | Sampling temperature, 0–2.                                                                                                                                                                                                     |
 | `maxTokens`   | `512`          | Maximum tokens per reply.                                                                                                                                                                                                      |
-| `timeoutMs`   | `120000`       | Timeout per call in milliseconds.                                                                                                                                                                                              |
+| `timeoutMs`   | `120000`       | Timeout per call attempt in milliseconds. The startup health check uses at most 10 seconds.                                                                                                                                    |
 | `concurrency` | `2`            | How many model calls run at once, 1–64.                                                                                                                                                                                        |
-| `jsonMode`    | `true`         | Ask the provider for JSON output where supported. Turn off for OpenAI-compatible servers that reject `response_format`.                                                                                                        |
-| `logFile`     | `""`           | If set, every prompt and reply is appended to this JSONL file (for debugging). API keys are never written.                                                                                                                     |
+| `jsonMode`    | `true`         | Use the provider's JSON output mode (`format` for Ollama, `response_format` for OpenAI-compatible, `responseMimeType` for Gemini). Anthropic has none. Turn off for servers that reject it.                                    |
+| `logFile`     | `""`           | If set, every prompt and reply (or error) is appended to this JSONL file, one line per call with time, task, model and latency. For debugging; API keys are never written.                                                     |
 
 ## `embeddings`: memory recall
 
@@ -41,9 +41,9 @@ Invalid configuration in /path/config.json:
 | ------------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | `provider`    | `"auto"`             | `auto` (same as `llm.provider`; `none` when that is `anthropic`), `ollama`, `openai`, `gemini`, `mock` or `none` (keyword recall only). |
 | `baseUrl`     | `""`                 | Endpoint for embeddings. Empty means the embeddings provider's default.                                                                 |
-| `model`       | `"nomic-embed-text"` | Embedding model name. Change it for OpenAI or Gemini (for example `text-embedding-3-small`, `text-embedding-004`).                      |
+| `model`       | `"nomic-embed-text"` | Embedding model name. Left at this default, Gemini uses `gemini-embedding-001` and `api.openai.com` uses `text-embedding-3-small`.      |
 | `apiKey`      | `""`                 | Literal key for embeddings.                                                                                                             |
-| `apiKeyEnv`   | `""`                 | Environment variable holding the embeddings key.                                                                                        |
+| `apiKeyEnv`   | `""`                 | Environment variable holding the embeddings key. If no key is set, the chat key or the provider's usual variable is used.               |
 | `concurrency` | `1`                  | Parallel embedding requests, 1–16.                                                                                                      |
 
 ## `sim`: the simulation
@@ -149,8 +149,9 @@ Invalid configuration in /path/config.json:
 | `TPP_DEBUG`              | `debug` (`1`, `true` or `yes` turn it on) |
 
 Empty variables are ignored. Any other variable can hold an API key and be referenced with
-`llm.apiKeyEnv` / `embeddings.apiKeyEnv`; the usual names are `OPENAI_API_KEY`,
-`ANTHROPIC_API_KEY`, `GEMINI_API_KEY` and `OPENROUTER_API_KEY`.
+`llm.apiKeyEnv` / `embeddings.apiKeyEnv`, for example `OPENROUTER_API_KEY`. Without
+`apiKey`/`apiKeyEnv`, the game reads `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` / `GOOGLE_API_KEY` and
+`OPENAI_API_KEY` (the last one only for `api.openai.com`) on its own.
 
 ## Data files
 

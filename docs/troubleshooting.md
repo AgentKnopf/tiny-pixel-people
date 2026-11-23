@@ -42,35 +42,46 @@ restarting the server.
 runs, but villagers use simple default plans and don't talk. Check, depending on the
 provider:
 
-- Ollama: is it running? `curl http://127.0.0.1:11434/api/tags` must answer. Is the model pulled?
-  `ollama list` must show `llm.model` exactly (including the tag, e.g. `qwen2.5:7b`); otherwise
-  `ollama pull <model>`.
+- Ollama: is it running? The log says `… cannot reach server (ECONNREFUSED). Is Ollama running?
+Start it with: ollama serve`, and `curl http://127.0.0.1:11434/api/tags` must answer. Is the
+  model pulled? The log says `model qwen2.5:7b not pulled; run: ollama pull qwen2.5:7b`; run that
+  command. `ollama list` must show `llm.model` (a name without a tag means `:latest`).
 - OpenAI-compatible: is `llm.baseUrl` right and does it end in `/v1`? Is the local server running
   with a model loaded? Is the model name exactly what the server expects?
 - Hosted APIs: is the key set? If you use `apiKeyEnv`, the variable must be set in the shell that
-  runs `npm start` or in `.env`. A 401/403 means a wrong key; a 404 usually a wrong model name.
+  runs `npm start` or in `.env`. Without `apiKeyEnv`, the game reads `ANTHROPIC_API_KEY`,
+  `GEMINI_API_KEY`/`GOOGLE_API_KEY`, or `OPENAI_API_KEY` (only for `api.openai.com`). A missing
+  key shows as `anthropic: no API key; set llm.apiKeyEnv …`. A 401/403 means a wrong key; a 404
+  usually a wrong model name (`unknown model …; check llm.model`).
 
 Restart the server after fixing it.
 
-**Ollama says the model isn't found, but `ollama list` shows it.**
-The names must match exactly. `qwen2.5` and `qwen2.5:7b` can be different models; use the full
-name from `ollama list`.
+**Ollama says the model isn't pulled, but `ollama list` shows it.**
+The names must match. `qwen2.5` means `qwen2.5:latest`, which can be a different model from
+`qwen2.5:7b`; use the full name from `ollama list`.
+
+**The log says `(not in the server model list; check llm.model)`.**
+An OpenAI-compatible server answered, but doesn't list `llm.model`. Local servers often list the
+loaded model under another name; if villagers talk, you can ignore it. Otherwise copy the exact
+name from the server.
 
 **HTTP 400 errors with an OpenAI-compatible server (LM Studio, llama.cpp, …).**
-Some servers reject JSON mode. Set `"llm": { "jsonMode": false }`.
+Some servers reject JSON mode. The game drops `response_format` by itself when the error names it;
+if the errors continue, set `"llm": { "jsonMode": false }`.
 
-**Errors from embeddings, e.g. `model "nomic-embed-text" not found`.**
-Pull it (`ollama pull nomic-embed-text`) or, for other providers, set `embeddings.model` to a model
-that provider offers. To switch embeddings off, set `"embeddings": { "provider": "none" }`;
-villagers then recall memories by keywords.
+**The log says `embeddings disabled (…); memory retrieval falls back to keywords`.**
+The embedding model can't be used, for example because `nomic-embed-text` isn't pulled. The game
+keeps running with keyword recall. Pull it (`ollama pull nomic-embed-text`) or, for other
+providers, set `embeddings.model` to a model that provider offers, then restart. To switch
+embeddings off on purpose, set `"embeddings": { "provider": "none" }`.
 
 **Rate limits (HTTP 429) from a hosted API.**
-Calls are retried with backoff. If it happens a lot, lower `llm.concurrency`, use a longer day
+Calls are retried up to twice with backoff, honouring `retry-after`. If it happens a lot, lower `llm.concurrency`, use a longer day
 (`sim.dayLengthMinutes`) or a lower speed.
 
 **Timeouts.**
-A call that takes longer than `llm.timeoutMs` (2 minutes by default) is cancelled and the villager
-uses its fallback. Large models on slow hardware may need more time, but usually a smaller model is
+A call that takes longer than `llm.timeoutMs` (2 minutes by default) is cancelled and retried up to
+twice; then the villager uses its fallback. Large models on slow hardware may need more time, but usually a smaller model is
 the better fix.
 
 ## Villagers
