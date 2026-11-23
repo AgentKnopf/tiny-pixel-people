@@ -244,6 +244,37 @@ describe('engine v2 wiring', () => {
     expect(back.snapshot().romances).toEqual(engine.snapshot().romances);
   });
 
+  it('ends the romances of a villager who leaves town, even when the partner left first', () => {
+    const { engine, messages } = createSimTestWorld({ startAt: '09:00' });
+    const base = loadProfiles(engine.map)[0]!;
+    for (const id of ['visitor_a', 'visitor_b'])
+      expect(engine.addVillager({ ...base, id, name: id, transient: true, visitor: true })).toBe(true);
+    const romance = (id: string, pair: [string, string]): Romance => ({
+      id,
+      pair,
+      stage: 'dating',
+      since: engine.now(),
+      crushFrom: [...pair],
+      dates: [],
+      updatedAt: engine.now(),
+    });
+    engine.upsertRomance(romance('r-vv', ['visitor_a', 'visitor_b']));
+    engine.upsertRomance(romance('r-vm', ['mia', 'visitor_b']));
+    engine.upsertRomance(romance('r-mt', ['mia', 'tom']));
+    engine.removeVillager('visitor_a');
+    const stage = (id: string) => engine.snapshot().romances!.find((r) => r.id === id)?.stage;
+    expect(stage('r-vv')).toBe('ended');
+    expect(stage('r-vm')).toBe('dating');
+    engine.removeVillager('visitor_b');
+    expect(stage('r-vm')).toBe('ended');
+    expect(stage('r-mt')).toBe('dating');
+    expect(
+      messages
+        .filter((m) => m.type === 'romance.updated' && m.romance.stage === 'ended')
+        .map((m) => (m.type === 'romance.updated' ? m.romance.id : '')),
+    ).toEqual(['r-vv', 'r-vm']);
+  });
+
   it('has no seed romance without Laude and Franzi', () => {
     const { engine } = createSimTestWorld({ config: { sim: { villagers: 10 } } });
     expect(engine.snapshot().romances).toEqual([]);
@@ -361,6 +392,43 @@ describe('villagers on rides', () => {
   });
 });
 
+/** Wants the rollercoaster until it boards, then wants to be somewhere else straight away. */
+class RideQuitter extends StubMind {
+  override update(view: WorldView): Intent {
+    const m = view.now % 1440;
+    if (view.profile.id !== 'mia' || m < 600 || m >= 720) return super.update(view);
+    if (/^riding the/i.test(view.self.activity.text))
+      return { type: 'goto', locationId: 'square', activity: 'strolling', emoji: '🚶' };
+    return { type: 'goto', locationId: 'rollercoaster', activity: 'riding the rollercoaster', emoji: '🎢' };
+  }
+}
+
+describe('a boarded rider', () => {
+  it('stays on for the whole cycle even when the mind wants to leave, and gets the fun', async () => {
+    const { engine } = createSimTestWorld({
+      startAt: '09:40',
+      createMind: (p, d) => new RideQuitter(p, d),
+      config: { needs: { enabled: false } },
+    });
+    engine.villager('mia')!.needs.fun = 10;
+    let boardedAt: number | null = null;
+    let leftAt: number | null = null;
+    engine.onMessage((m) => {
+      if (m.type !== 'tick') return;
+      const f = m.villagers.find((v) => v.id === 'mia');
+      if (!f) return;
+      if (boardedAt === null && /^riding the/i.test(f.activity)) boardedAt = engine.now();
+      else if (boardedAt !== null && leftAt === null && !/^riding the/i.test(f.activity))
+        leftAt = engine.now();
+    });
+    await engine.advance(120);
+    expect(boardedAt, 'boarded').not.toBeNull();
+    expect(leftAt, 'stepped off').not.toBeNull();
+    expect(leftAt! - boardedAt!).toBeGreaterThanOrEqual(5);
+    expect(engine.villager('mia')!.needs.fun).toBeGreaterThanOrEqual(10 + 35);
+  });
+});
+
 class DateMind extends StubMind {
   override update(view: WorldView): Intent {
     const m = view.now % 1440;
@@ -451,7 +519,7 @@ class CrowdMind extends StubMind {
 }
 
 describe('A* budget per step', () => {
-  it('spreads a crowd leaving at once over at most PATH_MAX_DEFERRALS+1 steps and nobody starves', async () => {
+  it('spreads a crowd leaving at once over at most PATH_MAX_DEFERRALS+1 steps, and all arrive', async () => {
     const base = loadProfiles(createSimTestWorld().engine.map);
     const profiles = [...base];
     for (let i = 0; profiles.length < MAX_VILLAGERS; i++) {
@@ -482,6 +550,46 @@ describe('A* budget per step', () => {
       .snapshot()
       .villagers.filter((v) => v.locationId !== 'forest_lake' && !v.conversationId);
     expect(away.map((v) => `${v.id}@${v.locationId}:${v.activity.text}`)).toEqual([]);
+    engine.stop();
+  });
+});
+
+class ChurnMind extends StubMind {
+  override update(view: WorldView): Intent {
+    const m = Math.floor(view.now % 1440);
+    if (m >= 600 && m < 720)
+      return { type: 'goto', locationId: m % 2 ? 'square' : 'park', activity: 'pacing', emoji: '🚶' };
+    return super.update(view);
+  }
+}
+
+describe('A* budget starvation', () => {
+  it('a villager behind more uncached searches than the budget every step still gets one', async () => {
+    const base = loadProfiles(createSimTestWorld().engine.map);
+    const profiles = [...base];
+    for (let i = 0; profiles.length < MAX_VILLAGERS; i++) {
+      const p = base[i % base.length]!;
+      profiles.push({ ...p, id: `${p.id}_x${i}`, name: `${p.name} ${i + 2}`, initialRelationships: {} });
+    }
+    const victim = profiles.at(-1)!.id;
+    const { engine } = createSimTestWorld({
+      startAt: '09:59',
+      profiles,
+      // Everyone ahead of the victim changes destination every minute: a fresh search each step.
+      createMind: (p, d) => (p.id === victim ? new CrowdMind(p, d) : new ChurnMind(p, d)),
+      config: { needs: { enabled: false }, sim: { villagers: MAX_VILLAGERS } },
+    });
+    let started: number | null = null;
+    engine.onMessage((m) => {
+      if (m.type !== 'tick' || started !== null) return;
+      const f = m.villagers.find((v) => v.id === victim);
+      if (f && /walking to the forest lake|feeding the ducks/i.test(f.activity)) started = engine.now();
+    });
+    await engine.advance(10, { step: 1 });
+    expect(started, 'victim started walking').not.toBeNull();
+    expect(started!).toBeLessThanOrEqual(at(0, '10:02') + 1e-6);
+    await engine.advance(100, { step: 1 });
+    expect(engine.villager(victim)!.locationId).toBe('forest_lake');
     engine.stop();
   });
 });
