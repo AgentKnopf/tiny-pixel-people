@@ -6,6 +6,7 @@ import type {
   LocationId,
   PlanBlock,
   Point,
+  Romance,
   VillageEvent,
   VillagerId,
 } from '../../shared/types.ts';
@@ -44,6 +45,8 @@ export interface SimEvents {
   ride: RideEvent;
   /** A villager ate at a food venue; `veggie_burger` when the burgers were sold out. */
   'food.eaten': { villagerId: VillagerId; venueId: LocationId; itemId: string };
+  /** A romance record was created or changed (MindWorld.upsertRomance). */
+  'romance.updated': { romance: Romance };
 }
 
 export type SimEventName = keyof SimEvents;

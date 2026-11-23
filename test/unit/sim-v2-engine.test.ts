@@ -15,7 +15,7 @@ import { RIDE_MAX_WAIT_MINUTES, Rides } from '../../src/server/sim/rides.ts';
 import { Train } from '../../src/server/sim/train.ts';
 import type { TickMessage, ToastMsg, TrainUpdatedMsg } from '../../src/shared/protocol.ts';
 import { at } from '../../src/shared/time.ts';
-import type { Location } from '../../src/shared/types.ts';
+import type { Location, Romance } from '../../src/shared/types.ts';
 import { repoPath } from '../helpers/features.ts';
 import { createSimTestWorld, testConfig } from '../helpers/sim.ts';
 
@@ -196,6 +196,52 @@ describe('engine v2 wiring', () => {
     expect(back.toSaveData().animals).toEqual(save.animals);
   });
 
+  it('seeds the shy Laude/Franzi crush, stores romance updates from minds and saves them', () => {
+    let world: { upsertRomance?: (r: Romance) => void; romances?: () => readonly Romance[] } = {};
+    const { engine, messages } = createSimTestWorld({
+      startAt: '09:00',
+      createMind: (profile, deps) => {
+        if (profile.id === 'mia') world = deps.world;
+        return createStubMind(profile, deps);
+      },
+    });
+    const seed = engine.snapshot().romances!.find((r) => r.pair.join() === 'franzi,laude')!;
+    expect(seed).toMatchObject({ stage: 'crush', shy: true, dates: [] });
+    expect([...seed.crushFrom].sort()).toEqual(['franzi', 'laude']);
+    expect(engine.view('laude')!.romances).toEqual([seed]);
+    expect(engine.view('mia')!.romances).toEqual([]);
+
+    world.upsertRomance!({
+      id: 'r1',
+      pair: ['tom', 'mia'],
+      stage: 'crush',
+      since: engine.now(),
+      crushFrom: ['mia'],
+      dates: [],
+      updatedAt: engine.now(),
+    });
+    expect(world.romances!().map((r) => r.pair.join())).toContain('mia,tom');
+    expect(messages.some((m) => m.type === 'romance.updated' && m.romance.id === 'r1')).toBe(true);
+    world.upsertRomance!({ ...world.romances!().find((r) => r.id === 'r1')!, stage: 'dating' });
+    expect(engine.snapshot().romances!.filter((r) => r.id === 'r1')).toHaveLength(1);
+    expect(engine.handleCommand({ type: 'inspect', villagerId: 'mia' })[0]).toMatchObject({
+      romance: { id: 'r1', stage: 'dating' },
+    });
+
+    const back = createSimEngine({
+      config: engine.config,
+      providers: { chat: new MockChatProvider(), embeddings: null },
+      createMind: createStubMind,
+      restore: structuredClone(engine.toSaveData()),
+    });
+    expect(back.snapshot().romances).toEqual(engine.snapshot().romances);
+  });
+
+  it('has no seed romance without Laude and Franzi', () => {
+    const { engine } = createSimTestWorld({ config: { sim: { villagers: 10 } } });
+    expect(engine.snapshot().romances).toEqual([]);
+  });
+
   it('moves Laude and Franzi into a v1 save and seeds the farm and zoo', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'tpp-movein-'));
     cpSync(repoPath('test/fixtures/save-v1'), join(dir, 'save-v1'), { recursive: true });
@@ -213,6 +259,7 @@ describe('engine v2 wiring', () => {
     expect(engine.profiles.map((p) => p.id)).toEqual(expect.arrayContaining(['laude', 'franzi']));
     expect(engine.villager('laude')!.locationId).toBe('house_laude');
     expect(engine.snapshot().animals!.filter((a) => a.group === 'farm').length).toBeGreaterThan(0);
+    expect(engine.snapshot().romances!.map((r) => r.pair.join())).toEqual(['franzi,laude']);
     await engine.advance(1);
     expect(toasts).toContainEqual({
       type: 'toast',

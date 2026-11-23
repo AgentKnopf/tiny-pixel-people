@@ -1,12 +1,41 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import type { Location, LocationId, Point, VillagerProfile, WorldMap } from '../../shared/types.ts';
+import type {
+  Location,
+  LocationId,
+  Point,
+  RomanceStage,
+  VillagerId,
+  VillagerProfile,
+  WorldMap,
+} from '../../shared/types.ts';
 import { isWalkable } from './pathfinding.ts';
 
 export const DEFAULT_MAP_PATH = fileURLToPath(new URL('../../../data/map/village.json', import.meta.url));
 export const DEFAULT_VILLAGERS_PATH = fileURLToPath(new URL('../../../data/villagers.json', import.meta.url));
 
+export const DEFAULT_ROMANCE_PATH = fileURLToPath(new URL('../../../data/romance.json', import.meta.url));
+
 export class WorldDataError extends Error {}
+
+/** A pre-seeded romance (data/romance.json, spec v2 §7.1). */
+export interface RomanceSeed {
+  pair: [VillagerId, VillagerId];
+  stage: RomanceStage;
+  crushFrom: VillagerId[];
+  shy?: boolean;
+}
+
+export function loadRomanceSeeds(path: string = DEFAULT_ROMANCE_PATH): RomanceSeed[] {
+  const seeds = JSON.parse(readFileSync(path, 'utf8')) as RomanceSeed[];
+  for (const s of seeds) {
+    if (!Array.isArray(s.pair) || s.pair.length !== 2 || s.pair[0] === s.pair[1])
+      throw new WorldDataError(`Invalid romance seed pair ${JSON.stringify(s.pair)}`);
+    if (!s.crushFrom.every((id) => s.pair.includes(id)))
+      throw new WorldDataError(`Romance seed ${s.pair.join('/')}: crushFrom must be in the pair`);
+  }
+  return seeds;
+}
 
 /** Load and sanity-check a WorldMap JSON file. */
 export function loadMap(path: string = DEFAULT_MAP_PATH): WorldMap {

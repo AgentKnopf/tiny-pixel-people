@@ -18,6 +18,7 @@ import {
   type Memory,
   type Notice,
   type PlayerState,
+  type Romance,
   type Provenance,
   type Point,
   type VillageEvent,
@@ -75,6 +76,8 @@ import {
   isAt,
   loadMap,
   loadProfiles,
+  loadRomanceSeeds,
+  type RomanceSeed,
   locationAt,
   locationById,
   nearestWalkable,
@@ -200,6 +203,15 @@ export interface SimHost {
 
 const clampAffinity = (v: number) => Math.max(-10, Math.min(10, v));
 
+/** Uniform in [0, 1) from three integers (a mulberry32 round over a mixed key). */
+function hashUnit(seed: number, a: number, b: number): number {
+  let t = (seed ^ Math.imul(a, 0x9e3779b1) ^ Math.imul(b + 1, 0x85ebca77)) >>> 0;
+  t = (t + 0x6d2b79f5) >>> 0;
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+
 function visitorField(info: VisitorInfo | null): { visitor?: VisitorInfo } {
   return info ? { visitor: structuredClone(info) } : {};
 }
@@ -266,6 +278,8 @@ export class Engine implements SimEngine, SimHost {
   private wakeHold: { day: number; startedMs: number; ready: number; rounds: number } | null = null;
   private playerNearCrow = false;
   private deferred: ServerMessage[] = [];
+  private romanceList: Romance[] = [];
+  private worldDraws = { minute: -1, n: 0 };
 
   constructor(opts: SimEngineOptions) {
     const cfg = opts.config;
@@ -356,6 +370,8 @@ export class Engine implements SimEngine, SimHost {
       this.addRuntime(p, saved ? this.restoreState(saved) : this.initialState(p), snapshot);
     }
     this.moveIn(restore, profiles);
+    this.romanceList = structuredClone(restore?.romances ?? []);
+    this.seedRomances(loadRomanceSeeds());
     const farmer = [...this.runtimes.values()].find((r) => /farmer/i.test(r.profile.occupation));
     this.animals = createAnimalSim({
       config: cfg,
@@ -410,6 +426,7 @@ export class Engine implements SimEngine, SimHost {
       }),
       rides: [...this.rides.all()],
       train: this.train?.state() ?? null,
+      romances: structuredClone(this.romanceList),
       ...this.playerWorld.snapshot(),
     };
   }
@@ -512,6 +529,7 @@ export class Engine implements SimEngine, SimHost {
       ...this.playerWorld.serialize(),
       ...this.animals.serialize(),
       train: this.train?.state() ?? null,
+      romances: this.romanceList,
       observer: this.townLog.serialize(),
     });
   }
@@ -606,6 +624,52 @@ export class Engine implements SimEngine, SimHost {
 
   notes(): readonly DoorNote[] {
     return this.noteList;
+  }
+
+  romances(): readonly Romance[] {
+    return this.romanceList;
+  }
+
+  /** Store a romance record (keyed by id, or by pair when the id is new), broadcast and save it (spec v2 §7). */
+  upsertRomance(romance: Romance): void {
+    const pair = [...romance.pair].sort() as [VillagerId, VillagerId];
+    const record: Romance = structuredClone({ ...romance, pair });
+    const i = this.romanceList.findIndex(
+      (r) => r.id === record.id || (r.stage !== 'ended' && r.pair[0] === pair[0] && r.pair[1] === pair[1]),
+    );
+    if (i >= 0) this.romanceList[i] = record;
+    else this.romanceList.push(record);
+    this.broadcast({ type: 'romance.updated', romance: structuredClone(record) });
+    this.bus.emit('romance.updated', { romance: record });
+  }
+
+  /** The villager's current romance for the inspector: couple, then dating, then crush. */
+  private romanceOf(id: VillagerId): Romance | null {
+    const rank: Record<Romance['stage'], number> = { couple: 3, dating: 2, crush: 1, ended: 0 };
+    let best: Romance | null = null;
+    for (const r of this.romanceList)
+      if (r.pair.includes(id) && r.stage !== 'ended' && (!best || rank[r.stage] > rank[best.stage])) best = r;
+    return best;
+  }
+
+  /** Seeds from data/romance.json whose pair is in the world and has no record yet (fresh start and v1 saves). */
+  private seedRomances(seeds: readonly RomanceSeed[]): void {
+    const now = this.now();
+    for (const seed of seeds) {
+      const pair = [...seed.pair].sort() as [VillagerId, VillagerId];
+      if (!pair.every((id) => this.runtimes.has(id))) continue;
+      if (this.romanceList.some((r) => r.pair[0] === pair[0] && r.pair[1] === pair[1])) continue;
+      this.romanceList.push({
+        id: `romance_${pair[0]}_${pair[1]}`,
+        pair,
+        stage: seed.stage,
+        since: now,
+        crushFrom: [...seed.crushFrom],
+        ...(seed.shy ? { shy: true } : {}),
+        dates: [],
+        updatedAt: now,
+      });
+    }
   }
 
   upsertNote(note: DoorNote): void {
@@ -812,6 +876,8 @@ export class Engine implements SimEngine, SimHost {
           this.noteRead(id, note);
       },
       upsertEvent: (event) => this.upsertEvent(event),
+      upsertRomance: (romance) => this.upsertRomance(romance),
+      romances: () => this.romanceList,
       events: () => this.eventList,
       notes: () => this.noteList,
       recordLearned: (fact) => {
@@ -852,12 +918,23 @@ export class Engine implements SimEngine, SimHost {
     }
   }
 
+  /**
+   * Randomness for WP8's deterministic systems (visitors, hotel, weather, pet). It is keyed on the
+   * game minute and the call count within it, not drawn from the engine RNG: conversations and
+   * plans consume that one differently when the LLM is slow, and trains must not notice (spec v2 AC11).
+   */
+  private worldRandom(): number {
+    const minute = Math.floor(this.clock.time);
+    if (minute !== this.worldDraws.minute) this.worldDraws = { minute, n: 0 };
+    return hashUnit(this.config.sim.seed, minute, this.worldDraws.n++);
+  }
+
   private createPlayerHost(): PlayerHost {
     const queue = this.queue;
     return {
       map: this.map,
       now: () => this.now(),
-      random: () => this.rng.next(),
+      random: () => this.worldRandom(),
       findPath: (from, to) => this.paths.find(from, to),
       villagers: () => [...this.runtimes.values()].map((r) => r.state),
       setPlan: (id, plan) => {
@@ -1200,8 +1277,13 @@ export class Engine implements SimEngine, SimHost {
   }
 
   private trainDeparting(now: GameMinutes): void {
+    const station = this.map.locations.find((l) => l.kind === 'station');
     const onPlatform = [...this.runtimes.values()]
-      .filter((r) => r.profile.visitor && this.onPlatform(r.state.pos))
+      .filter(
+        (r) =>
+          r.profile.visitor &&
+          (this.onPlatform(r.state.pos) || (!!station && r.state.locationId === station.id && r.arrived)),
+      )
       .map((r) => r.profile.id);
     const leaving = this.playerWorld.onTrainDeparting(now, onPlatform);
     for (const id of leaving) this.removeVillager(id);
@@ -1878,6 +1960,7 @@ export class Engine implements SimEngine, SimHost {
       villagerNames: names,
       weather: { ...this.playerWorld.weather },
       animalsNearby: this.animalsNear(rt.state.pos),
+      romances: this.romanceList.filter((r) => r.pair.includes(rt.profile.id)),
       noticesInReach: this.noticesInReach(rt),
       lettersAtHome: this.playerWorld.post
         .letters()
@@ -2045,6 +2128,8 @@ export class Engine implements SimEngine, SimHost {
       memories: structuredClone(memories),
       relationships: structuredClone(rt.state.relationships),
       ...(conv ? { currentConversation: structuredClone(conv) } : {}),
+      romance: structuredClone(this.romanceOf(villagerId)),
+      ...(rt.profile.visitor ? visitorField(this.playerWorld.visitors.info(villagerId)) : {}),
     };
     return [msg];
   }
