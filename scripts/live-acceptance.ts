@@ -23,6 +23,7 @@ import type {
   HelloMessage,
   InspectDataMsg,
   ServerMessage,
+  StatsMsg,
 } from '../src/shared/protocol.ts';
 import type { Conversation, DoorNote, WorldSnapshot } from '../src/shared/types.ts';
 import { at, formatClock } from '../src/shared/time.ts';
@@ -187,12 +188,14 @@ async function main(): Promise<void> {
   }
 
   const messages: ServerMessage[] = [];
+  let lastStats: StatsMsg | null = null;
   const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
   const hello = await new Promise<HelloMessage>((res, rej) => {
     ws.on('message', (data) => {
       const msg = JSON.parse(String(data)) as ServerMessage;
       if (msg.type === 'hello') res(msg);
-      else if (msg.type !== 'tick' && msg.type !== 'stats') messages.push(msg);
+      else if (msg.type === 'stats') lastStats = msg;
+      else if (msg.type !== 'tick') messages.push(msg);
     });
     ws.once('error', rej);
   });
@@ -305,7 +308,27 @@ async function main(): Promise<void> {
       : { id: 'AC6', title: 'inspector', pass: false, detail: 'never reached 12:00' },
   );
   ws.close();
+  printDiagnostics(lastStats, messages);
   finish(results, args, cleanup);
+}
+
+/** Queue stats and server warnings, to tell a slow model (timeouts, fallbacks) from a logic bug. */
+function printDiagnostics(stats: StatsMsg | null, messages: readonly ServerMessage[]): void {
+  if (stats) {
+    const q = stats.queue;
+    log(
+      `LLM queue: ${q.done} done, ${q.failed} failed, ${q.queued} still queued, avg ${(q.avgLatencyMs / 1000).toFixed(1)} s per call`,
+    );
+    for (const [task, s] of Object.entries(q.byTask ?? {}))
+      log(
+        `  ${task.padEnd(16)} ${String(s.done).padStart(4)} done ${String(s.failed).padStart(4)} failed  avg ${(s.avgLatencyMs / 1000).toFixed(1)} s`,
+      );
+  }
+  const warnings = messages.filter((m) => m.type === 'log' && m.level !== 'info') as { text: string }[];
+  if (warnings.length) {
+    log(`${warnings.length} server warnings/errors, first distinct ones:`);
+    for (const text of [...new Set(warnings.map((w) => w.text))].slice(0, 8)) log(`  ${text.slice(0, 160)}`);
+  }
 }
 
 function finish(results: CheckResult[], args: Args, cleanup: () => void): void {
