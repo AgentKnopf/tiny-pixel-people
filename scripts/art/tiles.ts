@@ -61,6 +61,56 @@ export class TileAtlas {
     return rows;
   }
 
+  /** Slices a drawing into tiles and records it as an object; rows above overheadRows go to the overhead layer. */
+  addObject(
+    name: string,
+    canvas: PixelCanvas,
+    opts: { overheadRows?: number; collision: (0 | 1)[][]; anchors?: ObjectDef['anchors'] },
+  ): ObjectDef {
+    const cells = this.addSliced(name, canvas);
+    const over = opts.overheadRows ?? 0;
+    const def: ObjectDef = {
+      w: canvas.width / TILE,
+      h: canvas.height / TILE,
+      layers: {
+        overhead: cells.map((row, y) => row.map((n) => (y < over ? n : null))),
+        decor: cells.map((row, y) => row.map((n) => (y >= over ? n : null))),
+      },
+      collision: opts.collision,
+    };
+    if (opts.anchors) def.anchors = opts.anchors;
+    this.objects[name] = def;
+    return def;
+  }
+
+  /** Adds a building (day + lit-window variants); everything is blocked except the door cell. */
+  addBuilding(name: string, spec: BuildingSpec): ObjectDef {
+    const day = this.addSliced(name, drawBuilding(spec, false));
+    const lit = this.addSliced(`${name}_lit`, drawBuilding(spec, true));
+    day.forEach((row, y) =>
+      row.forEach((n, x) => {
+        const l = lit[y]![x];
+        if (n && l) this.lit.set(n, l);
+      }),
+    );
+    const roofRows = Math.floor((spec.h * (spec.roofFraction ?? ROOF_FRACTION) * TILE) / TILE);
+    const collision = Array.from({ length: spec.h }, (_, y) =>
+      Array.from({ length: spec.w }, (_, x) => (y === spec.h - 1 && x === spec.doorCol ? 0 : 1) as 0 | 1),
+    );
+    const def: ObjectDef = {
+      w: spec.w,
+      h: spec.h,
+      layers: {
+        overhead: day.map((row, y) => row.map((n) => (y < roofRows ? n : null))),
+        decor: day.map((row, y) => row.map((n) => (y >= roofRows ? n : null))),
+      },
+      collision,
+      anchors: { door: { x: spec.doorCol, y: spec.h - 1 } },
+    };
+    this.objects[name] = def;
+    return def;
+  }
+
   id(name: string): number {
     const i = this.index.get(name);
     if (i === undefined) throw new Error(`unknown tile ${name}`);
@@ -81,7 +131,7 @@ function tile(): PixelCanvas {
 
 // ---------------------------------------------------------------- ground
 
-function drawGrass(c: PixelCanvas, seed: number, flowers: number, tufts: number): void {
+export function drawGrass(c: PixelCanvas, seed: number, flowers: number, tufts: number): void {
   const r = rng(seed);
   c.rect(0, 0, TILE, TILE, P.grass);
   for (let i = 0; i < 10; i++)
@@ -103,7 +153,7 @@ function drawGrass(c: PixelCanvas, seed: number, flowers: number, tufts: number)
   }
 }
 
-interface TerrainStyle {
+export interface TerrainStyle {
   fill: (c: PixelCanvas, x: number, y: number, r: () => number) => Color;
   edge: Color;
   /** Optional second ring inside the edge (e.g. stone rim highlight). */
@@ -112,7 +162,7 @@ interface TerrainStyle {
 }
 
 /** Draws a terrain autotile over grass. Open sides (bit clear) fade into grass with a slightly irregular edge. */
-function terrainTile(style: TerrainStyle, mask: number, seed: number): PixelCanvas {
+export function terrainTile(style: TerrainStyle, mask: number, seed: number): PixelCanvas {
   const c = tile();
   drawGrass(c, seed * 7 + mask, 0, 1);
   const r = rng(seed * 131 + mask);
@@ -555,16 +605,19 @@ export interface BuildingSpec {
   awning?: [Color, Color];
   chimney?: boolean;
   goods?: boolean;
+  /** Extra rows of windows above the ground floor (hotel). */
+  upperWindows?: number[];
+  roofFraction?: number;
 }
 
 const ROOF_FRACTION = 0.53;
 
-function drawBuilding(spec: BuildingSpec, lit: boolean): PixelCanvas {
+export function drawBuilding(spec: BuildingSpec, lit: boolean): PixelCanvas {
   const W = spec.w * TILE;
   const H = spec.h * TILE;
   const c = new PixelCanvas(W, H);
   const b = new PixelCanvas(W, H);
-  const roofH = Math.round(H * ROOF_FRACTION);
+  const roofH = Math.round(H * (spec.roofFraction ?? ROOF_FRACTION));
   const wallTop = roofH;
   // wall
   b.rect(1, wallTop - 2, W - 2, H - wallTop + 1, spec.wall);
@@ -575,19 +628,21 @@ function drawBuilding(spec: BuildingSpec, lit: boolean): PixelCanvas {
   b.vline(W - 2, wallTop, H - 4, spec.wallDark);
   // windows
   const ww = spec.windowWidth ?? 12;
-  for (const wx of spec.windows) {
-    const wy = wallTop + 6;
-    b.rect(wx - 1, wy - 1, ww + 2, 12, P.white);
-    b.rect(wx, wy, ww, 10, lit ? P.windowLit : P.glass);
-    b.rect(wx + 1, wy + 1, 3, 3, lit ? P.windowLitLight : P.glassLight);
-    b.vline(wx + Math.floor(ww / 2), wy, wy + 9, P.white);
-    b.hline(wx, wx + ww - 1, wy + 5, P.white);
-    b.hline(wx - 2, wx + ww + 1, wy + 11, P.woodDark);
-    if (spec.goods && !lit) {
-      b.ellipse(wx + 3, wy + 8, 2, 1.2, P.wheat);
-      b.ellipse(wx + ww - 4, wy + 8, 2, 1.2, P.autumnLight);
+  const windowRows: [number, number[]][] = [[H - 24, spec.windows]];
+  if (spec.upperWindows) windowRows.push([H - 42, spec.upperWindows]);
+  for (const [wy, xs] of windowRows)
+    for (const wx of xs) {
+      b.rect(wx - 1, wy - 1, ww + 2, 12, P.white);
+      b.rect(wx, wy, ww, 10, lit ? P.windowLit : P.glass);
+      b.rect(wx + 1, wy + 1, 3, 3, lit ? P.windowLitLight : P.glassLight);
+      b.vline(wx + Math.floor(ww / 2), wy, wy + 9, P.white);
+      b.hline(wx, wx + ww - 1, wy + 5, P.white);
+      b.hline(wx - 2, wx + ww + 1, wy + 11, P.woodDark);
+      if (spec.goods && !lit) {
+        b.ellipse(wx + 3, wy + 8, 2, 1.2, P.wheat);
+        b.ellipse(wx + ww - 4, wy + 8, 2, 1.2, P.autumnLight);
+      }
     }
-  }
   // door
   const dx = spec.doorCol * TILE + 3;
   const dy = H - 16;
@@ -713,26 +768,7 @@ export function buildAtlas(): TileAtlas {
 
   for (let mask = 0; mask < 16; mask++) atlas.add(`fence_${mask}`, fenceTile(mask));
 
-  const objects = atlas.objects;
-  const addObject = (
-    name: string,
-    canvas: PixelCanvas,
-    opts: { overheadRows?: number; collision: (0 | 1)[][]; anchors?: ObjectDef['anchors'] },
-  ) => {
-    const cells = atlas.addSliced(name, canvas);
-    const over = opts.overheadRows ?? 0;
-    const def: ObjectDef = {
-      w: canvas.width / TILE,
-      h: canvas.height / TILE,
-      layers: {
-        overhead: cells.map((row, y) => row.map((n) => (y < over ? n : null))),
-        decor: cells.map((row, y) => row.map((n) => (y >= over ? n : null))),
-      },
-      collision: opts.collision,
-    };
-    if (opts.anchors) def.anchors = opts.anchors;
-    objects[name] = def;
-  };
+  const addObject = atlas.addObject.bind(atlas);
 
   addObject('tree_green', drawTree('green'), {
     overheadRows: 1,
@@ -830,29 +866,6 @@ export function buildAtlas(): TileAtlas {
   addObject('deco_birdbath', drawBirdBath(), { collision: [[1]] });
   addObject('door_note', drawDoorNote(), { collision: [[0]] });
 
-  for (const [name, spec] of Object.entries(BUILDINGS)) {
-    const day = atlas.addSliced(name, drawBuilding(spec, false));
-    const lit = atlas.addSliced(`${name}_lit`, drawBuilding(spec, true));
-    day.forEach((row, y) =>
-      row.forEach((n, x) => {
-        const l = lit[y]![x];
-        if (n && l) atlas.lit.set(n, l);
-      }),
-    );
-    const roofRows = Math.floor((spec.h * ROOF_FRACTION * TILE) / TILE);
-    const collision = Array.from({ length: spec.h }, (_, y) =>
-      Array.from({ length: spec.w }, (_, x) => (y === spec.h - 1 && x === spec.doorCol ? 0 : 1) as 0 | 1),
-    );
-    objects[name] = {
-      w: spec.w,
-      h: spec.h,
-      layers: {
-        overhead: day.map((row, y) => row.map((n) => (y < roofRows ? n : null))),
-        decor: day.map((row, y) => row.map((n) => (y >= roofRows ? n : null))),
-      },
-      collision,
-      anchors: { door: { x: spec.doorCol, y: spec.h - 1 } },
-    };
-  }
+  for (const [name, spec] of Object.entries(BUILDINGS)) atlas.addBuilding(name, spec);
   return atlas;
 }
