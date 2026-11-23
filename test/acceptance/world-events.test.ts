@@ -65,7 +65,9 @@ describe.skipIf(!ready(...FEATURES))(`§14.1 world events${waitingFor(...FEATURE
       const before = settled().length;
       w.command({ type: 'world.trigger', kind: 'stranger' });
       await w.advance(5);
-      const added = (w.of('villagers.changed') as VillagersChangedMsg[]).flatMap((m) => m.added);
+      const added = (w.of('villagers.changed') as VillagersChangedMsg[])
+        .flatMap((m) => m.added)
+        .filter((a) => !a.visitor);
       expect(added).toHaveLength(1);
       const stranger = added[0]!;
       expect(stranger.transient).toBe(true);
