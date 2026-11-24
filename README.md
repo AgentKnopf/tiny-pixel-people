@@ -14,27 +14,92 @@ chosen in a config file; no code changes needed.
 
 ![The v2 town view on Day 1: the plaza with its fountain, the bakery, the shop and the crop field of the old town, with the HUD, the stats card (here `MOCK MODEL CALLS`, from the mock provider), the LLM card, the toolbar and the dock](docs/images/screenshot.png)
 
-## Quick start
+## Install and run
 
-You need [Node.js](https://nodejs.org) 22.12 or newer and, for local models,
-[Ollama](https://ollama.com) with a chat model and an embedding model:
+You need [Node.js](https://nodejs.org) 22.12 or newer (check with `node -v`) and, for the default
+local model, [Ollama](https://ollama.com). On a Mac (or Windows), install the native Ollama app from
+<https://ollama.com/download> and open it; it keeps running in the background (menu bar or tray). On Linux, start it
+with `ollama serve` if its service isn't running. Then pull the default chat and embedding models
+once:
 
 ```sh
 ollama pull qwen2.5:7b
 ollama pull nomic-embed-text
 ```
 
-Then, in the repository folder:
+Get the game and start it:
 
 ```sh
-npm install && npm start
+git clone https://github.com/AgentKnopf/tiny-pixel-people.git
+cd tiny-pixel-people
+npm ci
+npm start
 ```
 
-Open <http://127.0.0.1:3000>. That's it: the defaults use Ollama on `127.0.0.1:11434` with
-`qwen2.5:7b`. After `npm install` no internet connection is needed.
+`npm start` builds the browser client and starts the server. Open <http://127.0.0.1:3000>. Stop
+the server with `Ctrl+C` in its terminal; it saves the village first. After `npm ci` and the model
+pulls, no internet connection is needed.
 
-To use another provider or model, copy `config.example.json` to `config.json` and edit the `llm`
-section, or set environment variables. See [Providers](docs/setup/providers.md).
+npm 11 may warn during `npm ci` that `esbuild` has an install script not covered by
+`allowScripts`. In our tests (npm 11.19 on Linux) the game built and ran without approving it,
+because esbuild's ready-made binary for your platform is installed as a normal dependency; this
+wasn't checked on a Mac. If the build fails with an esbuild error, approve it. If you do approve it
+(`npm install-scripts approve esbuild`), npm writes an `allowScripts` field into `package.json`, which
+counts as a local change when you update (see below).
+
+The model provider must be up before you start: with the defaults, that is Ollama on
+`127.0.0.1:11434` with `qwen2.5:7b`. The first lines of the server log say whether the chat and
+embedding models answered. If Ollama isn't running or a model isn't pulled, the game still starts,
+but villagers follow simple default plans and the LLM card shows `⚠ MODEL UNREACHABLE`; start Ollama
+or pull the model, then restart the server.
+
+A model is optional for a quick look: `TPP_LLM_PROVIDER=mock npm start` runs the game with canned,
+deterministic answers instead of a model (the stats card then reads `MOCK MODEL CALLS`). It uses the
+same save as a normal run. To use another provider or model, copy `config.example.json` to
+`config.json` and edit the `llm` section, or set environment variables; see
+[Providers](docs/setup/providers.md). The full setup is in [Installation](docs/setup/installation.md)
+and [Ollama setup](docs/setup/ollama.md).
+
+## Update an existing install
+
+1. Stop the server with `Ctrl+C`, so it saves the village.
+2. In the game folder, check what you have:
+
+   ```sh
+   git status
+   ```
+
+   It should say `On branch main`; if not, run `git switch main`.
+
+3. If `git status` lists changed files (for example a field you added to `package.json`), look at
+   the changes with `git diff` first. `git pull` stops if the update touches a file you changed.
+   To keep your changes and update anyway, put them aside under a name you'll recognise:
+
+   ```sh
+   git stash push --include-untracked -m "my changes before update"
+   ```
+
+   This also sets aside untracked files, such as an image you saved in the folder. Your
+   `config.json`, `.env` and `saves/` are ignored by git, so they stay where they are either way.
+   Nothing is deleted: `git stash list` shows the saved entry, and
+   `git stash show --include-untracked --stat` lists what is in it. After the update, bring back
+   what you still need, by hand or with `git stash apply` (the entry stays in the list until you
+   drop it). Don't use `git reset --hard`, `git restore` or `git clean` here: they can throw
+   local changes away for good.
+
+4. Update and start:
+
+   ```sh
+   git pull --ff-only
+   npm ci
+   npm start
+   ```
+
+   `--ff-only` only moves your `main` forward to GitHub's; if your `main` has commits of its own,
+   it stops instead of creating a merge commit. `npm ci` installs exactly the dependency versions in `package-lock.json`.
+
+Saves are upgraded on load, and v1 saves keep working. If a save can't be read after an update,
+see [Troubleshooting](docs/troubleshooting.md#saves).
 
 ## What you can do
 
