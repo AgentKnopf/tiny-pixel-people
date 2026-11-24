@@ -340,6 +340,14 @@ describe('inspector (AC6)', () => {
     expect($('.modal-title').textContent).toBe("📮 Note for Ada's door");
   });
 
+  it('"Find them" pans to the last known tile when following fails', () => {
+    vi.mocked(camera.followVillager).mockReturnValue(false);
+    ui.selectVillager('ada');
+    click(byTestId('insp-find'));
+    expect(camera.followVillager).toHaveBeenCalledWith('ada');
+    expect(camera.focusTile).toHaveBeenCalledWith({ x: 2, y: 3 });
+  });
+
   it('closes when the selected stranger leaves', () => {
     ui.selectVillager('cy');
     ui.handleMessage({ type: 'villagers.changed', added: [], removed: ['cy'] });

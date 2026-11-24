@@ -243,7 +243,7 @@ describe('villager roster', () => {
   });
 
   it('falls back to the last tile when following fails, and works without a camera', () => {
-    vi.mocked(camera.followVillager).mockImplementation(() => false as unknown as void);
+    vi.mocked(camera.followVillager).mockReturnValue(false);
     openRoster();
     row('bo').click();
     expect(camera.focusTile).toHaveBeenCalledWith({ x: 5, y: 6 });

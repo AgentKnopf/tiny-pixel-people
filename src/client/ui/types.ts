@@ -20,8 +20,8 @@ export interface CameraControls {
   fit?(): void;
   /** Ease to a named scene from `map.scenes` and follow it. */
   showScene?(sceneId: string): void;
-  /** Pan to a villager and keep following it ("Find them"). */
-  followVillager?(villagerId: VillagerId): void;
+  /** Pan to a villager and keep following it ("Find them"); false when its position is unknown. */
+  followVillager?(villagerId: VillagerId): boolean | void;
   /** Pan to a tile. */
   focusTile?(tile: Point): void;
 }
