@@ -7,8 +7,10 @@ gossip less.
 
 ## How much the model has to do
 
-A game day with 10 villagers can make up to roughly 200 model calls, plus your own chats. On a slow
-model the game cuts back on optional work, so it makes fewer (about 100 in the measured run below). At 200 calls
+A game day with 10 villagers can make up to roughly 200 model calls, plus your own chats (the
+v2 default of 12 residents plus visitors makes more; see
+[The bigger village and the model](#the-bigger-village-and-the-model)). On a slow
+model the game cuts back on optional work, so it makes fewer (about 100 in the measured run below). At about 200 calls
 and the default 15-minute day at 1×, that is one call every 4.5 real seconds. With Ollama the game sends one call at
 a time by default (`llm.concurrency` 1; hosted providers default to 2). On a GPU or Apple Silicon
 Mac that really runs two calls in parallel, `llm.concurrency: 2` lets each call take about 9
@@ -16,9 +18,34 @@ seconds. Higher speeds (2×, 4×, 8×) shrink that budget by the same factor.
 
 ### Measured on a CPU-only machine
 
-The final test run used `qwen2.5:1.5b` on a 4-core cloud machine with 7.8 GB of memory and no GPU,
-with the default settings (`llm.concurrency` 1, `sim.wakeUpTimeoutSec` 300) and a 40-minute day at
-speed 2:
+The v2 live run used `qwen2.5:1.5b` with `nomic-embed-text` on a 4-core cloud machine with 7.8 GB
+of memory and no GPU, with the default settings (12 villagers, `llm.concurrency` 1,
+`sim.wakeUpTimeoutSec` 300), 40-minute days at speed 2, for 3 game days (about 62 real minutes):
+
+| What                    | Typical time                |
+| ----------------------- | --------------------------- |
+| A day plan (`plan.day`) | about 31 s                  |
+| A conversation line     | about 8 s                   |
+| A reflection            | about 16 s                  |
+| Average over all calls  | about 21 s                  |
+| The 06:00 wake-up wait  | 5 min, its limit, every day |
+
+Each morning's wait ended at its limit with 6, 6 and 8 of 12 plans ready, so 10 of 15 day plans
+(residents and visitors) came from the model and the rest were fallbacks. Every villager still
+followed its plan. The model was busy about 93 % of the time; at about 31 s per day plan it can't
+finish 15 plans in the 300 s wait (that would take about 20 s per plan). Gossip, the door-note
+reply, the bake-offs, the visitors and the reply to your letter all worked; the door-note reply,
+the bake-offs and the letter reply came from the model.
+
+The live check passed 10 of its 12 checks. The day plans (AC2) failed for the reason above.
+Romance (AC15) also failed, but that result is inconclusive: no pair met the conditions for a new
+crush or a date within the 3 days (about half the conversation lines were fallbacks), and Laude and
+Franzi's shy crush can't lead to a date before day 5. It is not shown that faster hardware alone
+would fix it; that needs a run on a faster machine or a longer run. To give the model more time
+per game hour on a machine like this, see the settings below, or use a GPU or Apple Silicon
+machine.
+
+An earlier v1 run (10 villagers, before the bigger village) on the same machine and settings:
 
 | What                    | Typical time |
 | ----------------------- | ------------ |
@@ -31,7 +58,7 @@ speed 2:
 The game made about 100 model calls that day. All 10 villagers ended up with a plan from the model.
 The 06:00 wait ran to its 5-minute limit with 9 of 10 plans ready, and the last plan arrived in the
 background before noon. Gossip, the door-note reply and the village event all came from the model.
-The live check passed 6 of 7. The one failure was an extra sanity rule in the test script, not the
+The v1 live check passed 6 of its 7 checks. The one failure was an extra sanity rule in the test script, not the
 acceptance criterion: one villager stayed in a single place all day. Day plans now always include at
 least two places. An earlier run with the same setup passed all 7.
 
@@ -42,7 +69,47 @@ Earlier test runs on the same machine, with `llm.concurrency` 2, show why the de
 is 1. Two calls at once made each call about twice as slow (`plan.day` 48 s instead of 26 s with `qwen2.5:1.5b`).
 `gemma3:4b` was about twice as slow again (92 s, and half of its plans hit the 2-minute timeout),
 so on a CPU like this it does worse than `qwen2.5:1.5b`. The game never crashed, and every late
-answer fell back cleanly. A 7B model on an Apple Silicon Mac or a GPU answers in a few seconds.
+answer fell back cleanly. A 7B model on an Apple Silicon Mac or a GPU should answer much faster,
+but that hasn't been measured with v2.
+
+## The bigger village and the model
+
+The default village has 12 residents (the ten originals plus Laude and Franzi) and, once the first
+train has come, 2–4 visitors. That is about 230–300 model calls a day instead of 120–200: the
+extra minds plan, talk and summarise like everyone else, and visitors, dates, letters and house
+greetings add a few calls each.
+
+Everything else in the bigger village never waits for the model: the animals, the farm, rides, the
+train, the hotel, letter delivery and the notice board run on fixed rules. On a slow model they
+work exactly as on a fast one.
+
+The new model tasks give way first when the model can't keep up:
+
+| Task                              | Busy               | Overloaded                                  |
+| --------------------------------- | ------------------ | ------------------------------------------- |
+| Greeting you in a house           | model              | model (a simple greeting after 60 game min) |
+| A villager's reply to your letter | model              | model (a simple reply if it fails)          |
+| Answering a date invitation       | model              | simple rule, no call                        |
+| Inventing a train visitor         | model              | ready-made visitor, no call                 |
+| Asking someone on a date          | model, 1 a day max | skipped                                     |
+| A villager writing a letter       | model              | skipped                                     |
+
+To save model calls on a slow machine, turn off the parts that add minds or optional calls:
+
+```json
+{
+  "visitors": { "enabled": false },
+  "romance": { "enabled": false },
+  "world": { "llmVisitors": false }
+}
+```
+
+- `visitors.enabled: false` saves the most: no visitor minds at all. With visitors on,
+  `world.llmVisitors: false` still saves the call that invents each one.
+- `sim.villagers: 11` leaves out Franzi, and 10 or fewer leaves out Laude too; the post office
+  and the Keep keep working without them.
+- The zoo, farm, forest and train cost no model calls, so there is nothing to gain by turning them
+  off.
 
 ## Choose a model for your hardware
 
@@ -69,14 +136,16 @@ more options. Hosted APIs (see [Providers](providers.md)) are usually fast enoug
   sending more only makes each one slower and makes timeouts more likely. It also means one
   villager conversation at a time.
 - `sim.dayLengthMinutes` 60–120: a longer day gives each call more real time. Play at 1×.
-- `sim.villagers`: fewer villagers make fewer calls.
+- `sim.villagers`: fewer villagers make fewer calls. At 11, Franzi stays away; at 10 or fewer,
+  Laude does too.
 - `cognition.importanceMode: "heuristic"`: rates memories with a rule instead of a model call.
 - `cognition.maxConversationTurns` (default 6): shorter conversations need fewer calls.
 - Keep `nomic-embed-text` for embeddings; it is small and fast even on a CPU.
 
 ## Reading the stats card and the LLM card
 
-The **stats card** (top right) shows, under `REAL MODEL CALLS`:
+The **stats card** (top right) shows, under `REAL MODEL CALLS` (`MOCK MODEL CALLS` with the `mock`
+provider, whose answers come from the game itself):
 
 - `N · T ms · K tok`: `N` calls answered so far, `T` the total time those calls took (added up, so
   it can exceed the time played when calls run in parallel), and `K` the tokens sent and received,

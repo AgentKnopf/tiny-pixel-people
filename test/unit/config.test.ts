@@ -85,6 +85,9 @@ describe('loadConfig', () => {
   it('ships a config.example.json that validates', () => {
     const cfg = loadConfig({ path: 'config.example.json', env: {} });
     expect(cfg.llm.provider).toBe('ollama');
+    // Copying the example must keep the v2 residents and the Ollama concurrency default.
+    expect(cfg.sim.villagers).toBe(12);
+    expect(cfg.llm.concurrency).toBe(1);
   });
 });
 

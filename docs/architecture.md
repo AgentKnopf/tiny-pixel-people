@@ -1,6 +1,7 @@
 # Architecture
 
-How Tiny Pixel People is built. The binding design is the [technical spec](spec/technical-spec.md);
+How Tiny Pixel People is built. The binding design is the [technical spec](spec/technical-spec.md) and its
+[v2 expansion](spec/technical-spec-v2.md);
 this page describes the code as it is.
 
 ## Overview
@@ -35,21 +36,21 @@ such a fallback, so the town keeps moving even with no model at all.
 
 ## Source layout
 
-| Path                      | Contents                                                                                                                                    |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/shared/`             | `types.ts` (world, villagers, memories, player), `protocol.ts` (WebSocket messages), `time.ts` (game clock). Imported by server and client. |
-| `src/server/main.ts`      | Entry point: loads `.env` and config, creates providers, runs the health check, builds the engine, starts the server, saves on shutdown.    |
-| `src/server/config.ts`    | Config schema, defaults, file + environment loading, key resolution, redaction.                                                             |
-| `src/server/llm/`         | Provider interfaces, `createProviders`, the four providers plus `mock`, the job queue, JSON parsing.                                        |
-| `src/server/sim/`         | The engine: clock, map, pathfinding, movement, perception, needs, conversation scheduling.                                                  |
-| `src/server/cognition/`   | `VillagerMind` and everything a villager thinks: memory stream, retrieval, prompts.                                                         |
-| `src/server/player/`      | The player world: avatar, economy, inventory, decorations, pet, rumors, weather, world events, strangers.                                   |
-| `src/server/persistence/` | JSON save store, autosave, replay log, migrations.                                                                                          |
-| `src/server/net/`         | HTTP and WebSocket server.                                                                                                                  |
-| `src/client/`             | Canvas renderer (`render/`) and HTML/CSS UI (`ui/`).                                                                                        |
-| `data/`                   | Villagers, map, items, decorations, strangers.                                                                                              |
-| `assets/`                 | Generated pixel art (`scripts/art/`), fonts, `CREDITS.md`.                                                                                  |
-| `test/`, `scripts/`       | Unit and acceptance tests, the live acceptance script, art generation.                                                                      |
+| Path                      | Contents                                                                                                                                                                         |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/shared/`             | `types.ts` (world, villagers, memories, player), `protocol.ts` (WebSocket messages), `time.ts` (game clock). Imported by server and client.                                      |
+| `src/server/main.ts`      | Entry point: loads `.env` and config, creates providers, runs the health check, builds the engine, starts the server, saves on shutdown.                                         |
+| `src/server/config.ts`    | Config schema, defaults, file + environment loading, key resolution, redaction.                                                                                                  |
+| `src/server/llm/`         | Provider interfaces, `createProviders`, the four providers plus `mock`, the job queue, JSON parsing.                                                                             |
+| `src/server/sim/`         | The engine: clock, map, pathfinding, movement, perception, needs, conversation scheduling; animals (`animals.ts`), rides (`rides.ts`), the train (`train.ts`).                   |
+| `src/server/cognition/`   | `VillagerMind` and everything a villager thinks: memory stream, retrieval, prompts.                                                                                              |
+| `src/server/player/`      | The player world: avatar, economy, inventory, decorations, pet, rumors, weather, world events, strangers; farm economy, visitors, hotel, house visits, post office and the Keep. |
+| `src/server/persistence/` | JSON save store, autosave, replay log, migrations.                                                                                                                               |
+| `src/server/net/`         | HTTP and WebSocket server.                                                                                                                                                       |
+| `src/client/`             | Canvas renderer (`render/`) and HTML/CSS UI (`ui/`).                                                                                                                             |
+| `data/`                   | Villagers, map, items, decorations, strangers; visitors, romance seeds, zoo populations, ambient animals.                                                                        |
+| `assets/`                 | Generated pixel art (`scripts/art/`), fonts, `CREDITS.md`.                                                                                                                       |
+| `test/`, `scripts/`       | Unit and acceptance tests, the live acceptance script, art generation.                                                                                                           |
 
 ## Time and the loop
 
@@ -59,8 +60,9 @@ such a fallback, so the town keeps moving even with no model at all.
   runs `sim.nightSpeedMultiplier` (6) times faster.
 - Every `sim.tickMs` (100 ms) the engine advances the clock, asks every mind for an intent
   (`goto`, `act`, `sleep`, `talk`, `wait`), moves villagers along A* paths, runs perception,
-  starts conversations between nearby villagers, tracks event attendance, updates the player world
-  and broadcasts a `tick` with the villagers that changed.
+  starts conversations between nearby villagers, tracks event attendance, steps the animals, rides,
+  train and post office, updates the player world and broadcasts a `tick` with the villagers and
+  animals that changed.
 - **Wake-up hold.** The first time each day reaches 06:00, the engine keeps stepping with no game
   time passing until every non-transient villager's day plan is settled (`isPlanSettled(day)`: a model plan is in, or the plan request finished
   with no retry pending), the queue reports the model offline, or `sim.wakeUpTimeoutSec` (300) real
@@ -74,12 +76,32 @@ anyway`. The client shows a non-blocking banner during the hold.
 
 ## World
 
-The map is a 48×30 grid of 16 px tiles with `ground`, `decor` and `overhead` layers, a collision
-grid and named locations: the plaza (`square`) with its fountain, the bakery/café, the shop, the
-farm, the park, eleven houses and the player's cottage (`player_home`). Each location has an
-`area`, an `entry` tile, optional `door` and `spots` to stand at. `scenes` are camera presets for
-the Map modal; `itemSpawns` say where forageable items grow. The art and map are generated by
-`npm run art` (see [docs/art](art/README.md)).
+The map is one contiguous 128×60 grid of 16 px tiles with `ground`, `decor` and `overhead` layers,
+a collision grid and named locations. It is split into seven districts (`WorldMap.districts`):
+
+| District    | Tiles (x, y, w, h) | Contents                                                                             |
+| ----------- | ------------------ | ------------------------------------------------------------------------------------ |
+| `town`      | 0, 0, 48, 30       | The v1 town, unchanged: plaza, bakery, shop, crop field, park, houses, your cottage. |
+| `post_row`  | 44, 0, 20, 9       | `house_laude`, `post_office` (notice board, the crow's perch), `house_franzi`.       |
+| `zoo`       | 48, 0, 48, 34      | `zoo_gate`, 12 enclosures, 3 rides, `burger_joint`, 2 ice cream trucks.              |
+| `forest`    | 96, 0, 32, 60      | `forest` trails, `forest_grove`, `forest_lake`.                                      |
+| `farmstead` | 0, 30, 36, 30      | `cow_pasture`, `sheep_pasture`, `chicken_coop`, `barn`, `farmhouse`, `butcher`.      |
+| `market`    | 36, 30, 12, 30     | The north-south main road and the `market` location.                                 |
+| `station`   | 48, 34, 48, 26     | The `station` platform and the `hotel`.                                              |
+
+`post_row` overlaps `town` and `zoo`; district lookup checks it first. The town keeps its v1
+coordinates, so v1 positions and saves stay valid. Roads join the districts, and the railway
+(`WorldMap.railway`) runs along the bottom with level crossings.
+
+Each location has a `kind`, an `area`, an `entry` tile, optional `door` and `spots` to stand at,
+and, in v2, optional `district`, `hours` (opening hours), `ride` (capacity, duration, cost, fun),
+`species`, `pen` (where animals may stand), `perch` (the crow's roof tiles) and `interiorId`.
+Interiors (`WorldMap.interiors`) are small separate tile maps for the houses, the hotel lobby and
+the post office; they are not part of the 128×60 grid. `scenes` are camera presets for the Map
+modal (`plaza` stays the default, `overview` shows the whole map); `itemSpawns` say where
+forageable items grow. The art and map are generated by `npm run art` (see
+[docs/art](art/README.md)). A\* may cache paths between location entries, because collision is
+static; animals never path-find.
 
 ## Villagers and cognition
 
@@ -186,6 +208,66 @@ _Generative Agents_ (Park et al., 2023), scaled down to small local models:
 - **Decorations** cost gold once and occupy one of ten slots at the cottage; villagers within 4
   tiles notice new ones.
 
+## The v2 world systems
+
+All of these are deterministic: they use the seeded RNG and never call the model, so with a hung
+model they behave exactly as with a fast one. The model only adds words (greetings, letters,
+invitations, visitor profiles), and each of those has a fallback.
+
+- **Animals** (`sim/animals.ts`, `AnimalSim`). About 80 `AnimalState` records in three groups:
+  `zoo` (12 species, fixed population), `farm` (cows, sheep, chickens with a lifecycle) and
+  `ambient` (7 forest species and Quill the crow, not saved, reseeded from `sim.seed`). Each animal
+  wanders inside its location's `pen`, one step every 4–12 game minutes, with species sleep hours;
+  no A\*. The farm lifecycle runs at 06:00 (ageing, old age, breeding), products appear at 07:00,
+  and at 16:00 at most one animal walks to the butcher (off-screen). `spawn()` is the only way to
+  create a farm animal and refuses above `farm.capPerSpecies` (hard maximum 10 per species).
+  Forest animals move away from anyone within 3 tiles. The crow perches on the post office roof,
+  makes short flights and caws when letters are posted or delivered, with a 30-minute cooldown.
+- **Farm economy** (`player/`, `FarmEconomy`). Turns animal changes into `FoodStock` per venue
+  (milk, eggs, wool and cheese at the shop, burgers at the burger joint; ice cream is unlimited),
+  capped at 30 per item. `player.buy` buys from an open venue with stock.
+- **Rides** (`sim/rides.ts`). Each ride has a `RideState`: villagers queue, a cycle boards up to
+  `capacity`, runs `durationMin`, then unloads riders with a fun boost. Rides close outside zoo
+  hours. A villager who waits more than 20 game minutes gives up.
+- **Train** (`sim/train.ts`, `TrainService`). Driven by the clock: `away → arriving → boarding →
+departing → away` around each time in `train.arrivals`. `TrainState` carries the times, so the
+  client animates the train without per-tick messages.
+- **Visitors and hotel** (`player/`, `VisitorService` and `HotelService`). At each arrival enough
+  visitors step off to keep 2–4 in town, limited by free rooms and the 20-villager limit. They are
+  transient villagers (`visitor: true`) with a `VisitorInfo`, check in at the hotel, get a mind
+  like strangers do, and leave on a train after 1–3 days. Their profiles are written ahead of time
+  by `visitor.create` (requested when the previous train departs), or taken from
+  `data/visitors.json`.
+- **Interiors** (`HouseVisitService`). `player.enter` next to a door sets `PlayerState.inside`;
+  `player.move` then paths on the interior grid and `player.exit` returns to the door. Entering
+  writes a `HouseVisit` of kind `visit` (owner home and awake: greeting via `visit.greet`, memory,
+  affinity +1), `sleeping` (memory and −1 when the owner wakes) or `snoop` (memory and −2 when the
+  owner comes home; witnesses within 6 tiles get an observation that spreads as gossip). The hotel
+  and post office are public and cause no reaction.
+- **Romance** (`cognition/romance.ts`, stored by the engine as `Romance` records). Crushes and
+  couples are decided by rules at night (a crush has a 30 % chance per eligible night and is certain
+  on the third eligible night in a row; the streak is saved with the mind state); date invitations and answers use `date.ask` and
+  `date.decide`. A date is a `VillageEvent` of kind `date` that uses the normal event flow but is
+  private. Witnesses within 8 tiles get an observation, so dates become gossip. Laude and Franzi
+  start with a seeded shy crush from `data/romance.json` with its own slower rules.
+- **Post office** (`player/post-office.ts`, `PostOfficeService`). Owns letters (posted at once,
+  delivered at `post.deliveryTimes`, read on the recipient's next arrival home, replies via
+  `letter.reply`; villagers write a few of their own via `letter.write` at 21:00), the notice
+  board (player notices and automatic event notices; passers-by get a memory with the notice's
+  `originId`, so notices spread and can be traced) and the Keep.
+- **The Keep and Laude.** `PostOfficeService.log(entry)` is called synchronously for every door
+  note, letter, notice and rumor hop. It always appends a `KeepEntry` (up to `post.keepMax`), and,
+  if Laude lives in town, writes an observation into his memory stream through the
+  `MindWorld.observeFor` hook, the only place one mind's stream is written from outside its own
+  perception. These memories have a fixed importance (no `importance.rate` call), count only a
+  quarter toward reflection, and are archived after a day. When Laude answers, cognition adds up
+  to 3 matching Keep entries (`KeepArchive.search`, a keyword search) to his prompt. The log never
+  records a rumor hop by itself; Laude telling someone later counts as a real hop.
+- **New residents.** `laude` and `franzi` are entries 11 and 12 of `data/villagers.json`, so the
+  default `sim.villagers: 12` includes them and `sim.villagers: 10` gives exactly the v1 set. A
+  v1 save loaded with 12 villagers spawns them at home ("moved in"). Laude is added to every
+  bake-off as an invitee.
+
 ## LLM layer
 
 - `createProviders(config)` returns a chat provider and an optional embeddings provider. All
@@ -206,11 +288,15 @@ _Generative Agents_ (Park et al., 2023), scaled down to small local models:
   request for today's plan (110), note replies (108), a speaker's first line with news (104),
   plan rescue retries (103), the event proposal (101), conversation turns (100), RSVPs (92),
   player task requests (85), tomorrow's plan and plan revisions (70),
-  conversation summaries (60), importance ratings (30), reflections and day summaries (20). Waiting jobs gain +1 priority per 2 s of real
+  conversation summaries (60), importance ratings (30), reflections and day summaries (20). The v2
+  tasks slot in as house-visit greetings `visit.greet` (105), letter replies `letter.reply` (90),
+  date answers `date.decide` (80), visitor profiles `visitor.create` (75), date invitations
+  `date.ask` (65) and villager-written letters `letter.write` (45). Waiting jobs gain +1 priority per 2 s of real
   waiting (at most +50). Duplicate jobs are coalesced. Jobs whose `expiresAt` game time has passed
   before they start are dropped; without an explicit `expiresAt`, background tasks get a default
   lifetime (`DEFAULT_TASK_TTL_MINUTES` in `queue.ts`, e.g. 30 game minutes for `convo.turn`, 360
-  for `plan.day`), while player-facing tasks and the event proposal never expire. At most 64 jobs wait; beyond that the
+  for `plan.day`, 120 for `date.ask` and `date.decide`, 240 for `visitor.create`, 360 for
+  `letter.write`), while player-facing tasks and the event proposal never expire. At most 64 jobs wait; beyond that the
   lowest-priority one is dropped. Retryable errors (408, 409, 429, 5xx, network) are retried twice
   with jittered exponential backoff from 500 ms, honouring `retry-after` up to 30 s; timeouts are
   not retried. Errors are `LlmError`s of kind `network`, `http`, `timeout`, `parse`,
@@ -244,28 +330,43 @@ _Generative Agents_ (Park et al., 2023), scaled down to small local models:
   check switches retrieval to keywords. After that the online flag follows the calls: network
   errors, timeouts and 401/403 set it to offline, any success sets it back.
 - With 10 villagers a game day costs up to roughly 200 calls plus player chats; under load the
-  load levels cut that (about 100 calls in a CPU-only live run with `qwen2.5:1.5b`).
+  load levels cut that (about 100 calls in a CPU-only live run with `qwen2.5:1.5b`). The v2
+  defaults (12 residents and up to 4 visitors) add about 90 calls for the extra minds plus a few
+  for visitors, dates, letters and greetings: roughly 230–300 a day. The new optional tasks give
+  way first: under `overloaded`, `date.ask` and `letter.write` are skipped and `visitor.create`
+  and `date.decide` use their fallbacks without a call, while `visit.greet` and `letter.reply`
+  (the player is waiting) still go to the model.
 
 ## Protocol
 
-One WebSocket at `/ws`, JSON text frames with a `type` field (`PROTOCOL_VERSION = 1`, types in
-`src/shared/protocol.ts`).
+One WebSocket at `/ws`, JSON text frames with a `type` field (`PROTOCOL_VERSION = 2`, types in
+`src/shared/protocol.ts`). Every v2 field added to a v1 type is optional.
 
 - **Server → client:** `hello` (map, villagers, snapshot, LLM info) on connect, `tick` (time,
   speed, changed villagers), `conversation.message`, `conversation.ended`, `note.updated`,
   `event.updated`, `inspect.data`, `stats` (queue statistics, LLM online), `player.updated`,
   `rumor.updated`, `world.event`, `weather.updated`, `items.updated`, `villagers.changed`,
-  `sim.status` (wake-up hold), `toast`, `log`, `error`.
+  `sim.status` (wake-up hold), `toast`, `log`, `error`. v2 adds `animals` on `tick` (only animals
+  that moved or changed), `animals.changed` (births, deaths, butcher, stage changes),
+  `animal.emote`, `ride.updated`, `train.updated`, `hotel.updated`, `visitor.updated`,
+  `romance.updated`, `visit.updated`, `stock.updated`, `letter.updated`, `notice.updated`,
+  `keep.added`, the direct reply `keep.data`, and `romance` and `visitor` on `inspect.data`. The
+  `hello` snapshot gains `animals`, `rides`, `train`, `visitors`, `hotel`, `romances`,
+  `houseVisits`, `stock`, `letters`, `notices` and `keepSize`; the map gains `districts`,
+  `interiors` and `railway`.
 - **Client → server:** `inspect`, `speed`, `note.post`, `save`, `player.move`, `player.say`,
   `player.rumor`, `player.pairTalk`, `player.gift`, `world.trigger`, `decor.toggle`,
   `pet.command`, and with `debug: true` also `debug.inject` and `debug.jump`. Any command may carry
-  a `requestId`, echoed in an `error` reply.
+  a `requestId`, echoed in an `error` reply. v2 adds `player.enter`, `player.exit`, `player.ride`,
+  `player.buy`, `letter.send`, `letter.read`, `notice.post` and `keep.open`, and `world.trigger`
+  accepts `train`.
 
 HTTP endpoints: `GET /` (the built client), `GET /api/health`, `GET /api/snapshot` (full
 `WorldSnapshot`, as in `hello`), `GET /api/rumors`, `GET /api/catalog` (items and decorations for
 the UI), `GET /api/replay` (download `replay.jsonl`, 404 until the first save). The read-only
 observer API (`/api/state`, `/api/agents/{id}[/memories]`, `/api/conversations`, `/api/notes`,
-`/api/events`, `/api/stats`, `/api/screenshot`; `src/server/net/observer*.ts`) is described in
+`/api/events`, `/api/stats`, `/api/screenshot`, and in v2 `/api/letters`, `/api/notices`,
+`/api/keep`, `/api/animals`; `src/server/net/observer*.ts`) is described in
 [observer-api.md](observer-api.md); its town log lives in `src/server/sim/town-log.ts` and is saved
 with the world. Non-GET/HEAD requests to `/api/*` return 405, other `/api/*` paths 404; every
 other path serves the client.
@@ -280,6 +381,14 @@ other path serves the client.
 - `memories/<villagerId>.json`: each villager's memories, embeddings stored as base64 Float32.
 - `replay.jsonl`: an append-only log of conversation, event, rumor, note and world messages.
 
+The save format is version 2 (`SAVE_SCHEMA_VERSION`). It adds farm and zoo animals, the farm
+state, the train, visitors, the hotel, romances, house visits, food stock, letters, notices and
+the Keep. Rides restart idle and forest animals are reseeded, so neither is saved. `MIGRATIONS[1]`
+in `persistence/migrations.ts` upgrades a v1 save by adding empty defaults; on restore the engine
+seeds the farm and zoo, builds the hotel, schedules the next train, applies missing romance seeds
+and moves in residents that are configured but missing (Laude and Franzi). Saves newer than
+version 2 are rejected.
+
 Every file is written to a temporary file and renamed; `world.json` is written last. The game
 autosaves every `persistence.autosaveGameMinutes`, on `save` and on SIGINT/SIGTERM, and loads the
 slot on startup unless `--new` is given.
@@ -288,7 +397,11 @@ slot on startup unless `--new` is given.
 
 The browser client is plain TypeScript bundled by Vite. A canvas draws the tile layers, sprites
 sorted by y, the overhead layer, bubbles and name tags with nearest-neighbour scaling at integer
-zoom, plus day/night tint, lamp glows, rain and confetti. The HUD, stats card, LLM card, toolbar,
+zoom, plus day/night tint, lamp glows, rain and confetti. On the 128×60 map the static layers are
+pre-rendered in chunks and only visible chunks are drawn; fit and overview may use fractional zoom.
+Animals, rides and the train are animated from server state; birds and the flying crow are drawn
+above the overhead layer. While the player is inside, the interior is drawn as its own view with
+the world dimmed behind it. The HUD, stats card, LLM card, toolbar,
 dock, inspector, rumor tracker, modals and toasts are HTML/CSS on top. Fonts (Departure Mono,
 Silkscreen) are bundled, so the client loads nothing from the internet. The look follows the
 [visual style guide](spec/visual-style-guide.md).
@@ -296,5 +409,6 @@ Silkscreen) are bundled, so the client loads nothing from the internet. The look
 ## Testing
 
 `npm test` runs unit and acceptance tests with the `mock` provider and the virtual clock; no
-network. `npm run test:live` runs the same checks against the real provider in your config. See
+network. `npm run test:perf` runs the timing checks on their own (a separate Vitest project, one
+file at a time). `npm run test:live` runs the same checks against the real provider in your config. See
 [Acceptance tests](acceptance.md).

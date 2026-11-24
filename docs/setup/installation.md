@@ -36,7 +36,7 @@ INFO  [main] config: /path/to/tiny-pixel-people/config.json
 INFO  [main] resuming save "default" from /path/to/tiny-pixel-people/saves/default
 INFO  [main] LLM ollama/qwen2.5:7b: ollama at http://127.0.0.1:11434, model qwen2.5:7b ready
 INFO  [main] embeddings: ollama at http://127.0.0.1:11434, model nomic-embed-text ready
-INFO  [main] world: 48x30 tiles, 10 villagers
+INFO  [main] world: 128x60 tiles, 12 villagers
 INFO  [main] Tiny Pixel People running at http://127.0.0.1:3000
 ```
 
@@ -70,7 +70,7 @@ npm start -- --new
 ## Configure
 
 Without a `config.json`, the defaults are used: Ollama on `http://127.0.0.1:11434` with
-`qwen2.5:7b`, 10 villagers, a 15-minute day. To change anything:
+`qwen2.5:7b`, 12 villagers, a 15-minute day. To change anything:
 
 ```sh
 cp config.example.json config.json

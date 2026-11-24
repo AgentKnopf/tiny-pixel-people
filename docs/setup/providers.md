@@ -213,8 +213,8 @@ and memories without a matching embedding fall back to keyword recall.
 
 ## Costs and rate limits
 
-A game day with 10 villagers makes roughly 200 short calls (a few hundred tokens each), plus your
-own chats. At 8× speed that's a day every couple of minutes. With a paid API, watch the call
+A game day with 10 villagers makes roughly 200 short calls (a few hundred tokens each), and the v2
+default of 12 villagers plus visitors about 230–300, plus your own chats. At 8× speed that's a day every couple of minutes. With a paid API, watch the call
 counter on the stats card. Rate-limit errors (HTTP 429), server errors (5xx) and network errors are
 retried up to twice with backoff, honouring the server's `retry-after` (capped at 30 seconds);
 timeouts are not retried. Villagers fall back to simple behaviour while the model is unavailable.

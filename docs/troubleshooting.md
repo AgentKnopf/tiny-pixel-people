@@ -129,6 +129,63 @@ At most 20 villagers live in town, strangers included. Wait until a stranger lea
 **`Not enough gold`.**
 Decorations cost gold. Attend events (+10) or ask villagers for favours (+12 when done).
 
+## The bigger village
+
+**Laude and Franzi are missing.**
+They are villagers 11 and 12. With `sim.villagers` below 12 (or `TPP_VILLAGERS`), one or both stay
+away. The post office, letters, the notice board and the Keep still work without them. If you load
+an old save with 12 villagers, they move in and a toast says
+`🏡 Laude and Franzi moved in near the bakery!`.
+
+**No visitors arrive.**
+Visitors come by train, first at 10:00, and only while `visitors.enabled` and `train.enabled` are
+on. A train brings nobody when 4 visitors are already in town, when every hotel room is taken, or
+when the village already has 20 villagers (strangers count too). Press **🚂 Train** to bring the
+next train now.
+
+**`Invalid configuration` about `visitors.max`, `visitors.min`, `farm.capPerSpecies` or
+`post.keepMax`.**
+`visitors.max` must be at most `hotel.rooms`, and `visitors.min` at most `visitors.max`.
+`farm.capPerSpecies` is 1–10 and `post.keepMax` at most 5000. See the
+[configuration reference](setup/configuration.md).
+
+**I can't send a letter, post a notice or open the Keep.**
+Letters are sent at the post office: inside it, or within 2 tiles of its door (the post box takes
+letters even when it's closed). Notices need you within 3 tiles of the notice board. The Keep opens
+only inside the post office, from the cupboard. Away from these places the server refuses the
+request.
+
+**My letter hasn't arrived.**
+Letters go out with the post rounds at 11:00 and 17:00 (`post.deliveryTimes`), and the recipient
+reads it the next time they come home awake, like a door note. A letter to a visitor who has left
+comes back marked "moved away".
+
+**A ride doesn't start, or a food stand won't sell.**
+The zoo and its rides are open 08:00–21:00, the burger joint 11:00–21:00 and the ice cream trucks
+10:00–19:00. A ride costs gold. The shop and the burger joint sell only what is in stock; the farm
+refills them every morning (and the butcher brings burgers).
+
+**Farm animals disappear.**
+That is the farm lifecycle: old animals pass away, and when a species gets crowded (8 or more), one
+animal a day goes to the butcher at 16:00. New ones are born when there is room. A species never
+has more than 10.
+
+**A villager is upset with me after I went into their house.**
+Walking in while nobody is home counts as snooping: the owner finds out on coming home and likes
+you a little less, and neighbours who saw you may gossip. Visit when the owner is home and awake
+instead; that makes them like you more (once a day per house).
+
+**The owner doesn't say hello when I walk in.**
+The greeting comes from the model. On a slow model it can take a while; after 60 game minutes the
+owner uses a simple greeting instead. An owner who is asleep doesn't greet you.
+
+**My program can't reach the observer API.**
+It answers on the game's address, `http://127.0.0.1:3000/api/…` by default, unless you gave it its
+own `observer.port`. Requests from other machines get `403` unless `observer.allowRemote` is on
+and a token is set (`observer.token` or `OBSERVER_TOKEN`). With a token, every request needs
+`Authorization: Bearer <token>`, otherwise the answer is `401`. Only `GET` and `HEAD` work. See the
+[observer API](observer-api.md).
+
 ## Saves
 
 **The village starts over after a restart.**
@@ -138,9 +195,17 @@ minutes and on `Ctrl+C`; if the process was killed hard (`kill -9`, a crash), th
 minutes are lost.
 
 **The log says `could not load save "default": …`, then `starting new world (save "default")`.**
-A save file is damaged or from an incompatible version. The server starts a new village, and its
+A save file is damaged or from an incompatible version. Saves from v1 load fine and are
+upgraded; a save from a newer version of the game is refused. The server starts a new village, and its
 next save **overwrites the old slot**. To keep the old save, stop the server right away and copy the
 slot folder (`saves/default/`) somewhere else.
+
+**Two entries in an older save have the same id** (Keep entries, conversations, notes, rumors or
+house visits).
+This is a known limitation. Before the fix, a build could reuse an id after loading a save: for Keep
+entries, conversations, notes, rumors or house visits. The current game continues every counter
+above the ids in the save, so it never makes a new duplicate. It doesn't repair duplicates that an
+older build already wrote into a save; those stay as they are.
 
 **I want to start over completely.**
 Run `npm start -- --new` (the old save is overwritten at the next save, while `replay.jsonl` keeps
