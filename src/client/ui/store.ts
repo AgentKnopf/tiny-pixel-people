@@ -146,6 +146,8 @@ export class UiStore {
   /** What the open Keep modal asked for, so live `keep.added` entries land on page one. */
   keepFilter: KeepFilter | null = null;
 
+  /** Open conversations seen in `conversation.message`, by id: the two participants. */
+  private talks = new Map<string, [VillagerId, VillagerId]>();
   private listeners = new Map<Topic, Set<() => void>>();
   private toastListeners = new Set<(t: ToastItem) => void>();
 
@@ -219,6 +221,7 @@ export class UiStore {
         this.letters = new Map((s.letters ?? []).map((l) => [l.id, l]));
         this.notices = new Map((s.notices ?? []).map((n) => [n.id, n]));
         this.keepSize = s.keepSize ?? 0;
+        this.talks.clear();
         if (this.selectedAnimalId && !this.animals.has(this.selectedAnimalId)) this.selectedAnimalId = null;
         this.emit(
           'hello',
@@ -311,11 +314,21 @@ export class UiStore {
         if (this.selectedId && msg.removed.includes(this.selectedId)) this.select(null);
         break;
       case 'conversation.message':
+        if (!this.talks.has(msg.conversationId)) {
+          // One conversation per villager at a time, so the map stays bounded by the head count.
+          for (const [id, pair] of this.talks) {
+            if (pair.includes(msg.speakerId) || pair.includes(msg.listenerId)) this.talks.delete(id);
+          }
+          this.talks.set(msg.conversationId, [msg.speakerId, msg.listenerId]);
+        }
         if (msg.listenerId === PLAYER_ID && msg.speakerId === this.chatWith) {
           this.chat = this.chat.filter((l) => !l.pending);
           this.chat.push({ from: msg.speakerId, to: PLAYER_ID, text: msg.text });
           this.emit('chat');
         }
+        break;
+      case 'conversation.ended':
+        this.talks.delete(msg.conversationId);
         break;
       case 'sim.status':
         this.simStatus = msg;
@@ -507,6 +520,15 @@ export class UiStore {
 
   locationName(id: LocationId | null | undefined): string {
     return this.location(id)?.name ?? (id ? id.replace(/_/g, ' ') : 'somewhere');
+  }
+
+  /** Who `id` is talking with, if a message of that conversation has arrived; else null. */
+  talkPartner(id: VillagerId): VillagerId | null {
+    for (const [a, b] of this.talks.values()) {
+      if (a === id) return b;
+      if (b === id) return a;
+    }
+    return null;
   }
 
   /** Villager ids sorted by name (excludes the player). */

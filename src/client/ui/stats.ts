@@ -5,12 +5,19 @@ import { icon, spriteIcon } from './icons.ts';
 import type { UiStore } from './store.ts';
 
 /** Top-right card: model calls (real or mock, per provider), gold + item counts, online · agents. */
-export function createStatsCard(store: UiStore): HTMLElement {
+export function createStatsCard(store: UiStore, openVillagers?: () => void): HTMLElement {
   const callsLabel = h('div', { class: 'label', 'data-testid': 'stats-calls-label' }, 'Model calls');
   const calls = h('div', { class: 'stats-calls', 'data-testid': 'stats-calls' }, '0 · 0 ms · 0 tok');
   const purse = h('div', { class: 'stats-purse', 'data-testid': 'stats-purse' });
   const queue = h('div', { class: 'stats-queue' });
-  const agents = h('div', { class: 'stats-agents', 'data-testid': 'stats-agents' });
+  const agents = h('button', {
+    type: 'button',
+    class: 'stats-agents',
+    'data-testid': 'stats-agents',
+    'aria-label': 'Show all villagers',
+    title: 'Show all villagers',
+    onclick: () => openVillagers?.(),
+  });
   const train = h('div', { class: 'stats-train', 'data-testid': 'stats-train', hidden: true });
   const el = h(
     'div',
