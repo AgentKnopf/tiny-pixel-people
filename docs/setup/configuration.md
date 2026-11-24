@@ -17,7 +17,9 @@ Invalid configuration in /path/config.json:
   - llm.provider: Invalid option: expected one of "ollama"|"openai"|"anthropic"|"gemini"|"mock"
 ```
 
-`config.example.json` contains every key with its default. Restart the server after any change.
+`config.example.json` lists the main keys with their defaults; sections it leaves out (the v2
+ones such as `zoo` or `post`) keep their defaults too. It leaves out `llm.concurrency`, so the
+provider's default applies (1 for Ollama, 2 for the others). Restart the server after any change.
 Config files from v1 keep working: every v2 section has defaults. The one changed default is
 `sim.villagers` (10 → 12).
 

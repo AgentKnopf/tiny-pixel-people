@@ -61,8 +61,9 @@ Rules of thumb:
 
 - The model needs to fit in GPU memory (or, on Apple Silicon, in about two thirds of RAM) with room
   to spare, or it gets very slow.
-- A game day makes roughly 200 model calls with 10 villagers. With the default 15-minute day at 1×
-  that is one call every 4.5 seconds (Ollama runs one at a time by default). If your
+- A game day makes roughly 200 model calls with 10 villagers, and about 230–300 with the v2
+  default of 12 plus visitors. At 200 calls and the default 15-minute day at 1×, that is one call
+  every 4.5 seconds (Ollama runs one at a time by default). If your
   model is slower, villagers are still fine; they just talk and plan less. A longer day or fewer
   villagers gives each one more thinking time. See [Performance and slow hardware](performance.md).
 - Embeddings are cheap; keep `nomic-embed-text` on every machine. `mxbai-embed-large` also works.
