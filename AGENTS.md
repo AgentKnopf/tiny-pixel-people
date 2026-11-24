@@ -6,7 +6,10 @@
   `src/server/persistence/types.ts`; change them only in a small dedicated PR.
 - The sim loop never awaits an LLM call. Every LLM-driven decision needs a deterministic fallback.
 - Tests run against the `mock` provider; never require network access or a real model in `npm test`.
-- Before opening a PR run `npm run check` (lint, typecheck, tests, build) and `npm run format`.
+- Before opening a PR run `npm run check` (lint, typecheck, `npm test`, then `npm run test:perf`,
+  then build) and `npm run format`. `npm test` alone skips the timing checks. For a full validation
+  run `TPP_ACCEPTANCE_STRICT=1 npm test && npm run test:perf`. Don't run a bare `npx vitest run`:
+  it runs the functional and timing projects at the same time.
 - Branch names: `wp<N>/<topic>`. All changes land via PRs into `main`; CI must be green.
 - No secrets in the repo: `config.json`, `.env` and `saves/` are gitignored.
 - Third-party assets must be MIT, CC0 or CC-BY and listed in `assets/CREDITS.md`.
