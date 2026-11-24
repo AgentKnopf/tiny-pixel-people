@@ -18,6 +18,7 @@ import { noticeBoardModal } from './modals/notice-board.ts';
 import { mapModal } from './modals/map.ts';
 import { ModalHost, type ModalView } from './modals/modal.ts';
 import { petModal } from './modals/pet.ts';
+import { villagersModal } from './modals/villagers.ts';
 import { createPlaceBar } from './place-bar.ts';
 import { createRumorPanel } from './rumor-panel.ts';
 import { createSimStatusBanner } from './sim-status.ts';
@@ -94,6 +95,7 @@ export function mountUi(root: HTMLElement, host: UiHost, store: UiStore = new Ui
         letters: () => lettersModal(ctx, (arg as LettersTab | undefined) ?? 'inbox'),
         'notice-board': () => noticeBoardModal(ctx),
         keep: () => keepModal(ctx),
+        villagers: () => villagersModal(ctx),
       };
       modals.open(views[kind]());
     },
@@ -114,7 +116,11 @@ export function mountUi(root: HTMLElement, host: UiHost, store: UiStore = new Ui
   root.classList.add('ui-root');
   root.append(
     h('div', { class: 'ui-top-left' }, createHud(store), createRumorPanel(store)),
-    h('div', { class: 'ui-top-right' }, createStatsCard(store)),
+    h(
+      'div',
+      { class: 'ui-top-right' },
+      createStatsCard(store, () => ctx.openModal('villagers')),
+    ),
     h('div', { class: 'ui-bottom-left' }, createLlmCard(store), createToolbar(ctx)),
     h('div', { class: 'ui-bottom-right' }, createDock(ctx)),
     createSimStatusBanner(store),

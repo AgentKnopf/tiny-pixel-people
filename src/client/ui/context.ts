@@ -4,7 +4,7 @@ import type { UiHost } from './types.ts';
 import type { WalkIn } from './walk-in.ts';
 
 export type ModalKind =
-  'map' | 'decorate' | 'backpack' | 'pet' | 'door-note' | 'letters' | 'notice-board' | 'keep';
+  'map' | 'decorate' | 'backpack' | 'pet' | 'door-note' | 'letters' | 'notice-board' | 'keep' | 'villagers';
 
 /** Shared handles passed to every panel. */
 export interface UiContext {

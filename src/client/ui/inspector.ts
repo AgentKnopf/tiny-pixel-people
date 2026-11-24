@@ -2,6 +2,7 @@ import { SAY_MAX_LENGTH } from '../../shared/protocol.ts';
 import { PLAYER_ID, type DateRecord, type Needs, type Romance, type VillagerId } from '../../shared/types.ts';
 import type { UiContext } from './context.ts';
 import { h, replaceChildren, setText } from './dom.ts';
+import { findVillager } from './find-villager.ts';
 import { icon } from './icons.ts';
 import { currentBlockIndex, formatClock, formatWhen, isAboutPlayer, memoryEmoji } from './format.ts';
 
@@ -107,13 +108,7 @@ export function createInspector(ctx: UiContext): HTMLElement {
 
   const find = () => {
     const vid = id();
-    if (!vid) return;
-    if (host.camera?.followVillager) host.camera.followVillager(vid);
-    else {
-      const f = store.frames.get(vid);
-      if (f) host.camera?.focusTile?.({ x: f.x, y: f.y });
-    }
-    store.setScene(null);
+    if (vid) findVillager(host, store, vid);
   };
 
   const visit = () => {

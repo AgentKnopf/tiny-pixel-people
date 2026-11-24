@@ -52,7 +52,7 @@ The village fills the window. A dark, see-through interface floats on top of it:
 | Bottom left   | The LLM card: where the villagers think. `✈ OFFLINE` with `RUNNING ON THIS MACHINE · QWEN2.5:7B VIA OLLAMA` means a local model, no internet needed; `☁ ONLINE` means a hosted API. `⚠ MODEL UNREACHABLE` means the model doesn't answer. The last line shows how long the last reply took.                                                                                                                                                                                                              |
 | Bottom        | The toolbar: `PAUSE`, zoom (`−`, fit, `+`), the speed buttons `1× 2× 4× 8×`, and the world event buttons, including 🚂 Train. On narrower windows the event buttons show only their icons; hover for the name.                                                                                                                                                                                                                                                                                           |
 | Bottom centre | The place bar, when there is something to do where you stand: buy food, ride a ride, write a letter or read the notice board, and `🏠 Inside …` with `🚪 Exit` while you are inside a house.                                                                                                                                                                                                                                                                                                             |
-| Bottom right  | The dock: `Backpack`, `Map`, `Pet`, `Decorate`, `Home`, `Mail` (your mailbox), `Letters` and `Gold`. `Letters` shows how many new letters are waiting.                                                                                                                                                                                                                                                                                                                                                   |
+| Bottom right  | The dock: `Backpack`, `Map`, `Pet`, `Decorate`, `Home`, `Mail` (your mailbox), `Letters`, `Villagers` and `Gold`. `Letters` shows how many new letters are waiting; `Villagers` shows how many are in town. In windows 1103 px wide or narrower the dock tiles are compact and `Villagers` reads `People`.                                                                                                                                                                                               |
 | Right         | The inspector, when you click a villager. Clicking an animal opens a small animal card: its name and species, and for farm and zoo animals also the stage (baby, adult, elder), male or female, its age in days, what it is doing and where it lives. Forest animals and the crow show only their name and species.                                                                                                                                                                                      |
 
 Short messages ("toasts") pop up at the bottom centre, for example `📮 Mailbox placed at your
@@ -136,6 +136,16 @@ From top to bottom it shows:
   mention you are highlighted.
 
 The inspector updates live while it is open.
+
+### Villagers list
+
+The **Villagers** tile in the dock (or the `👥 n agents` count on the stats card) opens a list of
+everyone in town: residents, visitors (with their hotel room) and a stranger passing through. Each
+row shows the name, the job (or a visitor badge), where they are (`outside` between buildings) and
+what they are doing (`😴 asleep`, `💬 talking with …`). The mood word appears only for the villager
+whose inspector is open, because only that one has live needs. Type in the filter box to search by
+name, job, place or activity. Click a row (or press `Enter` for the first match) to open that
+villager's inspector and follow them with the camera.
 
 ## Talking to villagers
 
