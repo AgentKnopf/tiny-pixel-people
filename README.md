@@ -41,7 +41,9 @@ the server with `Ctrl+C` in its terminal; it saves the village first. After `npm
 pulls, no internet connection is needed.
 
 npm 11 may warn during `npm ci` that `esbuild` has an install script not covered by
-`allowScripts`. The game builds and runs without approving it. If you do approve it
+`allowScripts`. In our tests (npm 11.19 on Linux) the game built and ran without approving it,
+because esbuild's ready-made binary for your platform is installed as a normal dependency; this
+wasn't checked on a Mac. If the build fails with an esbuild error, approve it. If you do approve it
 (`npm install-scripts approve esbuild`), npm writes an `allowScripts` field into `package.json`, which
 counts as a local change when you update (see below).
 
