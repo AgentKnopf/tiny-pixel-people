@@ -9,7 +9,14 @@ interface Tile {
   badge: HTMLElement;
 }
 
-function tile(sprite: string, emoji: string, label: string, testid: string, onclick: () => void): Tile {
+function tile(
+  sprite: string,
+  emoji: string,
+  label: string,
+  testid: string,
+  onclick: () => void,
+  compactLabel?: string,
+): Tile {
   const sub = h('span', { class: 'dock-sub' });
   const badge = h('span', { class: 'dock-badge', hidden: true });
   const el = h(
@@ -17,7 +24,14 @@ function tile(sprite: string, emoji: string, label: string, testid: string, oncl
     { class: 'dock-tile', 'data-testid': testid, onclick },
     badge,
     h('span', { class: 'dock-icon' }, icon(sprite, emoji)),
-    h('span', { class: 'dock-label' }, label),
+    compactLabel
+      ? h(
+          'span',
+          { class: 'dock-label' },
+          h('span', { class: 'dock-label-full' }, label),
+          h('span', { class: 'dock-label-compact' }, compactLabel),
+        )
+      : h('span', { class: 'dock-label' }, label),
     sub,
   );
   return { el, sub, badge };
@@ -36,7 +50,14 @@ export function createDock(ctx: UiContext): HTMLElement {
   });
   const mail = tile('note', '📬', 'Mail', 'dock-mail', () => ctx.openModal('door-note', PLAYER_HOME_ID));
   const letters = tile('letter', '✉️', 'Letters', 'dock-letters', () => ctx.openModal('letters'));
-  const villagers = tile('people', '👥', 'Villagers', 'dock-villagers', () => ctx.openModal('villagers'));
+  const villagers = tile(
+    'people',
+    '👥',
+    'Villagers',
+    'dock-villagers',
+    () => ctx.openModal('villagers'),
+    'People',
+  );
   const gold = tile('coin', '🪙', 'Gold', 'dock-gold', () => ctx.openModal('backpack'));
   setText(decorate.sub, 'Your cottage');
   setText(home.sub, 'Your cottage');

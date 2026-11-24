@@ -535,6 +535,10 @@ select:focus {
   font-size: 11px;
 }
 
+.dock-label-compact {
+  display: none;
+}
+
 .dock-sub {
   font-family: var(--font-label);
   font-size: 8px;
@@ -1277,7 +1281,8 @@ select:focus {
   margin-top: 2px;
 }
 
-@media (max-width: 900px) {
+/* Nine dock tiles at full width reach the bottom-left panel below this width. */
+@media (max-width: 1103px) {
   .toolbar .btn-label {
     display: none;
   }
@@ -1286,6 +1291,12 @@ select:focus {
   }
   .dock-sub {
     display: none;
+  }
+  .dock-label-full {
+    display: none;
+  }
+  .dock-label-compact {
+    display: inline;
   }
   .inspector {
     width: min(260px, 70vw);

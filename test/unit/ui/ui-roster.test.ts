@@ -273,6 +273,9 @@ describe('villager roster', () => {
   });
 
   it('dock tile shows the head count', () => {
+    const tile = byTestId('dock-villagers');
+    expect(tile.querySelector('.dock-label-full')?.textContent).toBe('Villagers');
+    expect(tile.querySelector('.dock-label-compact')?.textContent).toBe('People');
     expect(byTestId('dock-villagers').textContent).toContain('3 in town');
     ui.handleMessage({
       type: 'villagers.changed',
