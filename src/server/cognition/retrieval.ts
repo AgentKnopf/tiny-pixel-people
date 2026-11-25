@@ -30,10 +30,20 @@ export function isRetrievable(
   return true;
 }
 
+/** Loops, not `Math.min(...xs)`: a spread throws RangeError past ~130k candidates. */
+function minMax(xs: readonly number[]): [number, number] {
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const x of xs) {
+    if (x < lo) lo = x;
+    if (x > hi) hi = x;
+  }
+  return [lo, hi];
+}
+
 function normalise(xs: number[]): number[] {
   if (xs.length === 0) return xs;
-  const lo = Math.min(...xs);
-  const hi = Math.max(...xs);
+  const [lo, hi] = minMax(xs);
   if (hi - lo < 1e-9) return xs.map(() => (hi > 0 ? 1 : 0));
   return xs.map((x) => (x - lo) / (hi - lo));
 }
@@ -54,15 +64,18 @@ export function scoreMemories(
     Math.pow(RECENCY_DECAY_PER_HOUR, Math.max(0, now - m.lastAccessedAt) / 60),
   );
   const imp = candidates.map((m) => m.importance / 10);
-  const kw = bm25Scores(
-    queryKeywords,
-    candidates.map((m) => m.keywords),
-  );
-  const kwMax = Math.max(...kw, 0);
+  const byEmbedding = (m: Memory) => !!(queryEmbedding && m.embedding && m.embedding.length);
+  // Keyword scores only rank memories without an embedding; skip them when there are none.
+  const kw = candidates.every(byEmbedding)
+    ? null
+    : bm25Scores(
+        queryKeywords,
+        candidates.map((m) => m.keywords),
+      );
+  const kwMax = kw ? Math.max(minMax(kw)[1], 0) : 0;
   const rel = candidates.map((m, i) => {
-    if (queryEmbedding && m.embedding && m.embedding.length)
-      return Math.max(0, cosine(queryEmbedding, m.embedding));
-    return kwMax > 0 ? kw[i]! / kwMax : 0;
+    if (byEmbedding(m)) return Math.max(0, cosine(queryEmbedding!, m.embedding!));
+    return kwMax > 0 ? kw![i]! / kwMax : 0;
   });
   const nRec = normalise(rec);
   const nImp = normalise(imp);
