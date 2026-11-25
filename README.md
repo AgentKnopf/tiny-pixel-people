@@ -40,12 +40,11 @@ npm start
 the server with `Ctrl+C` in its terminal; it saves the village first. After `npm ci` and the model
 pulls, no internet connection is needed.
 
-npm 11 may warn during `npm ci` that `esbuild` has an install script not covered by
-`allowScripts`. In our tests (npm 11.19 on Linux) the game built and ran without approving it,
-because esbuild's ready-made binary for your platform is installed as a normal dependency; this
-wasn't checked on a Mac. If the build fails with an esbuild error, approve it. If you do approve it
-(`npm install-scripts approve esbuild`), npm writes an `allowScripts` field into `package.json`, which
-counts as a local change when you update (see below).
+`package.json` approves the install scripts of `esbuild` (the client build tool) and `fsevents`
+(a macOS file-watching helper, installed only on macOS) in its `allowScripts` field, so npm 11
+runs them during `npm ci` without a warning. We checked this with npm 11.19 on Linux. If you
+approved them yourself before this was in the repository (`npm install-scripts approve …`), your
+`package.json` shows as changed when you update; see step 3 below.
 
 The model provider must be up before you start: with the defaults, that is Ollama on
 `127.0.0.1:11434` with `qwen2.5:7b`. The first lines of the server log say whether the chat and
