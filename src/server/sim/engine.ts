@@ -557,13 +557,17 @@ export class Engine implements SimEngine, SimHost {
   toSaveData(): SaveData {
     const now = this.now();
     const runtimes = [...this.runtimes.values()];
-    return structuredClone({
+    const minds = runtimes.map((r) => r.mind.serialize());
+    // Embeddings are only ever replaced, never mutated in place, so the save shares them instead of
+    // cloning: deep-copying every vector of a long-running village takes gigabytes.
+    const embeddings = minds.map((m) => m.memories.map((mem) => mem.embedding));
+    const data: SaveData = structuredClone({
       schemaVersion: SAVE_SCHEMA_VERSION,
       savedAt: new Date().toISOString(),
       time: now,
       rngState: this.rng.state,
       villagers: runtimes.map((r) => r.state),
-      minds: runtimes.map((r) => r.mind.serialize()),
+      minds: minds.map((m) => ({ ...m, memories: m.memories.map(({ embedding: _e, ...rest }) => rest) })),
       events: this.eventList,
       notes: this.noteList,
       conversations: this.conversations().filter((c) => c.startedAt >= now - 2 * MINUTES_PER_DAY),
@@ -573,6 +577,13 @@ export class Engine implements SimEngine, SimHost {
       romances: this.romanceList,
       observer: this.townLog.serialize(),
     });
+    data.minds.forEach((m, i) =>
+      m.memories.forEach((mem, j) => {
+        const e = embeddings[i]![j];
+        if (e) mem.embedding = e;
+      }),
+    );
+    return data;
   }
 
   /** Save the slot now (save command, shutdown). */
