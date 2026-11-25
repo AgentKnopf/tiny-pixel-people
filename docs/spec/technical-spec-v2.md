@@ -575,7 +575,7 @@ Determinism across a restore: every saved field restores exactly, including each
 | Client frame (overview, 1440×900)            | ≥ 50 fps on a laptop                                  | Browser check (agent-browser), reported                                |
 | Save file                                    | ≤ 150 KB more than v1 for the same day, Keep included | Persistence test                                                       |
 
-The sim step p95 is measured in wall time and the max in main-thread CPU time, cold first step included: time the OS or the VM host keeps the thread off the CPU is not the step's cost. Where Node has no `process.threadCpuUsage`, the max uses wall time and a failing day is run once more.
+The sim step p95 is measured in wall time; the maxes (sim step, A*, the animal benchmark) in main-thread CPU time, cold first step included, because time the OS or the VM host keeps the thread off the CPU is not the code's cost. A\* queries are timed in batches of 10, as one query is shorter than the CPU clock's resolution. A step whose wall time is over 20 ms fails only if a rerun of the day has one too, so a host pause passes and a step that blocks the thread fails. Where Node has no `process.threadCpuUsage`, the maxes use wall time and a failing run is repeated once.
 
 A* may cache paths between location entries, because collision is static. Animals never path-find.
 
