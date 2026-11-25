@@ -25,6 +25,13 @@ interface MemoryFile {
   memories: StoredMemory[];
 }
 
+/** A memory file before its embeddings are encoded; `embeddings[i]` belongs to `memories[i]`. */
+interface PendingMemoryFile {
+  villagerId: string;
+  memories: Omit<Memory, 'embedding'>[];
+  embeddings: (readonly number[] | undefined)[];
+}
+
 type StoredWorld = Omit<SaveData, 'minds'> & { minds: Omit<MindSnapshot, 'memories'>[] };
 
 export interface JsonSaveStoreOptions {
@@ -65,10 +72,12 @@ export class JsonSaveStore implements SaveStore {
         minds: data.minds.map(({ memories: _memories, ...rest }) => rest),
       }),
     );
-    const memoryFiles: MemoryFile[] = data.minds.map((m) => ({
-      schemaVersion: SAVE_SCHEMA_VERSION,
+    // Embeddings are never mutated in place, so they are kept by reference and encoded one file at
+    // a time in write(): encoding them all up front holds every villager's base64 strings at once.
+    const memoryFiles: PendingMemoryFile[] = data.minds.map((m) => ({
       villagerId: m.villagerId,
-      memories: m.memories.map(toStored),
+      memories: structuredClone(m.memories.map(({ embedding: _e, ...rest }) => rest)),
+      embeddings: m.memories.map((mem) => mem.embedding),
     }));
     return this.serialize(() => this.write(world, memoryFiles));
   }
@@ -96,14 +105,14 @@ export class JsonSaveStore implements SaveStore {
     return next;
   }
 
-  private async write(world: StoredWorld, memoryFiles: MemoryFile[]): Promise<void> {
+  private async write(world: StoredWorld, memoryFiles: PendingMemoryFile[]): Promise<void> {
     const memDir = join(this.slotDir, MEMORIES_DIR);
     await mkdir(memDir, { recursive: true });
     const keep = new Set<string>();
     for (const file of memoryFiles) {
       const name = memoryFileName(file.villagerId);
       keep.add(name);
-      await atomicWrite(join(memDir, name), JSON.stringify(file));
+      await atomicWrite(join(memDir, name), JSON.stringify(encodeMemoryFile(file)));
     }
     await atomicWrite(join(this.slotDir, WORLD_FILE), JSON.stringify(world));
     // A saved slot always has a replay log, even before anything was recorded.
@@ -136,9 +145,15 @@ export class JsonSaveStore implements SaveStore {
   }
 }
 
-function toStored(m: Memory): StoredMemory {
-  const { embedding, ...rest } = m;
-  return embedding ? { ...rest, embeddingB64: encodeEmbedding(embedding) } : rest;
+function encodeMemoryFile(file: PendingMemoryFile): MemoryFile {
+  return {
+    schemaVersion: SAVE_SCHEMA_VERSION,
+    villagerId: file.villagerId,
+    memories: file.memories.map((m, i) => {
+      const embedding = file.embeddings[i];
+      return embedding ? { ...m, embeddingB64: encodeEmbedding(embedding) } : m;
+    }),
+  };
 }
 
 function fromStored(m: StoredMemory): Memory {
