@@ -2526,8 +2526,9 @@ const INSPECT_MEMORIES = 10;
  */
 function recentMemories(mind: VillagerMind, n: number): Memory[] {
   const recent = (mind as { recentMemories?: (n: number) => readonly Memory[] }).recentMemories;
+  // Both lists in recorded order before the stable sort, so equal createdAt stays oldest-recorded first.
   const list = recent
-    ? [...recent.call(mind, n)]
+    ? [...recent.call(mind, n)].reverse()
     : mind
         .serialize()
         .memories.filter((m) => !m.meta.archived)

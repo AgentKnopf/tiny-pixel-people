@@ -1,6 +1,6 @@
 /** The inspector's memory list: the newest 10 unarchived memories, without copying a big stream. */
 import { describe, expect, it } from 'vitest';
-import { createMind } from '../../src/server/cognition/mind.ts';
+import { createMind, type Mind } from '../../src/server/cognition/mind.ts';
 import type { VillagerMind } from '../../src/server/cognition/types.ts';
 import type { InspectDataMsg } from '../../src/shared/protocol.ts';
 import { StubMind } from '../../src/server/sim/stub-mind.ts';
@@ -80,6 +80,43 @@ describe('inspector memories', () => {
     expect(serialized).toBe(1);
     expect(msg.memories.map((m) => m.id)).toEqual(fast);
     b.engine.stop();
+  });
+
+  it('orders memories with the same time like the fallback, for a mind with recentMemories', async () => {
+    const lists: Record<string, string[]> = {};
+    for (const fast of [true, false]) {
+      const minds = new Map<string, Mind>();
+      const { engine } = createSimTestWorld({
+        startAt: '09:00',
+        createMind: (p, d) => {
+          const m = createMind(p, d) as Mind;
+          // The cognition mind's recentMemories (last n unarchived, newest recorded first), or none.
+          Object.defineProperty(m, 'recentMemories', {
+            value: fast
+              ? (n: number) => {
+                  const all = m.memory.all();
+                  const out = [];
+                  for (let i = all.length - 1; i >= 0 && out.length < n; i--)
+                    if (!all[i]!.meta.archived) out.push(all[i]!);
+                  return out;
+                }
+              : undefined,
+          });
+          minds.set(p.id, m);
+          return m;
+        },
+      });
+      await engine.advance(120);
+      const mia = minds.get('mia')!;
+      for (let i = 0; i < 4; i++)
+        mia.memory.add({ at: engine.now(), kind: 'observation', text: `same minute ${i}` });
+      const [msg] = engine.handleCommand({ type: 'inspect', villagerId: 'mia' });
+      const ids = (msg as InspectDataMsg).memories.map((m) => m.id);
+      expect(ids).toEqual(expected(mia));
+      lists[String(fast)] = ids;
+      engine.stop();
+    }
+    expect(lists.true).toEqual(lists.false);
   });
 
   it('shows the same list as before for the real mind', async () => {
