@@ -166,6 +166,16 @@ export class StubMind implements VillagerMind {
     // The stub mind never proposes events.
   }
 
+  /** The newest `n` unarchived memories, newest first, without copying the whole stream. */
+  recentMemories(n: number): Memory[] {
+    const out: Memory[] = [];
+    for (let i = this.memoryList.length - 1; i >= 0 && out.length < n; i--) {
+      const m = this.memoryList[i]!;
+      if (!m.meta.archived) out.push(m);
+    }
+    return out;
+  }
+
   serialize(): MindSnapshot {
     return {
       villagerId: this.id,
