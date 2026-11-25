@@ -27,6 +27,8 @@ export class MemoryStore implements MemoryStream {
   private byId = new Map<MemoryId, Memory>();
   private seq = 0;
   private deferred: Memory[] = [];
+  /** `since` cursor: every memory before `at` was created before `from`. */
+  private sinceCursor = { from: -Infinity, at: 0 };
 
   constructor(
     readonly villagerId: VillagerId,
@@ -46,6 +48,7 @@ export class MemoryStore implements MemoryStream {
       return rest;
     });
     this.byId = new Map(this.memories.map((m) => [m.id, m]));
+    this.sinceCursor = { from: -Infinity, at: 0 };
     for (const m of this.memories) {
       const n = Number(/-m(\d+)$/.exec(m.id)?.[1] ?? 0);
       if (n > this.seq) this.seq = n;
@@ -106,6 +109,19 @@ export class MemoryStore implements MemoryStream {
   /** Newest first. */
   recent(n: number): Memory[] {
     return this.memories.slice(-n).reverse();
+  }
+
+  /**
+   * A superset of the memories created at or after `from`, in stream order: it skips only a prefix
+   * known to be older. Memories are appended roughly in time order, so for a recent `from` this is
+   * a short tail; repeated calls with a non-decreasing `from` resume where the last one stopped.
+   */
+  since(from: GameMinutes): readonly Memory[] {
+    const c = this.sinceCursor;
+    if (from < c.from) c.at = 0;
+    c.from = from;
+    while (c.at < this.memories.length && this.memories[c.at]!.createdAt < from) c.at++;
+    return this.memories.slice(c.at);
   }
 
   /** Memories created in [from, to). */
