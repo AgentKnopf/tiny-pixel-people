@@ -192,7 +192,10 @@ function facingFor(from: Point, to: Point, prev: Facing): Facing {
 /** Straight axis-aligned steps from a (exclusive) to b (inclusive). */
 function straightPath(a: Point, b: Point): Point[] {
   const out: Point[] = [];
-  let { x, y } = a;
+  // Whole tiles only: from an off-grid position (a hand-edited save) the unit steps would never land on b.
+  let x = Math.round(a.x);
+  let y = Math.round(a.y);
+  b = { x: Math.round(b.x), y: Math.round(b.y) };
   while (x !== b.x || y !== b.y) {
     if (Math.abs(b.x - x) >= Math.abs(b.y - y)) x += Math.sign(b.x - x);
     else y += Math.sign(b.y - y);
