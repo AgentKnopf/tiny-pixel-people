@@ -211,6 +211,8 @@ export class Mind implements VillagerMind {
   private lastArchiveDay = -1;
   private eventRequested = false;
   private lastSeekAt = -Infinity;
+  /** heardAbout scan per open event (see there). */
+  private heardScan = new Map<string, { title: string; kw: string[]; next: number; found: boolean }>();
   private lastPlanJson = '';
   /** Days on which the player gave this villager a gift (thank-you letters). */
   private readonly giftDays = new Set<number>();
@@ -693,10 +695,17 @@ export class Mind implements VillagerMind {
     return selectNews(candidates, partnerId, now, max);
   }
 
+  recentMemories(n: number): Memory[] {
+    const all = this.memory.all();
+    const out: Memory[] = [];
+    for (let i = all.length - 1; i >= 0 && out.length < n; i--) if (!all[i]!.meta.archived) out.push(all[i]!);
+    return out;
+  }
+
   /** Fresh, important news that at most one villager has heard from this one so far. */
   hotNews(now: GameMinutes): Memory | undefined {
     return this.memory
-      .all()
+      .since(now - HOT_NEWS_WINDOW)
       .filter(
         (m) =>
           isNewsworthy(m) &&
@@ -1455,6 +1464,7 @@ export class Mind implements VillagerMind {
       }
       if (!e.invitees.includes(this.id) && !this.heardAbout(e)) continue;
       this.decidedEvents.add(e.id);
+      this.heardScan.delete(e.id);
       this.decideEvent(view, e);
     }
   }
@@ -1499,12 +1509,24 @@ export class Mind implements VillagerMind {
     this.world.setThought(`A bake-off! I'll bring my best loaf.`);
   }
 
+  /**
+   * Whether a memory points to the event or is a rumor matching its title. Memories are append-only
+   * and these fields never change, so each event's scan resumes where the last one stopped.
+   */
   private heardAbout(e: VillageEvent): boolean {
-    const kw = extractKeywords(e.title);
-    if (kw.length === 0) return false;
-    return this.memory
-      .all()
-      .some((m) => m.meta.eventId === e.id || (m.kind === 'heard' && keywordOverlap(kw, m.keywords) >= 0.6));
+    let c = this.heardScan.get(e.id);
+    if (!c || c.title !== e.title) {
+      c = { title: e.title, kw: extractKeywords(e.title), next: 0, found: false };
+      this.heardScan.set(e.id, c);
+    }
+    if (c.kw.length === 0) return false;
+    const all = this.memory.all();
+    for (; !c.found && c.next < all.length; c.next++) {
+      const m = all[c.next]!;
+      if (m.meta.eventId === e.id || (m.kind === 'heard' && keywordOverlap(c.kw, m.keywords) >= 0.6))
+        c.found = true;
+    }
+    return c.found;
   }
 
   private decideEvent(view: WorldView, e: VillageEvent): void {
