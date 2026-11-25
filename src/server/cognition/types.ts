@@ -132,6 +132,8 @@ export interface VillagerMind {
    * Writes no read memory itself; for a player letter it queues one `letter.reply` (deduplicated per letter).
    */
   onLetterRead?(view: WorldView, letter: Letter): void;
+  /** Up to `n` memories, newest first, archived ones left out (inspector); cost grows with `n` only. */
+  recentMemories?(n: number): Memory[];
 }
 
 export interface PlayerInteraction {
