@@ -249,7 +249,8 @@ export interface Memory {
   text: string;
   /** 1–10 */
   importance: number;
-  embedding?: number[];
+  /** Shared by reference (e.g. with save snapshots): replace it, never write into it. */
+  embedding?: readonly number[];
   keywords: string[];
   meta: MemoryMeta;
 }
