@@ -100,6 +100,11 @@ and [Ollama setup](docs/setup/ollama.md).
 Saves are upgraded on load, and v1 saves keep working. If a save can't be read after an update,
 see [Troubleshooting](docs/troubleshooting.md#saves).
 
+Archived memories (villagers no longer recall them) no longer keep their embeddings, so a long-running
+village needs much less memory and disk. An older save loses them on its next save after the update.
+Going back to an older version afterwards still works, but that version embeds every archived memory
+again once, which is many embedding calls on a long save.
+
 ## What you can do
 
 - Watch villagers wake up, plan their day, walk to work, eat, chat and go to bed. Click a villager
