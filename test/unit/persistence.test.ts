@@ -1,4 +1,5 @@
-import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -142,6 +143,36 @@ describe('JsonSaveStore', () => {
     const world = JSON.parse(readFileSync(join(dir, 's1', 'world.json'), 'utf8'));
     expect(world.minds[0].memories).toBeUndefined();
     expect(readdirSync(join(dir, 's1')).some((f) => f.endsWith('.tmp'))).toBe(false);
+  });
+
+  it('removes temp files of crashed saves on load, but not those of a running process', async () => {
+    const dir = tmpDir();
+    const store = new JsonSaveStore({ dir, slot: 's1' });
+    await store.save(sampleSave());
+    const dead = spawnSync(process.execPath, ['-e', '']).pid!;
+    const mem = join(dir, 's1', 'memories');
+    const stale = [
+      join(mem, `ada.json.${dead}.tmp`),
+      join(mem, `bob.json.${process.pid}.tmp`),
+      join(dir, 's1', `world.json.${dead}.tmp`),
+    ];
+    const kept = [join(mem, `ada.json.${process.ppid}.tmp`), join(mem, 'notes.tmp')];
+    for (const p of [...stale, ...kept]) writeFileSync(p, '{"half');
+
+    const back = await store.load();
+    expect(back!.minds[0]!.memories).toHaveLength(2);
+    for (const p of stale) expect(existsSync(p), p).toBe(false);
+    for (const p of kept) expect(existsSync(p), p).toBe(true);
+  });
+
+  it('never removes the temp file of a save that is still being written', async () => {
+    const dir = tmpDir();
+    const store = new JsonSaveStore({ dir, slot: 's1' });
+    const saving = store.save(sampleSave());
+    const loading = store.load();
+    await saving;
+    expect((await loading)!.minds.map((m) => m.memories.length)).toEqual([2, 0]);
+    expect(readdirSync(join(dir, 's1', 'memories')).sort()).toEqual(['ada.json', 'bob.json']);
   });
 
   it('removes memory files of villagers who left (strangers)', async () => {

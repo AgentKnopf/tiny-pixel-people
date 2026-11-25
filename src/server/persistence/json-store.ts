@@ -83,7 +83,10 @@ export class JsonSaveStore implements SaveStore {
   }
 
   load(): Promise<SaveData | null> {
-    return this.serialize(() => this.read());
+    return this.serialize(async () => {
+      await this.removeStaleTemps();
+      return this.read();
+    });
   }
 
   appendReplay(line: unknown): Promise<void> {
@@ -120,6 +123,28 @@ export class JsonSaveStore implements SaveStore {
     // Memory files of villagers no longer in the save (e.g. strangers who left).
     for (const name of await readdir(memDir)) {
       if (name.endsWith('.json') && !keep.has(name)) await rm(join(memDir, name), { force: true });
+    }
+  }
+
+  /**
+   * Deletes `*.<pid>.tmp` files left by a save that crashed before its rename. Runs inside the
+   * store's queue, so none of this process's writes is in flight; a temp file of another process
+   * that is still running may be mid-write and is kept.
+   */
+  private async removeStaleTemps(): Promise<void> {
+    for (const dir of [this.slotDir, join(this.slotDir, MEMORIES_DIR)]) {
+      let names: string[];
+      try {
+        names = await readdir(dir);
+      } catch {
+        continue;
+      }
+      for (const name of names) {
+        const pid = TEMP_FILE.exec(name)?.[1];
+        if (pid === undefined || (Number(pid) !== process.pid && processAlive(Number(pid)))) continue;
+        await rm(join(dir, name), { force: true });
+        log.info(`removed stale temp file ${name}`);
+      }
     }
   }
 
@@ -164,6 +189,18 @@ function fromStored(m: StoredMemory): Memory {
 /** Villager ids become file names; anything outside [\w-] is percent-encoded. */
 export function memoryFileName(villagerId: string): string {
   return `${villagerId.replace(/[^\w-]/g, (c) => `%${c.charCodeAt(0).toString(16).padStart(2, '0')}`)}.json`;
+}
+
+const TEMP_FILE = /\.(\d+)\.tmp$/;
+
+function processAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    // EPERM: the process exists but belongs to someone else.
+    return (err as NodeJS.ErrnoException).code === 'EPERM';
+  }
 }
 
 async function atomicWrite(path: string, content: string): Promise<void> {
