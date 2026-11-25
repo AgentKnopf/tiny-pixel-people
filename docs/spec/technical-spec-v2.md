@@ -575,6 +575,8 @@ Determinism across a restore: every saved field restores exactly, including each
 | Client frame (overview, 1440×900)            | ≥ 50 fps on a laptop                                  | Browser check (agent-browser), reported                                |
 | Save file                                    | ≤ 150 KB more than v1 for the same day, Keep included | Persistence test                                                       |
 
+The sim step p95 is measured in wall time and the max in main-thread CPU time, cold first step included: time the OS or the VM host keeps the thread off the CPU is not the step's cost. Where Node has no `process.threadCpuUsage`, the max uses wall time and a failing day is run once more.
+
 A* may cache paths between location entries, because collision is static. Animals never path-find.
 
 ## 17. Observer API (v2 extension)
