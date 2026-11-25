@@ -160,11 +160,19 @@ describe('JsonSaveStore', () => {
     const data = sampleSave();
     const p = store.save(data);
     data.player.gold = 0;
+    const first = data.minds[0]!.memories[0]!;
+    first.embedding = [9, 9, 9, 9];
+    first.text = 'changed';
+    first.meta.toldTo!.push('cy');
     data.minds[0]!.memories.length = 0;
     await p;
     const loaded = await store.load();
     expect(loaded!.player.gold).toBe(77);
     expect(loaded!.minds[0]!.memories).toHaveLength(2);
+    const m1 = loaded!.minds[0]!.memories[0]!;
+    expect(m1.text).toBe('memory m1');
+    expect(m1.meta.toldTo).toEqual(['bob']);
+    [0.1, -0.5, 0.25, 1].forEach((x, i) => expect(m1.embedding![i]).toBeCloseTo(x, 6));
   });
 
   it('serialises concurrent saves (last one wins)', async () => {

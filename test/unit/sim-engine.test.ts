@@ -180,6 +180,21 @@ describe('sim engine', () => {
     expect(rumor?.originMemoryId ?? mem.meta.originId).toBe(mem.meta.originId);
   });
 
+  it('toSaveData shares embedding vectors instead of cloning them', async () => {
+    const first = createSimTestWorld({ startAt: '09:00' }).engine;
+    await first.advance(60, { drainLlm: true });
+    const restore = first.toSaveData();
+    const tom = restore.minds.find((m) => m.villagerId === 'tom')!;
+    expect(tom.memories.length).toBeGreaterThan(0);
+    tom.memories[0]!.embedding = [0.1, 0.2, 0.3];
+    const { engine } = createSimTestWorld({ restore });
+    const live = engine.memories('tom');
+    const saved = engine.toSaveData().minds.find((m) => m.villagerId === 'tom')!.memories;
+    expect(saved).toEqual(live);
+    expect(saved[0]!.embedding).toEqual([0.1, 0.2, 0.3]);
+    expect(saved[0]!.embedding).toBe(live[0]!.embedding);
+  });
+
   it('save command writes the slot and the world restores from it', async () => {
     const { engine } = createSimTestWorld({ startAt: '09:00' });
     await engine.advance(120, { drainLlm: true });
