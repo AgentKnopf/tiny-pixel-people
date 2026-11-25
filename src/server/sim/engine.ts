@@ -2287,11 +2287,7 @@ export class Engine implements SimEngine, SimHost {
   private inspect(villagerId: VillagerId, requestId?: string): ServerMessage[] {
     const rt = this.runtimes.get(villagerId);
     if (!rt) return [this.error('Unknown villager.', requestId)];
-    const memories = [...rt.mind.serialize().memories]
-      .filter((m) => !m.meta.archived)
-      .sort((a, b) => b.createdAt - a.createdAt)
-      .slice(0, 10)
-      .map(({ embedding: _embedding, ...m }) => m);
+    const memories = recentMemories(rt.mind, INSPECT_MEMORIES).map(({ embedding: _embedding, ...m }) => m);
     const conv = rt.state.conversationId ? this.active.get(rt.state.conversationId)?.conversation : undefined;
     const msg: ServerMessage = {
       type: 'inspect.data',
@@ -2519,6 +2515,24 @@ export class Engine implements SimEngine, SimHost {
 }
 function settle(): Promise<void> {
   return new Promise((r) => setImmediate(r));
+}
+
+const INSPECT_MEMORIES = 10;
+
+/**
+ * The last `n` unarchived memories the mind recorded, shown newest first. A mind with
+ * `recentMemories` answers without copying its whole memory stream, which the inspector would
+ * otherwise do every second.
+ */
+function recentMemories(mind: VillagerMind, n: number): Memory[] {
+  const recent = (mind as { recentMemories?: (n: number) => readonly Memory[] }).recentMemories;
+  const list = recent
+    ? [...recent.call(mind, n)]
+    : mind
+        .serialize()
+        .memories.filter((m) => !m.meta.archived)
+        .slice(-n);
+  return list.sort((a, b) => b.createdAt - a.createdAt);
 }
 
 const ENGINE_ID = /^(?:c|n|fact_\d+_)(\d+)$/;
