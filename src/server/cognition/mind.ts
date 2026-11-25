@@ -240,7 +240,7 @@ export class Mind implements VillagerMind {
     this.village.register(this);
     const snap = deps.snapshot;
     if (snap) {
-      this.memory.load(snap.memories);
+      this.memory.load(snap.memories, deps.now());
       this.bookkeeping = { ...snap.bookkeeping };
       for (const m of this.memory.all()) {
         const d = SUMMARY_RE.exec(m.text);
@@ -1994,6 +1994,7 @@ export class Mind implements VillagerMind {
     if (this.lastArchiveDay !== nextDay) {
       this.lastArchiveDay = nextDay;
       this.memory.archiveOld(now);
+      this.memory.releaseEmbeddings(now);
     }
     this.prepareDay(view, nextDay);
     this.publishPrepared(nextDay);

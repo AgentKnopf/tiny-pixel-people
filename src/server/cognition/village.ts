@@ -131,7 +131,7 @@ export class QueueEmbedder implements Embedder {
   }
 
   request(memory: Memory): void {
-    if (this.disabled || memory.embedding || this.inflight.has(memory)) return;
+    if (this.disabled || memory.embedding || memory.meta.archived || this.inflight.has(memory)) return;
     this.inflight.add(memory);
     let call: Promise<number[][] | null>;
     try {
@@ -148,7 +148,8 @@ export class QueueEmbedder implements Embedder {
         }
         this.consecutiveNulls = 0;
         const v = vecs[0];
-        if (v && v.length) memory.embedding = v;
+        // Archived while the call was out: it is never retrieved, so the vector is not kept.
+        if (v && v.length && !memory.meta.archived) memory.embedding = v;
       })
       // Embedding failures leave the memory on keyword relevance.
       .catch(() => {})
