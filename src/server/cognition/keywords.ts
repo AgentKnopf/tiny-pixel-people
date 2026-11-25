@@ -60,20 +60,39 @@ export function bm25Scores(query: readonly string[], docs: readonly (readonly st
   if (q.length === 0 || docs.length === 0) return docs.map(() => 0);
   const n = docs.length;
   const avgLen = docs.reduce((s, d) => s + d.length, 0) / n || 1;
-  const df = new Map<string, number>();
-  for (const d of docs) for (const t of new Set(d)) df.set(t, (df.get(t) ?? 0) + 1);
+  // Only query terms can score: count just those, without a Set or Map per document.
+  const slot = new Map(q.map((t, i) => [t, i]));
+  const df = new Array<number>(q.length).fill(0);
+  const seenIn = new Array<number>(q.length).fill(-1);
+  docs.forEach((d, di) => {
+    for (const t of d) {
+      const i = slot.get(t);
+      if (i !== undefined && seenIn[i] !== di) {
+        seenIn[i] = di;
+        df[i]!++;
+      }
+    }
+  });
+  const idf = df.map((x) => Math.log(1 + (n - x + 0.5) / (x + 0.5)));
   const k1 = 1.2;
   const b = 0.75;
+  const tf = new Array<number>(q.length).fill(0);
   return docs.map((d) => {
-    if (d.length === 0) return 0;
-    const tf = new Map<string, number>();
-    for (const t of d) tf.set(t, (tf.get(t) ?? 0) + 1);
+    let hit = false;
+    for (const t of d) {
+      const i = slot.get(t);
+      if (i !== undefined) {
+        tf[i]!++;
+        hit = true;
+      }
+    }
+    if (!hit) return 0;
     let score = 0;
-    for (const t of q) {
-      const f = tf.get(t);
+    for (let i = 0; i < q.length; i++) {
+      const f = tf[i]!;
       if (!f) continue;
-      const idf = Math.log(1 + (n - (df.get(t) ?? 0) + 0.5) / ((df.get(t) ?? 0) + 0.5));
-      score += (idf * (f * (k1 + 1))) / (f + k1 * (1 - b + (b * d.length) / avgLen));
+      tf[i] = 0;
+      score += (idf[i]! * (f * (k1 + 1))) / (f + k1 * (1 - b + (b * d.length) / avgLen));
     }
     return score;
   });

@@ -7,6 +7,31 @@ import {
 } from '../../../src/server/cognition/retrieval.ts';
 import { bm25Scores, cosine } from '../../../src/server/cognition/keywords.ts';
 
+/** bm25Scores as it was before counting only query terms. */
+function bm25Reference(query: readonly string[], docs: readonly (readonly string[])[]): number[] {
+  const q = [...new Set(query)];
+  if (q.length === 0 || docs.length === 0) return docs.map(() => 0);
+  const n = docs.length;
+  const avgLen = docs.reduce((s, d) => s + d.length, 0) / n || 1;
+  const df = new Map<string, number>();
+  for (const d of docs) for (const t of new Set(d)) df.set(t, (df.get(t) ?? 0) + 1);
+  const k1 = 1.2;
+  const b = 0.75;
+  return docs.map((d) => {
+    if (d.length === 0) return 0;
+    const tf = new Map<string, number>();
+    for (const t of d) tf.set(t, (tf.get(t) ?? 0) + 1);
+    let score = 0;
+    for (const t of q) {
+      const f = tf.get(t);
+      if (!f) continue;
+      const idf = Math.log(1 + (n - (df.get(t) ?? 0) + 0.5) / ((df.get(t) ?? 0) + 0.5));
+      score += (idf * (f * (k1 + 1))) / (f + k1 * (1 - b + (b * d.length) / avgLen));
+    }
+    return score;
+  });
+}
+
 const WEIGHTS: ScoreWeights = { recency: 1, importance: 1.5, relevance: 2 };
 
 /** scoreMemories as it was before the fast paths: the reference results must stay identical. */
@@ -29,7 +54,7 @@ function reference(
     Math.pow(RECENCY_DECAY_PER_HOUR, Math.max(0, now - m.lastAccessedAt) / 60),
   );
   const imp = candidates.map((m) => m.importance / 10);
-  const kw = bm25Scores(
+  const kw = bm25Reference(
     queryKeywords,
     candidates.map((m) => m.keywords),
   );
@@ -77,6 +102,22 @@ function memories(r: () => number, n: number, embedded: number): Memory[] {
     ...(r() < embedded ? { embedding: Array.from({ length: 8 }, () => r() * 2 - 1) } : {}),
   }));
 }
+
+describe('bm25Scores', () => {
+  it('gives exactly the old scores', () => {
+    for (const seed of [11, 12, 13, 14]) {
+      const r = rng(seed);
+      const pick = () => WORDS[Math.floor(r() * WORDS.length)]!;
+      // Repeated terms in documents and in the query, empty documents, terms nobody has.
+      const docs = Array.from({ length: 1 + Math.floor(r() * 200) }, () =>
+        Array.from({ length: Math.floor(r() * 7) }, pick),
+      );
+      for (const query of [[], ['nobody'], [pick()], Array.from({ length: 6 }, pick), [...WORDS, ...WORDS]])
+        expect(bm25Scores(query, docs)).toEqual(bm25Reference(query, docs));
+    }
+    expect(bm25Scores(['bread'], [])).toEqual([]);
+  });
+});
 
 describe('scoreMemories', () => {
   it('gives exactly the old scores and order, with and without embeddings', () => {
