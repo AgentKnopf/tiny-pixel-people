@@ -33,6 +33,7 @@ import {
 import type {
   ConversationRunner,
   Intent,
+  MindDeps,
   MindWorld,
   NearbyVillager,
   Observation,
@@ -195,7 +196,6 @@ export interface SimHost {
   readonly bus: SimBus;
   readonly queue: PriorityLlmQueue;
   readonly playerWorld: PlayerWorld;
-  readonly restoredFrom: SaveData | null;
   now(): GameMinutes;
   random(): number;
   profile(id: VillagerId): VillagerProfile | undefined;
@@ -261,7 +261,6 @@ export class Engine implements SimEngine, SimHost {
   readonly bus = new SimBus();
   readonly queue: PriorityLlmQueue;
   readonly playerWorld: PlayerWorld;
-  readonly restoredFrom: SaveData | null;
   readonly store: JsonSaveStore;
   /** Town event log and game-to-real time anchors (observer API). */
   readonly townLog: TownLog;
@@ -323,7 +322,6 @@ export class Engine implements SimEngine, SimHost {
     this.config = cfg;
     this.map = opts.map ?? loadMap();
     const restore = opts.restore ?? null;
-    this.restoredFrom = restore;
     const startAt = restore?.time ?? opts.startAt ?? parseClock(cfg.sim.startTime);
     this.clock = new SimClock(startAt, {
       dayLengthMinutes: cfg.sim.dayLengthMinutes,
@@ -393,8 +391,11 @@ export class Engine implements SimEngine, SimHost {
       this.seq = maxEngineSeq(restore);
       this.eventList = structuredClone(restore.events);
       this.noteList = structuredClone(restore.notes);
+      // A closure naming `restore` would keep the whole save alive through the context that every
+      // closure made in this constructor shares.
+      const savedAt = restore.time;
       this.history = structuredClone(restore.conversations).map((c) =>
-        c.status === 'active' ? { ...c, status: 'aborted' as const, endedAt: restore.time } : c,
+        c.status === 'active' ? { ...c, status: 'aborted' as const, endedAt: savedAt } : c,
       );
     }
 
@@ -904,7 +905,7 @@ export class Engine implements SimEngine, SimHost {
       rt.arrived = !!home;
     }
     this.runtimes.set(profile.id, rt);
-    rt.mind = this.createMindFn(profile, {
+    const deps: MindDeps = {
       config: this.config,
       queue: this.queue,
       now: () => this.now(),
@@ -915,7 +916,11 @@ export class Engine implements SimEngine, SimHost {
       world: this.mindWorld(profile.id),
       random: () => this.rng.next(),
       ...(snapshot ? { snapshot } : {}),
-    });
+    };
+    rt.mind = this.createMindFn(profile, deps);
+    // Minds read the snapshot while they are built and keep `deps`; without this the saved
+    // memories would stay in memory next to the mind's own copies for the whole run.
+    delete deps.snapshot;
   }
 
   private mindWorld(id: VillagerId): MindWorld {
