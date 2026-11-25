@@ -319,6 +319,18 @@ describe('AnimalSim save/restore', () => {
     expect(log(b)).toEqual(log(a));
   });
 
+  it('keeps running from a save with off-grid animal positions', () => {
+    const a = makeSim();
+    run(a, START, 60);
+    const save = JSON.parse(JSON.stringify(a.serialize())) as ReturnType<typeof a.serialize>;
+    for (const x of save.animals) x.pos = { x: x.pos.x + 0.5, y: x.pos.y - 0.25 };
+    const b = makeSim({ now: START + 60, restore: save });
+    run(b, START + 60, MINUTES_PER_DAY);
+    const after = b.serialize().animals;
+    expect(after.length).toBeGreaterThan(0);
+    expect(after.every((x) => Number.isFinite(x.pos.x) && Number.isFinite(x.pos.y))).toBe(true);
+  });
+
   it('does not reseed the farm when the save says seeded', () => {
     const a = makeSim();
     const save = a.serialize();
