@@ -33,14 +33,23 @@ export class MemoryStore implements MemoryStream {
     private readonly opts: MemoryStoreOptions,
   ) {}
 
-  /** Restore from a snapshot (keeps ids, continues the id sequence). */
-  load(memories: readonly Memory[]): void {
-    this.memories = memories.map((m) => ({ ...m, meta: { ...m.meta }, keywords: [...m.keywords] }));
+  /**
+   * Restore from a snapshot (keeps ids, continues the id sequence). Memories that can never be
+   * retrieved again at `now` load without their embedding and are not sent to be embedded: older
+   * saves kept the vectors of every archived memory.
+   */
+  load(memories: readonly Memory[], now: GameMinutes = -Infinity): void {
+    this.memories = memories.map((m) => {
+      const copy = { ...m, meta: { ...m.meta }, keywords: [...m.keywords] };
+      if (isRetrievable(copy, now)) return copy;
+      const { embedding: _dropped, ...rest } = copy;
+      return rest;
+    });
     this.byId = new Map(this.memories.map((m) => [m.id, m]));
     for (const m of this.memories) {
       const n = Number(/-m(\d+)$/.exec(m.id)?.[1] ?? 0);
       if (n > this.seq) this.seq = n;
-      if (!m.embedding) this.opts.embedder?.request(m);
+      if (!m.embedding && isRetrievable(m, now)) this.opts.embedder?.request(m);
     }
   }
 
@@ -131,7 +140,8 @@ export class MemoryStore implements MemoryStream {
           : pending)
       : null;
     // Memories whose embedding batch failed transiently get another try.
-    if (embedding) for (const m of candidates) if (!m.embedding) this.opts.embedder?.request(m);
+    if (embedding)
+      for (const m of candidates) if (!m.embedding && !m.meta.archived) this.opts.embedder?.request(m);
     const top = scoreMemories(
       candidates,
       now,
@@ -144,10 +154,6 @@ export class MemoryStore implements MemoryStream {
   }
 
   /**
-   * Nightly pruning (spec §7.9): observations older than 2 days with importance <= 3 are archived
-   * (kept in the save, excluded from retrieval). Returns the number archived.
-   */
-  /**
    * Archive post office log memories (`meta.keepId`) older than `maxAge` game minutes. Returns
    * when the next remaining one is due (Infinity when none is left).
    */
@@ -156,20 +162,44 @@ export class MemoryStore implements MemoryStream {
     for (const m of this.memories) {
       if (m.meta.archived || !m.meta.keepId) continue;
       if (now - m.createdAt < maxAge) next = Math.min(next, m.createdAt + maxAge);
-      else m.meta.archived = true;
+      else archive(m);
     }
     return next;
   }
 
+  /**
+   * Nightly pruning (spec §7.9): observations older than 2 days with importance <= 3 are archived
+   * (kept in the save, excluded from retrieval). Returns the number archived.
+   */
   archiveOld(now: GameMinutes): number {
     let n = 0;
     for (const m of this.memories) {
       if (m.meta.archived || m.kind !== 'observation' || m.importance > 3) continue;
       if (dayOf(now) - dayOf(m.createdAt) >= 2 || now - m.createdAt >= 2 * 1440) {
-        m.meta.archived = true;
+        archive(m);
         n++;
       }
     }
     return n;
   }
+
+  /** Drop the embeddings no retrieval can use any more (earlier days' plans). Returns how many. */
+  releaseEmbeddings(now: GameMinutes): number {
+    let n = 0;
+    for (const m of this.memories) {
+      if (!m.embedding || isRetrievable(m, now)) continue;
+      m.embedding = undefined;
+      n++;
+    }
+    return n;
+  }
+}
+
+/**
+ * Archiving is one-way and archived memories are never retrieved, so the embedding goes: it is most
+ * of a memory's size. Assigning (rather than deleting) keeps V8's compact object shape.
+ */
+function archive(m: Memory): void {
+  m.meta.archived = true;
+  m.embedding = undefined;
 }
