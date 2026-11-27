@@ -6,6 +6,8 @@ import { checkAccess, isLoopback } from '../../src/server/net/observer.ts';
 import { decodePng } from '../../src/server/net/screenshot.ts';
 import { startServer, type RunningServer } from '../../src/server/net/server.ts';
 import { createSimEngine, type Engine } from '../../src/server/sim/engine.ts';
+import { StubMind } from '../../src/server/sim/stub-mind.ts';
+import { loadProfiles } from '../../src/server/sim/world.ts';
 import { TownLog } from '../../src/server/sim/town-log.ts';
 import { createStubMind } from '../../src/server/sim/stub-mind.ts';
 import type { PartialConfig } from '../../src/server/config.ts';
@@ -271,6 +273,28 @@ describe('observer API: endpoints', () => {
       const raw = await (await fetch(`${running[0]!.server.url}${p}`)).text();
       expect(raw).not.toContain('sk-very-secret');
     }
+  });
+
+  it('GET /api/stats counts residents whose plan for today is not settled; visitors never count', async () => {
+    const gate = { open: false };
+    class GatedPlanner extends StubMind {
+      isPlanSettled(): boolean {
+        return gate.open;
+      }
+    }
+    const { engine } = createSimTestWorld({
+      startAt: '05:50',
+      createMind: (profile, deps) => new GatedPlanner(profile, deps),
+      config: { sim: { villagers: 4 } },
+    });
+    const base = loadProfiles(engine.map)[0]!;
+    expect(
+      engine.addVillager({ ...base, id: 'visitor_a', name: 'Vera', transient: true, visitor: true }),
+    ).toBe(true);
+    const { get } = await boot({ engine });
+    expect((await get('/api/stats')).body!.plans_pending).toBe(4);
+    gate.open = true;
+    expect((await get('/api/stats')).body!.plans_pending).toBe(0);
   });
 
   it('GET /api/screenshot renders the map as a PNG', async () => {

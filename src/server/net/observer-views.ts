@@ -27,6 +27,7 @@ export type ObserverSource = Pick<
   | 'townLog'
   | 'speed'
   | 'wakingUp'
+  | 'planStatus'
   | 'now'
   | 'profile'
   | 'villager'
@@ -629,6 +630,7 @@ export class ObserverViews {
   }
   stats() {
     const q = this.src.queue.stats();
+    const plans = this.src.planStatus();
     return {
       provider: this.llm.provider,
       model: this.llm.model,
@@ -642,6 +644,7 @@ export class ObserverViews {
       tokens_per_second: q.tokensPerSecond,
       last_reply_ms: q.lastReplyMs,
       by_task: q.byTask ?? {},
+      plans_pending: plans.total - plans.ready,
     };
   }
 }
