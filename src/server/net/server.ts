@@ -17,6 +17,7 @@ import {
   type RunningObserver,
 } from './observer.ts';
 import type { ObserverSource } from './observer-views.ts';
+import { hostAllowed, localHosts, originAllowed } from './origin.ts';
 import { parseClientMessage } from './validate.ts';
 
 const log = createLogger('net');
@@ -87,6 +88,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
         })
       : null;
   const separateObserver = observer !== null && observerConfig.port !== null;
+  /** Filled in once listening (the port may be 0 until then). */
+  let allowedHosts = new Set<string>();
 
   const http = createServer((req, res) => {
     void handleHttp(req, res).catch((err: unknown) => {
@@ -98,6 +101,11 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
 
   async function handleHttp(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url ?? '/', 'http://localhost');
+    // DNS rebinding: a foreign page whose name resolves to us arrives with its own Host.
+    if (url.pathname.startsWith('/api/') && !hostAllowed(req.headers.host, allowedHosts)) {
+      sendJson(res, 403, { error: 'Unknown Host header.' });
+      return;
+    }
     if (!separateObserver && observer?.handle(req, res, url)) return;
     if (url.pathname.startsWith('/api/') && req.method !== 'GET' && req.method !== 'HEAD') {
       res.writeHead(405, { 'content-type': MIME['.json']!, allow: 'GET, HEAD' });
@@ -146,7 +154,22 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     serveStatic(staticRoot, url.pathname, res);
   }
 
-  const wss = new WebSocketServer({ server: http, path: WS_PATH });
+  // Browsers always send Origin on a WebSocket upgrade, so a missing one is a script or tool.
+  const wss = new WebSocketServer({
+    server: http,
+    path: WS_PATH,
+    verifyClient: (info, done) => {
+      const origin = info.req.headers.origin;
+      const ok =
+        hostAllowed(info.req.headers.host, allowedHosts) &&
+        (origin === undefined || originAllowed(origin, allowedHosts));
+      if (!ok)
+        log.warn(
+          `refused WebSocket from origin ${origin ?? '(none)'}, host ${info.req.headers.host ?? '(none)'}`,
+        );
+      done(ok, 403);
+    },
+  });
   const clients = new Map<WebSocket, ClientState>();
   const send = (ws: WebSocket, msg: ServerMessage) => {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
@@ -212,6 +235,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     http.listen(opts.port, opts.host, () => resolveListen());
   });
   const port = (http.address() as AddressInfo).port;
+  allowedHosts = localHosts(opts.host, port);
   let observerServer: RunningObserver | null = null;
   if (observer && separateObserver) {
     try {

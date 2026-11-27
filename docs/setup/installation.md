@@ -86,7 +86,9 @@ after changes. Details: [Configuration reference](configuration.md).
 
 - **Other port**: `TPP_PORT=8080 npm start`, or `"server": { "port": 8080 }`.
 - **Play from another device on your network**: set `"server": { "host": "0.0.0.0" }` and open
-  `http://<your-computer's-IP>:3000`. The game has no login, so only do this on a network you trust.
+  `http://<your-computer's-IP>:3000` (or `http://<hostname>:3000`). The game has no login, so only
+  do this on a network you trust. Other names are refused, see
+  [Configuration: `server`](configuration.md#server).
 - **Slow machine**: see the [Ollama sizing table](ollama.md#which-model-for-which-machine).
 
 ## Update
@@ -107,5 +109,6 @@ npm run dev
 ```
 
 Runs the server with `tsx watch` (restarts on changes) and the Vite dev server with hot reload. Vite
-prints the URL to open and proxies `/ws` to the game server. See
+prints the URL to open and proxies `/ws` and `/api` to the game server. Open it on `localhost`
+(the default); the game server refuses the WebSocket from any other dev address. See
 [Acceptance tests](../acceptance.md) for the test commands.

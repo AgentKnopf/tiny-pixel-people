@@ -331,6 +331,13 @@ every villager, visitor and the player in place. It has no day/night lighting, b
   a token is ignored (the server logs a warning).
 - The game's own endpoints (`/api/health`, `/api/snapshot`, `/api/catalog`, the WebSocket) are not
   part of the observer API and are not affected by these settings.
+- Every `/api/*` request, on the game server and on the separate observer listener, must carry a
+  `Host` header that names this server with its port: `127.0.0.1:<port>`, `localhost:<port>`,
+  `[::1]:<port>`, or the configured host (`server.host`, or `observer.host` for the separate
+  listener). With a `0.0.0.0` or `::` bind, this machine's hostname and network addresses also
+  count. Anything else gets `403`. This stops DNS rebinding, where another website points its own
+  name at your computer to read the API from your browser. Scripts that call
+  `http://127.0.0.1:<port>/…` or `http://localhost:<port>/…` send a matching `Host` already.
 
 ## Configuration
 
