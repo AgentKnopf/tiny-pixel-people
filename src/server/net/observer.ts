@@ -3,6 +3,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import type { AddressInfo } from 'node:net';
 import type { AppConfig } from '../config.ts';
 import { createLogger } from '../log.ts';
+import { hostAllowed, localHosts } from './origin.ts';
 import { BadRequest, ObserverViews, type ObserverSource, type Paged } from './observer-views.ts';
 import { ScreenshotRenderer } from './screenshot.ts';
 
@@ -192,8 +193,13 @@ export async function startObserverServer(
   host: string,
   port: number,
 ): Promise<RunningObserver> {
+  let allowedHosts = new Set<string>();
   const http = createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
+    if (!hostAllowed(req.headers.host, allowedHosts)) {
+      send(req, res, 403, { error: 'Unknown Host header.' });
+      return;
+    }
     if (api.handle(req, res, url)) return;
     const raw = JSON.stringify({ error: 'Not found' });
     res.writeHead(req.method === 'GET' || req.method === 'HEAD' ? 404 : 405, {
@@ -206,6 +212,7 @@ export async function startObserverServer(
     http.listen(port, host, () => ok());
   });
   const actual = (http.address() as AddressInfo).port;
+  allowedHosts = localHosts(host, actual);
   return {
     port: actual,
     url: `http://${host.includes(':') ? `[${host}]` : host}:${actual}`,

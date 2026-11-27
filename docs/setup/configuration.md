@@ -91,6 +91,24 @@ Config files from v1 keep working: every v2 section has defaults. The one change
 | `host` | `"127.0.0.1"` | Address to listen on. `0.0.0.0` makes the game reachable from your network (there is no login). |
 | `port` | `3000`        | HTTP and WebSocket port, 0–65535 (0 picks a free port).                                         |
 
+Other websites can't control or read the game, even though there is no login:
+
+- **WebSocket**: an upgrade whose `Origin` header is not one of the server's own `http://` origins
+  (`http://127.0.0.1:<port>`, `http://localhost:<port>`, `http://[::1]:<port>`, or
+  `http://<server.host>:<port>`) is refused with `403`. A request without `Origin` is allowed:
+  browsers always send one, so it comes from a script or tool on a machine that can already reach
+  the port.
+- **HTTP `/api/*`** (the observer API included): the `Host` header must name this server with its
+  port, from the same list; otherwise `403`. This blocks DNS rebinding.
+- With `host: "0.0.0.0"` (or `"::"`), this machine's hostname and network addresses are accepted
+  too, so `http://<your-computer's-IP>:3000` works from another device. Other names that point at
+  your computer (for example a `.local` name or your own DNS entry) are refused; open the game by
+  IP address or hostname, or set `host` to the address you use. The addresses are read when the
+  server starts, so restart it after the IP address changes (new Wi-Fi or VPN).
+- The Vite dev server (`npm run dev`) sends the game server's origin for its own page when it is
+  opened on `localhost`, `127.0.0.1` or `[::1]`; other pages keep their origin and are refused.
+  It sends no CORS headers, so other local pages can't read `/api` through it either.
+
 ## `persistence`: saving
 
 | Key                   | Default     | Meaning                                                                                               |
