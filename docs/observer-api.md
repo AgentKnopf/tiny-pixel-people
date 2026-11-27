@@ -338,6 +338,11 @@ every villager, visitor and the player in place. It has no day/night lighting, b
   count. Anything else gets `403`. This stops DNS rebinding, where another website points its own
   name at your computer to read the API from your browser. Scripts that call
   `http://127.0.0.1:<port>/…` or `http://localhost:<port>/…` send a matching `Host` already.
+- **Upgrade note:** with `observer.allowRemote`, remote clients that connect by a DNS name (for
+  example `http://observer.example.com:<port>`), a `.local` name or through a reverse proxy now get
+  `403`, even with the right token. Connect by IP address or this machine's hostname, with
+  `observer.host` set to `0.0.0.0` (or to that address). The list of names is read when the server
+  starts; restart it after the machine's IP address changes.
 
 ## Configuration
 

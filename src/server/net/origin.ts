@@ -24,7 +24,7 @@ export function localHosts(host: string, port: number): Set<string> {
   return new Set(names.map((n) => key(n, port)));
 }
 
-const HOST_RE = /^(\[[0-9a-f:.]+\]|[a-z0-9.-]+)(?::(\d{1,5}))?$/i;
+const HOST_RE = /^(\[[0-9a-f:.]+\]|[a-z0-9.-]+)(?::([1-9]\d{0,4}))?$/i;
 
 /** True if a Host header names this server. A missing port means 80, as in HTTP. */
 export function hostAllowed(host: string | undefined, allowed: Set<string>): boolean {
@@ -37,4 +37,38 @@ export function hostAllowed(host: string | undefined, allowed: Set<string>): boo
 export function originAllowed(origin: string, allowed: Set<string>): boolean {
   const m = /^http:\/\/([^/]+)$/i.exec(origin);
   return m ? hostAllowed(m[1], allowed) : false;
+}
+
+const LOG_EVERY_MS = 60_000;
+const LOG_MAX_KEYS = 1000;
+const LOG_CLIP = 100;
+
+/** Printable ASCII only, clipped: the values come straight from a possibly hostile request. */
+function clean(value: string | undefined): string {
+  if (value === undefined) return '(none)';
+  const s = value.replace(/[^\x20-\x7e]/g, '?');
+  return s.length > LOG_CLIP ? `${s.slice(0, LOG_CLIP)}…` : s;
+}
+
+/**
+ * Warning lines for refused connections, at most one per origin/host pair a minute, so a page
+ * that retries in a loop can't flood the log.
+ */
+export class RefusalLog {
+  private readonly last = new Map<string, number>();
+
+  get size(): number {
+    return this.last.size;
+  }
+
+  line(origin: string | undefined, host: string | undefined, now: number): string | null {
+    const o = clean(origin);
+    const h = clean(host);
+    const k = `${o} ${h}`;
+    const prev = this.last.get(k);
+    if (prev !== undefined && now - prev < LOG_EVERY_MS) return null;
+    if (this.last.size >= LOG_MAX_KEYS) this.last.clear();
+    this.last.set(k, now);
+    return `refused WebSocket from origin ${o}, host ${h}`;
+  }
 }

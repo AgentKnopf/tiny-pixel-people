@@ -32,6 +32,14 @@ prints (`Tiny Pixel People running at …`).
 The server was started without building the client (for example with `npm run dev:server`). Use
 `npm start`, or run `npm run build` once.
 
+**`403` with `{"error":"Unknown Host header."}`, or the page never connects and the log says
+`refused WebSocket from origin …`.**
+The game only answers under its own names: `127.0.0.1`, `localhost`, `[::1]`, the configured
+`server.host` and, with `"host": "0.0.0.0"`, this computer's hostname and IP addresses, always with
+the port. A DNS name, a `.local` name or a reverse proxy in front of the game is refused. Open the
+game by IP address or hostname instead. If the IP address changed (new Wi-Fi or VPN), restart the
+game. See [Configuration: `server`](setup/configuration.md#server).
+
 **The page is blank or doesn't connect.**
 Make sure you open the address printed in the log (default <http://127.0.0.1:3000>). If you set
 `server.host` to `0.0.0.0` to play from another device, check your firewall. Reload the page after

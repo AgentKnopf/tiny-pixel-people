@@ -25,6 +25,9 @@ export default defineConfig({
     emptyOutDir: true,
   },
   server: {
+    // The dev page is same-origin; Vite's default CORS would let any other localhost page read
+    // /api through the proxy (which rewrites Host, so the game server's own check can't see it).
+    cors: false,
     proxy: {
       '/ws': {
         target: `ws://127.0.0.1:${serverPort}`,

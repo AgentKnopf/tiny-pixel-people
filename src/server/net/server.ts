@@ -17,7 +17,7 @@ import {
   type RunningObserver,
 } from './observer.ts';
 import type { ObserverSource } from './observer-views.ts';
-import { hostAllowed, localHosts, originAllowed } from './origin.ts';
+import { hostAllowed, localHosts, originAllowed, RefusalLog } from './origin.ts';
 import { parseClientMessage } from './validate.ts';
 
 const log = createLogger('net');
@@ -154,19 +154,21 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     serveStatic(staticRoot, url.pathname, res);
   }
 
+  const refusals = new RefusalLog();
   // Browsers always send Origin on a WebSocket upgrade, so a missing one is a script or tool.
+  // info.origin, not headers.origin: ws reads Sec-WebSocket-Origin for protocol version 8.
   const wss = new WebSocketServer({
     server: http,
     path: WS_PATH,
     verifyClient: (info, done) => {
-      const origin = info.req.headers.origin;
+      const origin: string | undefined = info.origin;
+      const host = info.req.headers.host;
       const ok =
-        hostAllowed(info.req.headers.host, allowedHosts) &&
-        (origin === undefined || originAllowed(origin, allowedHosts));
-      if (!ok)
-        log.warn(
-          `refused WebSocket from origin ${origin ?? '(none)'}, host ${info.req.headers.host ?? '(none)'}`,
-        );
+        hostAllowed(host, allowedHosts) && (origin === undefined || originAllowed(origin, allowedHosts));
+      if (!ok) {
+        const line = refusals.line(origin, host, Date.now());
+        if (line) log.warn(line);
+      }
       done(ok, 403);
     },
   });

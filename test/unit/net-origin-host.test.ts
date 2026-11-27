@@ -1,10 +1,11 @@
 /** TASK-17: other websites can neither drive the game over the WebSocket nor read /api/* (DNS rebinding). */
 import { request } from 'node:http';
+import { connect as connectTcp } from 'node:net';
 import { hostname, networkInterfaces } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
 import { WS_PATH } from '../../src/shared/protocol.ts';
-import { localHosts, originAllowed, hostAllowed } from '../../src/server/net/origin.ts';
+import { localHosts, originAllowed, hostAllowed, RefusalLog } from '../../src/server/net/origin.ts';
 import { startServer, type RunningServer } from '../../src/server/net/server.ts';
 import type { PartialConfig } from '../../src/server/config.ts';
 import { createSimTestWorld } from '../helpers/sim.ts';
@@ -171,5 +172,130 @@ describe('HTTP /api/* Host check', () => {
     const port = Number(new URL(server.observerUrl!).port);
     expect((await get(port, '/api/state', `127.0.0.1:${port}`)).status).toBe(200);
     expect((await get(port, '/api/state', `evil.example:${port}`)).status).toBe(403);
+  });
+});
+
+/** Sends raw bytes and resolves with the status code of the first response line (0 if none). */
+function raw(port: number, payload: string): Promise<number> {
+  return new Promise((resolve) => {
+    const sock = connectTcp(port, '127.0.0.1', () => sock.write(payload));
+    let buf = '';
+    sock.on('data', (c: Buffer) => {
+      buf += c.toString('latin1');
+      const m = /^HTTP\/1\.[01] (\d{3})/.exec(buf);
+      if (m) {
+        resolve(Number(m[1]));
+        sock.destroy();
+      }
+    });
+    sock.on('error', () => resolve(-1));
+    sock.on('close', () => resolve(0));
+  });
+}
+
+const upgrade = (port: number, lines: string[]) =>
+  raw(
+    port,
+    [
+      `GET ${WS_PATH} HTTP/1.1`,
+      `Host: 127.0.0.1:${port}`,
+      'Upgrade: websocket',
+      'Connection: Upgrade',
+      'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==',
+      ...lines,
+      '',
+      '',
+    ].join('\r\n'),
+  );
+
+describe('regression: header tricks from the adversarial review', () => {
+  it('Host lookalikes are refused', () => {
+    const set = localHosts('127.0.0.1', 3000);
+    for (const h of [
+      'localhost.:3000',
+      '127.0.0.1.:3000',
+      '127.1:3000',
+      '0x7f.0.0.1:3000',
+      '2130706433:3000',
+      '[0:0:0:0:0:0:0:1]:3000',
+      '[::ffff:127.0.0.1]:3000',
+      '[::ffff:7f00:1]:3000',
+      '127.0.0.1:03000',
+      'localhost:3000:3000',
+      'localhost:80',
+      '0.0.0.0:3000',
+      'evil.localhost:3000',
+      '',
+    ])
+      expect(hostAllowed(h, set), h).toBe(false);
+  });
+
+  it('Origin lookalikes are refused', () => {
+    const set = localHosts('127.0.0.1', 3000);
+    for (const o of [
+      '',
+      'http://localhost:3000/',
+      'http://user@localhost:3000',
+      'http://localhost.:3000',
+      'http://127.0.0.1:03000',
+      'ws://localhost:3000',
+      'file://',
+      'chrome-extension://abc',
+      'http://localhost:3000, http://evil.example',
+    ])
+      expect(originAllowed(o, set), o).toBe(false);
+  });
+
+  it('raw HTTP: empty Host, HTTP/1.0 without Host and absolute-form URLs with a foreign Host get no data', async () => {
+    const { port } = await boot();
+    expect([400, 403]).toContain(await raw(port, 'GET /api/state HTTP/1.1\r\nHost:\r\n\r\n'));
+    expect(await raw(port, 'GET /api/state HTTP/1.0\r\n\r\n')).toBe(403);
+    expect(
+      await raw(
+        port,
+        `GET http://localhost:${port}/api/state HTTP/1.1\r\nHost: evil.example:${port}\r\n\r\n`,
+      ),
+    ).toBe(403);
+    expect(await raw(port, `GET /api/../api/state HTTP/1.1\r\nHost: evil.example:${port}\r\n\r\n`)).toBe(403);
+    expect(await raw(port, `GET /api/state HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\n\r\n`)).toBe(200);
+  });
+
+  it('raw WebSocket: empty, duplicate and version-8 origins are refused', async () => {
+    const { port } = await boot();
+    expect(await upgrade(port, ['Sec-WebSocket-Version: 13', `Origin: http://127.0.0.1:${port}`])).toBe(101);
+    expect(await upgrade(port, ['Sec-WebSocket-Version: 13', 'Origin:'])).toBe(403);
+    expect(
+      await upgrade(port, [
+        'Sec-WebSocket-Version: 13',
+        `Origin: http://127.0.0.1:${port}`,
+        'Origin: http://evil.example',
+      ]),
+    ).toBe(403);
+    expect(
+      await upgrade(port, ['Sec-WebSocket-Version: 8', 'Sec-WebSocket-Origin: http://evil.example']),
+    ).toBe(403);
+    expect(
+      await upgrade(port, ['Sec-WebSocket-Version: 8', `Sec-WebSocket-Origin: http://127.0.0.1:${port}`]),
+    ).toBe(101);
+  });
+});
+
+describe('refusal log', () => {
+  it('logs each origin/host pair at most once a minute and clips the values', () => {
+    const log = new RefusalLog();
+    expect(log.line('http://evil.example', 'h:1', 0)).toContain('http://evil.example');
+    expect(log.line('http://evil.example', 'h:1', 30_000)).toBeNull();
+    expect(log.line('http://evil.example', 'h:1', 61_000)).not.toBeNull();
+    const long = log.line(`http://${'a'.repeat(500)}\n\u001b[31m`, undefined, 0)!;
+    expect(long.length).toBeLessThan(260);
+    expect(long).not.toContain('\n');
+    expect(long).not.toContain('\u001b');
+    expect(long).toContain('(none)');
+  });
+
+  it('keeps its memory bounded', () => {
+    const log = new RefusalLog();
+    for (let i = 0; i < 5000; i++) log.line(`http://e${i}.example`, 'h', 0);
+    expect(log.size).toBeLessThanOrEqual(1000);
   });
 });
