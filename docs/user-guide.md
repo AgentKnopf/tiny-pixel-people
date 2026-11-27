@@ -70,7 +70,8 @@ cottage ✓`. Your conversations with villagers appear in a small dialog there t
 - **Still planning.** By default (`sim.wakeUpMode: "soft"`) the clock keeps running at 06:00. A
   villager whose plan for the day isn't ready yet starts on a default morning routine and switches to
   the real plan when it arrives. Meanwhile a small banner at the top centre shows
-  `🌅 3 villagers still planning`; it disappears once every plan is in.
+  `🌅 3 villagers still planning`. It disappears once every plan is in, when the model is offline,
+  or at midnight if the day ends first; the next morning it starts again at 06:00 if needed.
 - **Waking up.** With `sim.wakeUpMode: "hold"`, at 06:00 each day the clock waits until every
   villager's plan for the day is ready, so the day starts with real plans. A small banner at the top centre shows
   `🌅 Villagers are waking up… (n/m plans ready)` with a progress bar. The banner doesn't block
