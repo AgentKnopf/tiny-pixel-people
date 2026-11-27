@@ -14,6 +14,8 @@ const WARM_UP_TICKS = VILLAGERS / 2;
 
 let updates: string[] = [];
 let busyFirstUpdateMs = 0;
+/** Date.now() (the town log's clock) when the latest first update() finished. */
+let lastFirstUpdateEndMs = 0;
 const seen = new Set<string>();
 
 class Counting extends StubMind {
@@ -23,6 +25,7 @@ class Counting extends StubMind {
       const until = performance.now() + busyFirstUpdateMs;
       while (performance.now() < until);
     }
+    if (!seen.has(this.id)) lastFirstUpdateEndMs = Date.now();
     seen.add(this.id);
     return super.update(view);
   }
@@ -65,6 +68,7 @@ afterEach(() => {
   running = undefined;
   updates = [];
   busyFirstUpdateMs = 0;
+  lastFirstUpdateEndMs = 0;
   seen.clear();
 });
 
@@ -176,12 +180,14 @@ describe('soft wake start-up warm-up', () => {
     const deadline = Date.now() + 5000;
     while (!ticks.some((t) => t.at > start) && Date.now() < deadline)
       await new Promise((r) => setTimeout(r, 5));
-    const warmEndMs = Date.now();
     const first = ticks.find((t) => t.at > start)!;
     expect(zeroLength(ticks, start)).toBe(WARM_UP_TICKS);
     // One 20 ms tick is 0.032 game minutes at a 15-minute day; the ~500 ms warm-up would be 0.8.
     expect(first.at - start).toBeLessThan(0.2);
     await new Promise((r) => setTimeout(r, 1500));
-    expect(engine.townLog.msOf(start + 0.1)).toBeGreaterThanOrEqual(warmEndMs - 40);
+    // The end-of-warm-up anchor is set on a tick after the last mind's first update, so with it
+    // no later minute can map to a real time before that update ended (load only moves it later).
+    expect(lastFirstUpdateEndMs).toBeGreaterThan(0);
+    expect(engine.townLog.msOf(start + 0.1)).toBeGreaterThanOrEqual(lastFirstUpdateEndMs);
   });
 });
