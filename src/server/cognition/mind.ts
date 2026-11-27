@@ -155,6 +155,13 @@ const PLAN_RESCUE_GAP = 30;
 /** Minute of day after which a fallback plan is kept (unless the villager woke later than 10:00). */
 const PLAN_RESCUE_UNTIL = 12 * 60;
 const PLAN_RESCUE_MAX_ATTEMPTS = 8;
+/** Game minutes before bedtime (planEnd) from which tomorrow's plan is asked. */
+export const PREPARE_WINDOW = 240;
+/**
+ * Asks for a day's plan before the villager wakes (evening and night together). A prepare that
+ * comes back empty is asked again PLAN_RESCUE_GAP later; only the last failure settles the day.
+ */
+export const PREPARE_MAX_ATTEMPTS = 3;
 
 export const PRIORITY = {
   // Above everything: the engine's wake-up hold waits on these, and a late answer is a whole
@@ -304,7 +311,8 @@ export class Mind implements VillagerMind {
     const day = planDayFor(this.window, now);
     this.ensurePlan(view, day);
     // Plan tomorrow in the evening, while the model is less busy than at the morning rush.
-    if (mod >= planEnd(this.window) - 90 && this.load() !== 'overloaded') this.prepareDay(view, day + 1);
+    if (mod >= planEnd(this.window) - PREPARE_WINDOW && this.load() !== 'overloaded')
+      this.prepareDay(view, day + 1);
     this.syncEvents(view, day);
     this.romance.update(view);
     this.markDone(mod);
@@ -800,6 +808,11 @@ export class Mind implements VillagerMind {
     return this.plan?.day === day && this.plan.source === 'llm';
   }
 
+  /** A plan for tomorrow (a day that has not begun) is being asked; the village caps these. */
+  preparingTomorrow(): boolean {
+    return this.pending.has(`plan.day:${dayOf(this.deps.now()) + 1}`);
+  }
+
   isBusy(key: string): boolean {
     return this.pending.has(key);
   }
@@ -1078,7 +1091,11 @@ export class Mind implements VillagerMind {
       } finally {
         if (this.urgentPlanDay === day) this.urgentPlanDay = null;
         this.planDoneAt.set(day, this.deps.now());
-        if (!retrying) this.planSettled.add(day);
+        // Before the day starts for this villager a failed answer is asked again (prepareDay), so
+        // it only settles once those retries are used up: the dawn hold must not count it as ready.
+        const ahead = this.plan?.day !== day && !this.prepared.has(day);
+        if (!retrying && !(ahead && (this.planAttempts.get(day) ?? 0) < PREPARE_MAX_ATTEMPTS))
+          this.planSettled.add(day);
       }
     });
   }
@@ -1093,6 +1110,10 @@ export class Mind implements VillagerMind {
           : PRIORITY.planToday;
     if (priority === PRIORITY.planToday) this.urgentPlanDay = day;
     const now = view.now;
+    // Not started yet for this villager (evening or night prepare): it may wait in the queue
+    // until the villager wakes, then ensurePlan takes over with a fallback.
+    const ahead = this.plan?.day !== day;
+    const wakeAt = day * MINUTES_PER_DAY + this.window.wake;
     const memories = await this.recall(
       `my plans for today ${this.profile.occupation} ${this.profile.name}`,
       now,
@@ -1135,18 +1156,22 @@ export class Mind implements VillagerMind {
         '{"summary":"...","blocks":[{"start":"07:00","end":"09:00","location":"<id>","activity":"...","emoji":"🙂"}]}',
       dedupeKey: `plan:${this.id}:day${day}`,
       priority,
+      ...(ahead && !rescue ? { expiresAt: wakeAt } : {}),
       ...(rescue ? { deadline: Math.max(view.now + PLAN_RESCUE_GAP, this.rescueCutoff(day)) } : {}),
       temperature: this.settings.temperature,
       maxTokens: 320,
     });
     const parsed = res.value;
     if (!parsed) {
-      // Retry once right away: while the engine holds the clock for the morning plans, waiting
-      // for a game-time retry would never happen.
-      if (
-        (this.planAttempts.get(day) ?? 0) === 1 &&
-        !(this.plan?.day === day && this.plan.source === 'llm')
-      ) {
+      const attempts = this.planAttempts.get(day) ?? 0;
+      const stillAhead = this.plan?.day !== day && !this.prepared.has(day);
+      // Before midnight a prepare is asked again PLAN_RESCUE_GAP game minutes later (prepareDay).
+      // Once the day has begun, retry right away: while the engine holds the clock for the morning
+      // plans, waiting for a game-time retry would never happen.
+      const retryNow = stillAhead
+        ? dayOf(this.deps.now()) >= day && attempts < PREPARE_MAX_ATTEMPTS
+        : attempts === 1 && !(this.plan?.day === day && this.plan.source === 'llm');
+      if (retryNow) {
         setTimeout(() => this.requestDayPlan(this.lastView ?? view, day), 0);
         return true;
       }
@@ -1156,8 +1181,10 @@ export class Mind implements VillagerMind {
     const blocks = withEvents(parsed.blocks, this.world.events(), this.id, day);
     const summary = parsed.summary || `My plan for day ${day + 1}.`;
     if (this.plan?.day === day) {
-      const mod = minuteOfDay(this.deps.now());
-      const merged = mergeFrom(this.plan.blocks, blocks, dayOf(this.deps.now()) === day ? mod : 0);
+      const from = dayOf(this.deps.now()) === day ? minuteOfDay(this.deps.now()) : 0;
+      // An answer that only covers the past would leave the rest of the day empty: keep the plan.
+      if (!blocks.some((b) => b.end > from && !b.eventId && !b.taskId)) return false;
+      const merged = mergeFrom(this.plan.blocks, blocks, from);
       this.setPlan({
         ...this.plan,
         summary,
@@ -2044,9 +2071,23 @@ export class Mind implements VillagerMind {
     });
   }
 
+  /**
+   * Ask for the plan of a day this villager has not started, at most PREPARE_MAX_ATTEMPTS times and
+   * PLAN_RESCUE_GAP apart. Village-wide at most llm.concurrency + 1 plans for tomorrow wait at once,
+   * so a whole town's evening plans never stack up in front of chat; once the day has begun (after
+   * midnight) the coming morning's plans are not capped: the dawn waits for them.
+   */
   private prepareDay(view: WorldView, day: number): void {
-    if (!this.prepared.has(day) && this.plan?.day !== day && (this.planAttempts.get(day) ?? 0) === 0)
-      this.requestDayPlan(view, day);
+    if (this.prepared.has(day) || this.plan?.day === day || this.pending.has(`plan.day:${day}`)) return;
+    if ((this.planAttempts.get(day) ?? 0) >= PREPARE_MAX_ATTEMPTS) return;
+    const last = this.planDoneAt.get(day);
+    if (last !== undefined && view.now - last < PLAN_RESCUE_GAP) return;
+    if (
+      day > dayOf(view.now) &&
+      this.village.tomorrowPrepares() > Math.max(1, this.deps.config.llm.concurrency)
+    )
+      return;
+    this.requestDayPlan(view, day);
   }
 
   private summarizeDay(view: WorldView, day: number, mems: Memory[]): void {

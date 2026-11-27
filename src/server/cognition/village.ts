@@ -14,6 +14,7 @@ interface MindLike {
   readonly id: VillagerId;
   readonly profile: VillagerProfile;
   dawnPlanPending?(): boolean;
+  preparingTomorrow?(): boolean;
 }
 
 const HOSTY =
@@ -69,6 +70,13 @@ export class Village<M extends MindLike = MindLike> {
   dawnRush(): boolean {
     for (const m of this.minds.values()) if (m.dawnPlanPending?.()) return true;
     return false;
+  }
+
+  /** Minds whose plan for tomorrow is being asked right now. */
+  tomorrowPrepares(): number {
+    let n = 0;
+    for (const m of this.minds.values()) if (m.preparingTomorrow?.()) n++;
+    return n;
   }
 
   proposalsOn(day: number): number {
