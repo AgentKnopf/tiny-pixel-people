@@ -238,6 +238,8 @@ export interface MemoryMeta {
   /** Post office log entry (Laude's instant knowledge). */
   keepId?: string;
   noticeId?: string;
+  /** Set on memories added by the influence API; shown to the observer, never put in a prompt. */
+  influenceId?: string;
 }
 
 export interface Memory {
@@ -311,6 +313,10 @@ export interface DoorNote {
   /** Set together with `reply`. */
   replySource?: Provenance;
   status: DoorNoteStatus;
+  /** Influence notes: the cleaned signature villagers see; `authorId` stays PLAYER_ID. */
+  signature?: string;
+  /** Influence notes: villagers see "someone anonymous" or the signature, never the author. */
+  anonymous?: boolean;
 }
 
 // ---------- Player, economy, world events ----------

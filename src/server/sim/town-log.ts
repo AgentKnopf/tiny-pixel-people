@@ -42,6 +42,8 @@ export const TOWN_EVENT_TYPES = [
   // rides and food
   'ride',
   'purchase',
+  // influence API
+  'influence',
 ] as const;
 export type TownEventType = (typeof TOWN_EVENT_TYPES)[number];
 
