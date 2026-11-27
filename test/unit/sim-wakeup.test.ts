@@ -207,6 +207,37 @@ describe('soft wake-up (wakeUpMode "soft")', () => {
     expect(statuses().map((s) => s.phase)).toEqual(['planning', 'running']);
   });
 
+  it('asks the minds of a fresh engine a few per tick before the clock first moves', async () => {
+    const ticks: { at: number; minds: string[] }[] = [];
+    let minds: string[] = [];
+    class Counting extends SlowPlanner {
+      override update(view: Parameters<StubMind['update']>[0]) {
+        minds.push(this.id);
+        return super.update(view);
+      }
+    }
+    const { engine } = createSimTestWorld({
+      startAt: '06:00',
+      createMind: (profile, deps) => new Counting(profile, deps),
+      config: { sim: { villagers: 10, wakeUpMode: 'soft' } },
+    });
+    engine.onMessage((m) => {
+      if (m.type !== 'tick') return;
+      ticks.push({ at: engine.now(), minds });
+      minds = [];
+    });
+    await engine.advance(2);
+    expect(ticks.slice(0, 5).map((t) => t.minds.length)).toEqual([2, 2, 2, 2, 2]);
+    expect(ticks.slice(0, 5).every((t) => t.at === at(0, '06:00'))).toBe(true);
+    expect(new Set(ticks.slice(0, 5).flatMap((t) => t.minds)).size).toBe(10);
+    expect(ticks.slice(5).map((t) => [t.at, t.minds.length])).toEqual([
+      [at(0, '06:01'), 10],
+      [at(0, '06:02'), 10],
+    ]);
+    await engine.advance(24 * 60, { step: 10 });
+    expect(ticks.filter((t) => t.minds.length > 0 && t.minds.length < 10)).toHaveLength(5);
+  });
+
   it('real time: the clock never stops, and the status repeats with the stats tick', async () => {
     const { engine, statuses } = soft('06:00');
     engine.config.sim.wakeUpTimeoutSec = 300;

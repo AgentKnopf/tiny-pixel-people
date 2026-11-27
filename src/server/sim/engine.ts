@@ -310,6 +310,8 @@ export class Engine implements SimEngine, SimHost {
   } | null = null;
   /** wakeUpMode 'soft': the day whose plans are still arriving, and the last count sent. */
   private planning: { day: number; ready: number } | null = null;
+  /** wakeUpMode 'soft': minds not yet asked at engine start (unset before it, null after). */
+  private warmUpUnasked?: VillagerId[] | null;
   /** New A* searches left in the current step (PATH_SEARCHES_PER_STEP). */
   private pathBudget = Infinity;
   private playerNearCrow = false;
@@ -1124,6 +1126,7 @@ export class Engine implements SimEngine, SimHost {
    */
   private holdForWakeUp(target: GameMinutes): boolean {
     if (this.config.sim.wakeUpMode === 'soft') {
+      if (this.warmUp()) return true;
       this.trackPlanning(target);
       return false;
     }
@@ -1205,6 +1208,25 @@ export class Engine implements SimEngine, SimHost {
       this.planning.ready = ready;
       this.broadcastSimStatus('planning', ready, total);
     }
+  }
+
+  /**
+   * A mind's first update() is its costliest (day plan, cold code). At engine start the soft mode
+   * asks WAKE_UP_THINK_BATCH minds per zero-length step before the clock first moves, as the hold
+   * does at 06:00, so one step never carries them all. True while that start-up is running.
+   */
+  private warmUp(): boolean {
+    if (this.warmUpUnasked === null) return false;
+    this.warmUpUnasked ??= [...this.runtimes.keys()];
+    if (this.warmUpUnasked.length === 0) {
+      this.warmUpUnasked = null;
+      return false;
+    }
+    for (const id of this.warmUpUnasked.splice(0, WAKE_UP_THINK_BATCH)) {
+      const rt = this.runtimes.get(id);
+      if (rt) this.think(rt);
+    }
+    return true;
   }
 
   private endPlanning(): void {
