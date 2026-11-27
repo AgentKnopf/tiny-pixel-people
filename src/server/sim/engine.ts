@@ -1105,6 +1105,11 @@ export class Engine implements SimEngine, SimHost {
     return true;
   }
 
+  /** Residents (visitors left out) and how many have a settled plan for the current day. */
+  planStatus(): { ready: number; total: number } {
+    return this.wakeUpCounts(dayOf(this.clock.time));
+  }
+
   private wakeUpCounts(day: number): { ready: number; total: number } {
     const all = [...this.runtimes.values()].filter((rt) => !rt.profile.transient);
     return { ready: all.filter((rt) => this.planSettled(rt, day)).length, total: all.length };

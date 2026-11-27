@@ -200,10 +200,15 @@ export interface LogMsg {
   time: GameMinutes;
 }
 
-/** Sent while the clock holds at day start waiting for day plans ('wakingUp'), and once when it resumes ('running'). */
+/**
+ * Day-start plan status. 'wakingUp': the clock holds at 06:00 waiting for day plans (wakeUpMode
+ * 'hold'). 'planning': the clock runs while some villagers' plans are still on the way (wakeUpMode
+ * 'soft'). Both repeat while they last; 'running' is sent once when all plans are settled or the
+ * hold ends. `villagers` counts residents only (visitors left out).
+ */
 export interface SimStatusMsg {
   type: 'sim.status';
-  phase: 'wakingUp' | 'running';
+  phase: 'wakingUp' | 'planning' | 'running';
   plansReady: number;
   villagers: number;
 }

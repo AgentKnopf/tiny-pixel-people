@@ -24,6 +24,9 @@ export const DEFAULT_BASE_URLS: Record<ProviderKind, string> = {
  */
 export const OLLAMA_DEFAULT_CONCURRENCY = 1;
 
+/** `sim.wakeUpMode`: 'hold' stops the clock at 06:00 until plans settle; 'soft' keeps it running. */
+export const WAKE_UP_MODES = ['hold', 'soft'] as const;
+
 const hhmm = z.string().regex(/^\d{1,2}:\d{2}$/, 'expected "HH:MM"');
 
 const llmSchema = z.object({
@@ -38,6 +41,10 @@ const llmSchema = z.object({
   concurrency: z.number().int().min(1).max(64),
   jsonMode: z.boolean(),
   logFile: z.string(),
+  /** Thinking on reasoning models. Unset: the provider's default, and no field is sent. */
+  think: z.boolean().optional(),
+  /** `reasoning_effort` the openai provider sends while `think` is false; "" sends no field. */
+  reasoningEffort: z.string(),
 });
 
 const embeddingsSchema = z.object({
@@ -61,7 +68,9 @@ export const configSchema = z
       nightSpeedMultiplier: z.number().min(1),
       tickMs: z.number().int().min(10),
       seed: z.number().int(),
-      /** Real seconds the clock holds at day start until plans settle; 0 disables the hold. */
+      /** 'hold': the clock waits at 06:00 for plans; 'soft': it runs and late plans swap in. */
+      wakeUpMode: z.enum(WAKE_UP_MODES),
+      /** wakeUpMode 'hold' only: real seconds the clock holds at day start; 0 disables the hold. */
       wakeUpTimeoutSec: z.number().min(0),
     }),
     cognition: z.object({
@@ -206,6 +215,7 @@ export const DEFAULT_CONFIG: AppConfig = {
     concurrency: 2,
     jsonMode: true,
     logFile: '',
+    reasoningEffort: 'none',
   },
   embeddings: {
     provider: 'auto',
@@ -223,6 +233,7 @@ export const DEFAULT_CONFIG: AppConfig = {
     nightSpeedMultiplier: 6,
     tickMs: 100,
     seed: 42,
+    wakeUpMode: 'soft',
     wakeUpTimeoutSec: 300,
   },
   cognition: {
