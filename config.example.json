@@ -9,7 +9,8 @@
     "maxTokens": 512,
     "timeoutMs": 120000,
     "jsonMode": true,
-    "logFile": ""
+    "logFile": "",
+    "reasoningEffort": "none"
   },
   "embeddings": {
     "provider": "auto",
@@ -27,6 +28,7 @@
     "nightSpeedMultiplier": 6,
     "tickMs": 100,
     "seed": 42,
+    "wakeUpMode": "soft",
     "wakeUpTimeoutSec": 300
   },
   "cognition": {

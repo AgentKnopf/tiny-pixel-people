@@ -59,6 +59,13 @@ describe('morning wake-up hold', () => {
     expect(statuses().at(-1)).toMatchObject({ phase: 'running', plansReady: 0 });
   });
 
+  it('planStatus counts residents with a settled plan for the current day', async () => {
+    const { engine } = world('05:50');
+    expect(engine.planStatus()).toEqual({ ready: 0, total: 4 });
+    gate.open = true;
+    expect(engine.planStatus()).toEqual({ ready: 4, total: 4 });
+  });
+
   it('only holds once per day', async () => {
     gate.open = true;
     const { engine, statuses } = world('05:00');

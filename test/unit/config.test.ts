@@ -48,6 +48,29 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ cwd: bad.dir, env: {} })).toThrow(/sim\.wakeUpTimeoutSec/);
   });
 
+  it('defaults sim.wakeUpMode to soft, also for config files written before the key existed', () => {
+    const { dir } = tmpConfig({ sim: { wakeUpTimeoutSec: 120 } });
+    const cfg = loadConfig({ cwd: dir, env: {} });
+    expect(cfg.sim.wakeUpMode).toBe('soft');
+    expect(cfg.sim.wakeUpTimeoutSec).toBe(120);
+    const hold = tmpConfig({ sim: { wakeUpMode: 'hold' } });
+    expect(loadConfig({ cwd: hold.dir, env: {} }).sim.wakeUpMode).toBe('hold');
+    const bad = tmpConfig({ sim: { wakeUpMode: 'freeze' } });
+    expect(() => loadConfig({ cwd: bad.dir, env: {} })).toThrow(/sim\.wakeUpMode/);
+  });
+
+  it('leaves llm.think unset by default and accepts booleans only', () => {
+    const empty = mkdtempSync(join(tmpdir(), 'tpp-empty-'));
+    const cfg = loadConfig({ cwd: empty, env: {} });
+    expect(cfg.llm.think).toBeUndefined();
+    expect('think' in cfg.llm).toBe(false);
+    expect(cfg.llm.reasoningEffort).toBe('none');
+    const off = tmpConfig({ llm: { think: false, reasoningEffort: '' } });
+    expect(loadConfig({ cwd: off.dir, env: {} }).llm).toMatchObject({ think: false, reasoningEffort: '' });
+    const bad = tmpConfig({ llm: { think: 'no' } });
+    expect(() => loadConfig({ cwd: bad.dir, env: {} })).toThrow(/llm\.think/);
+  });
+
   it('merges a partial config file over defaults', () => {
     const { dir } = tmpConfig({ llm: { model: 'llama3.1:8b' }, sim: { villagers: 12 } });
     const cfg = loadConfig({ cwd: dir, env: {} });
