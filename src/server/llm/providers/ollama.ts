@@ -66,6 +66,7 @@ export class OllamaChatProvider implements ChatProvider {
       keep_alive: '30m',
     };
     if (req.json && this.opts.jsonMode !== false) body.format = 'json';
+    if (this.opts.think !== undefined) body.think = this.opts.think;
     const res = await requestJson(joinUrl(this.opts.baseUrl, '/api/chat'), body, {
       label: 'ollama',
       headers: ollamaAuth(this.opts),

@@ -72,6 +72,24 @@ so on a CPU like this it does worse than `qwen2.5:1.5b`. The game never crashed,
 answer fell back cleanly. A 7B model on an Apple Silicon Mac or a GPU should answer much faster,
 but that hasn't been measured with v2.
 
+### Reasoning models: turn thinking off
+
+Reasoning models (Qwen 3, Gemma 4, Inkling and others) think before they answer by default. That
+thinking is slow and the game doesn't need it. In our tests a day plan took:
+
+| Model           | Thinking on (default) | `llm.think: false`                      |
+| --------------- | --------------------- | --------------------------------------- |
+| Inkling         | about 17 s            | about 7.6 s, same quality               |
+| Gemma 4 26B-A4B | about 34 s            | about 8 s, with no thinking text at all |
+
+```json
+{ "llm": { "think": false } }
+```
+
+With Ollama this sends `"think": false`; with an OpenAI-compatible server it sends
+`"reasoning_effort": "none"` (change the value with `llm.reasoningEffort`). Leave `think` unset
+for models that don't reason, such as `qwen2.5`.
+
 ## The bigger village and the model
 
 The default village has 12 residents (the ten originals plus Laude and Franzi) and, once the first
@@ -133,8 +151,10 @@ more options. Hosted APIs (see [Providers](providers.md)) are usually fast enoug
 ```
 
 - `llm.concurrency` stays at its Ollama default of 1: a CPU runs one call at a time efficiently;
-  sending more only makes each one slower and makes timeouts more likely. It also means one
-  villager conversation at a time.
+  two calls at once just split the cores. In one test a single call ran at 23 tokens per second,
+  but two at once managed only about 7 tokens per second together. More calls make each one
+  slower and make timeouts more likely. It also means one villager conversation at a time.
+- `llm.think: false` for reasoning models (see [above](#reasoning-models-turn-thinking-off)).
 - `sim.dayLengthMinutes` 60–120: a longer day gives each call more real time. Play at 1×.
 - `sim.villagers`: fewer villagers make fewer calls. At 11, Franzi stays away; at 10 or fewer,
   Laude does too.

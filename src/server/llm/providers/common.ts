@@ -11,6 +11,10 @@ export interface ProviderOptions {
   timeoutMs?: number;
   /** Use the provider's native JSON mode when a request sets `json: true`. */
   jsonMode?: boolean;
+  /** Ollama: sent as top-level `think` when set. Other providers ignore it. */
+  think?: boolean;
+  /** OpenAI-compatible: sent as `reasoning_effort` when `think` is false and this is not "". */
+  reasoningEffort?: string;
   /** Injected for tests. */
   fetch?: FetchLike;
 }

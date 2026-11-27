@@ -274,6 +274,34 @@ describe('PriorityLlmQueue', () => {
     expect(order).toEqual(['running', 'player', 'old-event', 'fresh-plan']);
   });
 
+  it('never ages a job past player.reply - 1, but leaves jobs already at that level alone', async () => {
+    let ms = 0;
+    const p = new ManualProvider();
+    const q = new PriorityLlmQueue({
+      chat: p,
+      concurrency: 1,
+      clockMs: () => ms,
+      agingMs: 1000,
+      maxAgingBoost: 200,
+    });
+    const order: string[] = [];
+    const jobs = [q.enqueue(req('reflect', 'running')).then(() => order.push('running'))];
+    jobs.push(q.enqueue(req('plan.day', 'old-plan')).then(() => order.push('old-plan')));
+    jobs.push(q.enqueue(req('convo.turn', 'old-turn')).then(() => order.push('old-turn')));
+    ms = 1_000_000;
+    jobs.push(
+      q.enqueue(req('plan.day', 'plan-today'), { priority: 110 }).then(() => order.push('plan-today')),
+    );
+    jobs.push(q.enqueue(req('player.reply', 'player')).then(() => order.push('player')));
+    while (p.calls.length) {
+      p.calls.shift()!.resolve({});
+      await tick();
+    }
+    await Promise.all(jobs);
+    // Aged jobs stop at 109, so both fresh 110-priority jobs still go first, in FIFO order.
+    expect(order).toEqual(['running', 'plan-today', 'player', 'old-plan', 'old-turn']);
+  });
+
   it('applies default per-task TTLs in game time when no expiresAt is given', async () => {
     let now = 0;
     const p = new ManualProvider();
