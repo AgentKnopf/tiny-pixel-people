@@ -49,6 +49,14 @@ export const INFLUENCE_EVENT_LEAD_MINUTES = 30;
 export const INFLUENCE_EVENT_BEDTIME_MARGIN = 60;
 export const INFLUENCE_LOG_PAGE_MAX = 200;
 
+/** Ranges and defaults of the `influence` config section (spec §2); both values are integers. */
+export const INFLUENCE_CONFIG = {
+  /** Accepted influences per game day, all endpoints; 0 means no limit. */
+  perGameDay: { min: 0, max: 1000, default: 6 },
+  /** Influence log entries kept in the save. */
+  logMax: { min: 50, max: 5000, default: 500 },
+} as const;
+
 // ---------- Request bodies (HTTP JSON, before cleaning) ----------
 
 export interface RumourBody {
@@ -79,11 +87,8 @@ export interface NudgeBody {
   thought: string;
 }
 
-export interface WeatherBody {
-  weather: 'rain' | 'clear';
-  /** Game hours, required for `rain`, ignored for `clear`. */
-  hours?: number;
-}
+/** `hours` (game hours) is required for `rain` and ignored for `clear`. */
+export type WeatherBody = { weather: 'rain'; hours: number } | { weather: 'clear'; hours?: number };
 
 export interface InfluenceBodies {
   rumour: RumourBody;
@@ -114,8 +119,9 @@ export interface InfluenceAccepted {
   refs: InfluenceRefs;
 }
 
-/** Error ids of the 409, 503 and 429 bodies (spec §3). */
+/** Error ids of the refusals the engine decides (422, 409, 503, 429; spec §3). */
 export const INFLUENCE_ERRORS = [
+  'invalid',
   'asleep',
   'already_raining',
   'not_raining',
@@ -131,7 +137,13 @@ export type InfluenceErrorId = (typeof INFLUENCE_ERRORS)[number];
  * from the HTTP layer. Refusals never count against the budget and are not logged as influences.
  */
 export type InfluenceRefusal =
-  | { status: 422; error: 'invalid'; message: string }
+  | {
+      status: 422;
+      error: 'invalid';
+      message: string;
+      /** The request field at fault, e.g. `to`, `location`, `time`, `signed`. */
+      field?: string;
+    }
   | { status: 409; error: 'asleep'; wakesAt: GameMinutes }
   | { status: 409; error: 'already_raining' | 'not_raining' | 'board_full' | 'event_pending' }
   | { status: 503; error: 'busy' }
@@ -223,6 +235,6 @@ export interface InfluenceLogPage {
 }
 
 export interface ApplyInfluenceOptions {
-  /** Real ISO-8601 time to record instead of the wall clock (deterministic tests). */
+  /** Real ISO-8601 time to record instead of the town log clock (deterministic tests). */
   ts?: string;
 }

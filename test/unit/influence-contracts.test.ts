@@ -13,14 +13,18 @@ import { createPlaceholderSnapshot } from '../../src/server/sim/placeholder.ts';
 import { TOWN_EVENT_TYPES } from '../../src/server/sim/town-log.ts';
 import type { SimEngine } from '../../src/server/sim/types.ts';
 import {
+  INFLUENCE_CONFIG,
   INFLUENCE_ENDPOINTS,
   INFLUENCE_ERRORS,
   INFLUENCE_TEXT_MAX,
   RUMOUR_SOURCE_LABELS,
   RUMOUR_SOURCES,
   type InfluenceEntry,
+  type InfluenceErrorId,
+  type InfluenceRefusal,
   type InfluenceRequest,
   type InfluenceResult,
+  type WeatherBody,
 } from '../../src/shared/influence.ts';
 import { NOTE_MAX_LENGTH, NOTICE_MAX_LENGTH, SAY_MAX_LENGTH } from '../../src/shared/protocol.ts';
 import { PLAYER_ID, type DoorNote, type MemoryMeta } from '../../src/shared/types.ts';
@@ -178,6 +182,7 @@ describe('influence contracts', () => {
     expect(INFLUENCE_TEXT_MAX.eventText).toBe(NOTICE_MAX_LENGTH);
     expect([...INFLUENCE_ENDPOINTS]).toEqual(['rumour', 'note', 'event', 'nudge', 'weather']);
     expect([...INFLUENCE_ERRORS]).toEqual([
+      'invalid',
       'asleep',
       'already_raining',
       'not_raining',
@@ -186,6 +191,13 @@ describe('influence contracts', () => {
       'busy',
       'limit',
     ]);
+  });
+
+  it('has the spec config ranges and defaults', () => {
+    expect(INFLUENCE_CONFIG).toEqual({
+      perGameDay: { min: 0, max: 1000, default: 6 },
+      logMax: { min: 50, max: 5000, default: 500 },
+    });
   });
 
   it('adds the influence town log type', () => {
@@ -225,6 +237,10 @@ describe('influence contracts', () => {
     expectTypeOf<Extract<InfluenceRequest, { endpoint: 'nudge' }>['body']>().toHaveProperty('thought');
     expectTypeOf<Extract<InfluenceResult, { error: 'limit' }>['status']>().toEqualTypeOf<429>();
     expectTypeOf<Extract<InfluenceResult, { error: 'asleep' }>>().toHaveProperty('wakesAt');
+    expectTypeOf<InfluenceRefusal['error']>().toEqualTypeOf<InfluenceErrorId>();
+    expectTypeOf<{ weather: 'rain' }>().not.toExtend<WeatherBody>();
+    expectTypeOf<{ weather: 'rain'; hours: 2 }>().toExtend<WeatherBody>();
+    expectTypeOf<{ weather: 'clear' }>().toExtend<WeatherBody>();
     expectTypeOf<MemoryMeta['influenceId']>().toEqualTypeOf<string | undefined>();
     expectTypeOf<SimEngine['applyInfluence']>().toEqualTypeOf<
       ((req: InfluenceRequest, opts?: { ts?: string }) => InfluenceResult) | undefined

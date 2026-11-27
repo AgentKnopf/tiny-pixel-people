@@ -315,7 +315,10 @@ export interface DoorNote {
   status: DoorNoteStatus;
   /** Influence notes: the cleaned signature villagers see; `authorId` stays PLAYER_ID. */
   signature?: string;
-  /** Influence notes: villagers see "someone anonymous" or the signature, never the author. */
+  /**
+   * True on every influence note: villagers never see the author. With `signature` they see
+   * "someone signing as '…'", without it "someone anonymous".
+   */
   anonymous?: boolean;
 }
 
