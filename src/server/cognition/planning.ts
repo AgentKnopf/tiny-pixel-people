@@ -532,7 +532,7 @@ export function needOverride(
         activity: 'look for someone to chat with',
         emoji: '💬',
       },
-      fun: { loc: funPlace(locations)?.id ?? homeId, activity: 'relax and have some fun', emoji: '🌳' },
+      fun: { loc: funPlace(locations)?.id ?? homeId, activity: 'stroll and play in the park', emoji: '🌳' },
     };
     const p = plan[need];
     return {
