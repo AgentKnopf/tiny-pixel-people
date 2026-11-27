@@ -1,5 +1,6 @@
 import { LlmError } from '../errors.ts';
 import { asVectors, isRecord, joinUrl, requestJson } from '../http.ts';
+import { createLogger } from '../../log.ts';
 import type { ChatProvider, ChatRequest, ChatResponse, EmbeddingProvider, HealthResult } from '../types.ts';
 import {
   DEFAULT_MAX_TOKENS,
@@ -10,6 +11,8 @@ import {
   type ProviderOptions,
 } from './common.ts';
 
+const log = createLogger('llm.openai');
+
 function authHeaders(apiKey: string | undefined): Record<string, string> {
   return apiKey ? { authorization: `Bearer ${apiKey}` } : {};
 }
@@ -17,7 +20,8 @@ function authHeaders(apiKey: string | undefined): Record<string, string> {
 /**
  * OpenAI-compatible chat completions (OpenAI, LM Studio, vLLM, llama.cpp server, OpenRouter, Groq…).
  * Servers differ in which parameters they accept, so a 400 that names `response_format`,
- * `max_tokens` or `temperature` triggers one adapted retry, and the adaptation is remembered.
+ * `max_tokens`, `temperature` or `reasoning_effort` triggers one adapted retry, and the
+ * adaptation is remembered.
  */
 export class OpenAiChatProvider implements ChatProvider {
   readonly kind = 'openai' as const;
@@ -25,10 +29,12 @@ export class OpenAiChatProvider implements ChatProvider {
   private useResponseFormat: boolean;
   private tokenParam: 'max_tokens' | 'max_completion_tokens' = 'max_tokens';
   private sendTemperature = true;
+  private sendReasoningEffort: boolean;
 
   constructor(private readonly opts: ProviderOptions) {
     this.model = opts.model;
     this.useResponseFormat = opts.jsonMode !== false;
+    this.sendReasoningEffort = opts.think === false && !!opts.reasoningEffort;
   }
 
   async chat(req: ChatRequest): Promise<ChatResponse> {
@@ -71,6 +77,7 @@ export class OpenAiChatProvider implements ChatProvider {
     };
     if (this.sendTemperature) body.temperature = req.temperature ?? this.opts.temperature ?? 0.7;
     if (req.json && this.useResponseFormat) body.response_format = { type: 'json_object' };
+    if (this.sendReasoningEffort) body.reasoning_effort = this.opts.reasoningEffort;
     return body;
   }
 
@@ -88,6 +95,13 @@ export class OpenAiChatProvider implements ChatProvider {
     }
     if (this.sendTemperature && msg.includes('temperature')) {
       this.sendTemperature = false;
+      return true;
+    }
+    if (this.sendReasoningEffort && msg.includes('reasoning_effort')) {
+      this.sendReasoningEffort = false;
+      log.warn(
+        `${this.opts.baseUrl} rejected reasoning_effort; sending requests without it (set llm.reasoningEffort to "" to silence this)`,
+      );
       return true;
     }
     return false;

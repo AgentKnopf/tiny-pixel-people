@@ -90,7 +90,9 @@ shows what you have).
 `llm.concurrency` is how many model calls the game sends at once, and how many villager
 conversations can run at the same time. For Ollama it defaults to 1: one call at a time, so the
 game's priorities decide what runs next (your chats first). Extra calls sent to Ollama would only
-wait inside Ollama, where those priorities no longer apply. On a CPU-only machine keep 1.
+wait inside Ollama, where those priorities no longer apply. On a CPU-only machine keep 1: two
+calls at once just split the cores (in one test, 23 tokens per second for one call against about
+7 tokens per second for two together).
 
 On a GPU or an Apple Silicon Mac, try 2–3. Ollama decides how many calls it really runs in parallel
 with its own `OLLAMA_NUM_PARALLEL` setting, so set both together:
@@ -104,6 +106,19 @@ OLLAMA_NUM_PARALLEL=3 ollama serve
 ```
 
 On the macOS app, set it with `launchctl setenv OLLAMA_NUM_PARALLEL 3` and restart the app.
+
+## Reasoning models
+
+Qwen 3, Gemma 4, Inkling and other reasoning models think before they answer by default, which
+makes every call slow. Turn it off:
+
+```json
+{ "llm": { "think": false } }
+```
+
+The game then sends `"think": false` with every call. In our tests this cut a day plan from about 17 s
+to 7.6 s with Inkling, at the same quality, and to about 8 s with Gemma 4 26B-A4B. See
+[Performance](performance.md#reasoning-models-turn-thinking-off).
 
 ## Ollama on another machine
 

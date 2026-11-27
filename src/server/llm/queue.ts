@@ -21,6 +21,9 @@ import {
 
 const log = createLogger('llm.queue');
 
+/** Highest priority the aging bonus can reach. */
+const AGING_CEILING = TASK_PRIORITY['player.reply'] - 1;
+
 /**
  * Game minutes a job may wait before it is dropped (callers fall back), used when the caller
  * gives no `expiresAt`. On a slow model this keeps the backlog from piling up with answers that
@@ -68,7 +71,7 @@ export interface LlmQueueOptions {
   taskTtlMinutes?: Partial<Record<LlmTask, number>> | false;
   /** A queued job gains +1 priority per `agingMs` of real waiting time (default 2000 ms). */
   agingMs?: number;
-  /** Cap for the aging bonus (default 50), so aged background work never outranks the player. */
+  /** Cap for the aging bonus (default 50). Aging also never lifts a job to player.reply priority. */
   maxAgingBoost?: number;
   /** Max queued jobs; beyond it the lowest-priority job is dropped (default 64). */
   maxQueued?: number;
@@ -327,10 +330,14 @@ export class PriorityLlmQueue implements LlmQueue {
     if (job.onAbort) job.req.signal?.removeEventListener('abort', job.onAbort);
   }
 
-  /** Base priority plus an aging bonus, so low-priority work is not starved forever. */
+  /**
+   * Base priority plus an aging bonus, so low-priority work is not starved forever. Aging stops
+   * just below player.reply so a backlog of old jobs never delays the player.
+   */
   private effectivePriority(job: Job, nowMs: number): number {
+    if (job.priority >= AGING_CEILING) return job.priority;
     const boost = Math.min(this.maxAgingBoost, Math.floor((nowMs - job.enqueuedAtMs) / this.agingMs));
-    return job.priority + boost;
+    return Math.min(job.priority + boost, AGING_CEILING);
   }
 
   private takeNext(): Job | undefined {

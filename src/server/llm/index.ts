@@ -70,6 +70,8 @@ function chatOptions(cfg: AppConfig, opts: CreateProvidersOptions): ProviderOpti
     maxTokens: cfg.llm.maxTokens,
     timeoutMs: cfg.llm.timeoutMs,
     jsonMode: cfg.llm.jsonMode,
+    think: cfg.llm.think,
+    reasoningEffort: cfg.llm.reasoningEffort,
     fetch: opts.fetch,
   };
 }
