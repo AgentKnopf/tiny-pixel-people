@@ -27,7 +27,7 @@ const NOTICE_TIME = parseClock('09:30');
 const SHY_RADIUS = 4;
 
 /** Identical in both runs; short timeouts keep the never-answering run moving in real time. */
-const CONFIG = { sim: { wakeUpTimeoutSec: 2 }, llm: { timeoutMs: 3000 } };
+const CONFIG = { sim: { wakeUpMode: 'hold' as const, wakeUpTimeoutSec: 2 }, llm: { timeoutMs: 3000 } };
 
 type Key =
   | 'zoo'

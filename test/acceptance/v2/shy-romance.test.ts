@@ -73,7 +73,15 @@ describe.skipIf(!readyV2(...F))(`AC25: Laude and Franzi's shy crush${waitingForV
     beforeAll(async () => {
       const provider = new MockChatProvider('mock');
       recordAsks(provider, () => w, asks);
-      const world = await createTestWorld({ villagers: 12, seed: 25, startAt: '06:00', provider });
+      // The seeded week was tuned on the 06:00 hold; soft wake shifts day 1 by a minute, and the
+      // butterfly effect moves Franzi's later post-office trips.
+      const world = await createTestWorld({
+        villagers: 12,
+        seed: 25,
+        startAt: '06:00',
+        provider,
+        config: { sim: { wakeUpMode: 'hold' } },
+      });
       w = world;
       seed = pairRomance(world);
       for (const id of PAIR) seedLines[id] = await shyCrushLine(world, id);

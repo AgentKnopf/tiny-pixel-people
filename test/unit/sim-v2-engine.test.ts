@@ -336,7 +336,7 @@ describe('wake-up hold without drainLlm', () => {
       startAt: '05:58',
       createMind,
       providers: { chat: hung, embeddings: null },
-      config: { sim: { villagers: 4, wakeUpTimeoutSec: 600 } },
+      config: { sim: { villagers: 4, wakeUpMode: 'hold', wakeUpTimeoutSec: 600 } },
     });
     const done = engine.advance(10).then(() => 'done');
     const timeout = new Promise((r) => setTimeout(() => r('timeout'), 5000));
