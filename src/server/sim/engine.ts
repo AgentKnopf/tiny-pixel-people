@@ -1220,6 +1220,8 @@ export class Engine implements SimEngine, SimHost {
     this.warmUpUnasked ??= [...this.runtimes.keys()];
     if (this.warmUpUnasked.length === 0) {
       this.warmUpUnasked = null;
+      // The clock stood still: later minutes map to real time from here, as after the hold.
+      this.townLog.anchor(true);
       return false;
     }
     for (const id of this.warmUpUnasked.splice(0, WAKE_UP_THINK_BATCH)) {
