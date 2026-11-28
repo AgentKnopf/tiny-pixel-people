@@ -198,6 +198,7 @@ export type InfluenceEntry = {
     tick: GameMinutes;
     /** Real ISO-8601 time the influence was accepted. */
     ts: string;
+    /** 1-based, like the observer's `day` (`dayOf(tick) + 1`). */
     day: number;
     /** `HH:MM` game time. */
     time: string;

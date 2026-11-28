@@ -86,6 +86,7 @@ async function main(): Promise<void> {
     engine,
     replayFile: () => engine.store.replayPath,
     observer: { config: cfg.observer, source: engine },
+    influence: { config: cfg.influence },
   });
   engine.start();
   log.info(`Tiny Pixel People running at ${server.url}`);
@@ -96,6 +97,12 @@ async function main(): Promise<void> {
     );
     if (cfg.observer.allowRemote && !cfg.observer.token)
       log.warn('observer.allowRemote is ignored without a token (set OBSERVER_TOKEN)');
+  }
+  if (cfg.influence.enabled) {
+    const limit = cfg.influence.perGameDay;
+    log.info(
+      `influence API at ${server.url}/api/influence/ (local clients, bearer token required; ${limit === 0 ? 'no day limit' : `${limit} per game day`})`,
+    );
   }
 
   installShutdownSave(

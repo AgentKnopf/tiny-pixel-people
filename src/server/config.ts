@@ -185,9 +185,11 @@ export const configSchema = z
       /** Entries kept in the town event log ring buffer. */
       logSize: z.number().int().min(100).max(100_000),
     }),
-    /** Influence API (specs/influence-api-v2.md §2); the token arrives with the HTTP layer. */
+    /** Influence API (specs/influence-api-v2.md §2). */
     influence: z.object({
       enabled: z.boolean(),
+      /** Bearer token for every influence request (env INFLUENCE_TOKEN); >= 32 characters when enabled. */
+      token: z.string(),
       /** Accepted influences per game day, all endpoints; 0 = no limit. */
       perGameDay: z.number().int().min(INFLUENCE_CONFIG.perGameDay.min).max(INFLUENCE_CONFIG.perGameDay.max),
       /** Influence log entries kept in the save. */
@@ -196,6 +198,14 @@ export const configSchema = z
     debug: z.boolean(),
   })
   .superRefine((cfg, ctx) => {
+    // The message never contains the token itself.
+    if (cfg.influence.enabled && !/^[\x21-\x7e]{32,}$/.test(cfg.influence.token))
+      ctx.addIssue({
+        code: 'custom',
+        path: ['influence', 'token'],
+        message:
+          'must be at least 32 printable ASCII characters without spaces when influence.enabled is true (set INFLUENCE_TOKEN)',
+      });
     if (cfg.visitors.min > cfg.visitors.max)
       ctx.addIssue({ code: 'custom', path: ['visitors', 'min'], message: 'must be <= visitors.max' });
     if (cfg.visitors.max > cfg.hotel.rooms)
@@ -289,6 +299,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   observer: { enabled: true, host: '127.0.0.1', port: null, allowRemote: false, token: '', logSize: 5000 },
   influence: {
     enabled: false,
+    token: '',
     perGameDay: INFLUENCE_CONFIG.perGameDay.default,
     logMax: INFLUENCE_CONFIG.logMax.default,
   },
@@ -334,6 +345,7 @@ function envOverrides(env: NodeJS.ProcessEnv): PartialConfig {
     sim: { dayLengthMinutes: num(env.TPP_DAY_LENGTH_MINUTES), villagers: num(env.TPP_VILLAGERS) },
     server: { port: num(env.TPP_PORT) },
     observer: { port: num(env.TPP_OBSERVER_PORT), token: str(env.OBSERVER_TOKEN) },
+    influence: { token: str(env.INFLUENCE_TOKEN) },
     debug: bool(env.TPP_DEBUG),
   };
 }
@@ -415,5 +427,6 @@ export function redactConfig(cfg: AppConfig): AppConfig {
     llm: { ...cfg.llm, apiKey: redact(cfg.llm.apiKey) },
     embeddings: { ...cfg.embeddings, apiKey: redact(cfg.embeddings.apiKey) },
     observer: { ...cfg.observer, token: redact(cfg.observer.token) },
+    influence: { ...cfg.influence, token: redact(cfg.influence.token) },
   };
 }

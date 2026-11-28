@@ -5,7 +5,7 @@ import { networkInterfaces } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { PartialConfig } from '../../src/server/config.ts';
 import { createInfluenceApi, type InfluenceSource } from '../../src/server/net/influence.ts';
-import { startServer, type RunningServer } from '../../src/server/net/server.ts';
+import { startServer } from '../../src/server/net/server.ts';
 import type { InfluenceHandler } from '../../src/server/sim/influence.ts';
 import type { InfluenceRequest, InfluenceResult } from '../../src/shared/influence.ts';
 import { createSimTestWorld } from '../helpers/sim.ts';

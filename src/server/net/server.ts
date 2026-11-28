@@ -17,6 +17,7 @@ import {
   type RunningObserver,
 } from './observer.ts';
 import type { ObserverSource } from './observer-views.ts';
+import { createInfluenceApi, type InfluenceConfig, type InfluenceSource } from './influence.ts';
 import { hostAllowed, localHosts, originAllowed, RefusalLog } from './origin.ts';
 import { parseClientMessage } from './validate.ts';
 
@@ -55,6 +56,11 @@ export interface ServerOptions {
    * DEFAULT_CONFIG.observer, source = `engine` when it is the real engine (otherwise off).
    */
   observer?: { config?: ObserverConfig; source?: ObserverSource; assetsDir?: string };
+  /**
+   * Influence API (POST /api/influence/…), game port only. Defaults: DEFAULT_CONFIG.influence (off),
+   * source = `engine` when it implements applyInfluence and influenceLog.
+   */
+  influence?: { config?: InfluenceConfig; source?: InfluenceSource; bodyTimeoutMs?: number };
 }
 
 export interface RunningServer {
@@ -88,6 +94,19 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
         })
       : null;
   const separateObserver = observer !== null && observerConfig.port !== null;
+  const influenceSource =
+    opts.influence?.source ??
+    (engine.applyInfluence && engine.influenceLog
+      ? {
+          applyInfluence: engine.applyInfluence.bind(engine),
+          influenceLog: engine.influenceLog.bind(engine),
+        }
+      : null);
+  const influence = createInfluenceApi({
+    config: opts.influence?.config ?? DEFAULT_CONFIG.influence,
+    source: influenceSource,
+    ...(opts.influence?.bodyTimeoutMs !== undefined ? { bodyTimeoutMs: opts.influence.bodyTimeoutMs } : {}),
+  });
   /** Filled in once listening (the port may be 0 until then). */
   let allowedHosts = new Set<string>();
 
@@ -106,6 +125,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       sendJson(res, 403, { error: 'Unknown Host header.' });
       return;
     }
+    // Before the generic 405 guard: the influence API takes POST.
+    if (influence.handle(req, res, url)) return;
     if (!separateObserver && observer?.handle(req, res, url)) return;
     if (url.pathname.startsWith('/api/') && req.method !== 'GET' && req.method !== 'HEAD') {
       res.writeHead(405, { 'content-type': MIME['.json']!, allow: 'GET, HEAD' });
