@@ -33,6 +33,8 @@ export class DirectQueue implements LlmQueue {
   constructor(
     readonly chat: ChatProvider,
     readonly embeddings: EmbeddingProvider | null = null,
+    /** Real queue to pass requests to (priorities, dedupe), still logging them here. */
+    readonly inner: LlmQueue | null = null,
   ) {}
 
   /** Mirrors PriorityLlmQueue: false when embeddings are off for good. */
@@ -43,11 +45,20 @@ export class DirectQueue implements LlmQueue {
   readonly priorities = new Map<ChatRequest, number | undefined>();
   readonly options = new Map<ChatRequest, EnqueueOptions | undefined>();
 
+  /** Requests already aborted when enqueued (priority bumps of a waiting job), not in `requests`. */
+  readonly preAborted: Array<{ req: ChatRequest; opts: EnqueueOptions | undefined }> = [];
+
   enqueue(req: ChatRequest, opts?: EnqueueOptions): Promise<ChatResponse> {
+    const signal = req.signal;
+    if (signal?.aborted) {
+      this.preAborted.push({ req, opts });
+      // Like the real queue: such a request never reaches the provider.
+      return this.inner ? this.inner.enqueue(req, opts) : Promise.reject(new Error('aborted before start'));
+    }
     this.requests.push(req);
     this.priorities.set(req, opts?.priority);
     this.options.set(req, opts);
-    const signal = req.signal;
+    if (this.inner) return this.track(this.inner.enqueue(req, opts));
     if (!signal) return this.track(this.chat.chat(req));
     // Like the real queue: an aborted caller stops waiting for the provider.
     const aborted = new Promise<never>((_, reject) => {
@@ -273,10 +284,13 @@ export function createTestVillage(opts: {
   locations?: Location[];
   /** Extra WorldView fields per villager (v2: romances, notices, visitor, animals...). */
   extraView?: (id: string) => Partial<WorldView>;
+  /** A real queue behind the logging one (gets the game clock). */
+  queue?: (provider: MockChatProvider, now: () => GameMinutes) => LlmQueue;
 }): TestVillage {
   const locations = opts.locations ?? LOCATIONS;
   const provider = opts.provider ?? new MockChatProvider();
-  const queue = new DirectQueue(provider, opts.embeddings ?? null);
+  const inner = opts.queue?.(provider, () => time.now) ?? null;
+  const queue = new DirectQueue(provider, opts.embeddings ?? null, inner);
   const config = opts.config ?? testConfig();
   const profiles = opts.profiles ?? PROFILES;
   const events: VillageEvent[] = [];
