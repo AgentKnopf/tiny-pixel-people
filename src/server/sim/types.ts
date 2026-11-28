@@ -2,6 +2,13 @@
  * Simulation engine contract (WP2). Used by net/ (WS server), persistence and the test harness.
  * See specs/technical-spec.md §4. WP2 exports `createSimEngine: CreateSimEngine` from ./engine.ts.
  */
+import type {
+  ApplyInfluenceOptions,
+  InfluenceLogPage,
+  InfluenceLogQuery,
+  InfluenceRequest,
+  InfluenceResult,
+} from '../../shared/influence.ts';
 import type { ClientMessage, ServerMessage } from '../../shared/protocol.ts';
 import type {
   AnimalFrame,
@@ -77,6 +84,13 @@ export interface SimEngine {
   conversations(): readonly Conversation[];
   /** Everything needed to resume this world (WP5 JsonSaveStore.save). */
   toSaveData(): SaveData;
+  /**
+   * Influence API (specs/influence-api-v2.md): validate and apply one influence at the current tick.
+   * Optional until the influence service lands.
+   */
+  applyInfluence?(req: InfluenceRequest, opts?: ApplyInfluenceOptions): InfluenceResult;
+  /** Influence log page and today's budget. */
+  influenceLog?(q: InfluenceLogQuery): InfluenceLogPage;
 }
 
 // ---------- v2 deterministic subsystems (spec v2 §3–§5). Owned by WP2. ----------

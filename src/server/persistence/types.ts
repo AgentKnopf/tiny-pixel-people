@@ -26,6 +26,7 @@ import type {
   Weather,
   WorldEvent,
 } from '../../shared/types.ts';
+import type { InfluenceEntry } from '../../shared/influence.ts';
 
 /** 2 = v2 expansion; v1 saves are upgraded by MIGRATIONS[1]. */
 export const SAVE_SCHEMA_VERSION = 2;
@@ -63,6 +64,8 @@ export interface SaveData {
   keep?: KeepEntry[];
   /** Observer API state (town log, real-time anchors). */
   observer?: ObserverSaveData;
+  /** Influence API day counter and log (specs/influence-api-v2.md §7). */
+  influence?: InfluenceSaveData;
 }
 
 export interface TownLogEntry {
@@ -83,6 +86,17 @@ export interface ObserverSaveData {
   log: TownLogEntry[];
   /** [epoch ms, game minutes] pairs, oldest first, used to map game times to real timestamps. */
   anchors: [number, number][];
+}
+
+export interface InfluenceSaveData {
+  /** Game day `used` counts for (`dayOf(tick)`). */
+  day: number;
+  /** Accepted influences on `day`. */
+  used: number;
+  /** Next `inf_<n>` number. */
+  nextId: number;
+  /** Oldest first, at most `influence.logMax`. */
+  entries: InfluenceEntry[];
 }
 
 export interface SaveStore {
