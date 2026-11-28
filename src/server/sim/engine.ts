@@ -614,6 +614,9 @@ export class Engine implements SimEngine, SimHost {
   }
 
   applyInfluence(req: InfluenceRequest, opts?: ApplyInfluenceOptions): InfluenceResult {
+    // The HTTP layer answers 404 while the API is off; this guards any other caller.
+    if (!this.config.influence.enabled)
+      return { ok: false, status: 422, error: 'invalid', message: 'The influence API is off.' };
     return this.influence.apply(req, opts);
   }
 
