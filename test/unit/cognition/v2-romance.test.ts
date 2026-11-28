@@ -124,6 +124,27 @@ describe('nightly crushes (v2 §7)', () => {
       expect(mia.town.romances.of('mia'), stage).toHaveLength(0);
     }
   });
+  it('never forms a crush on someone else while dating, only on the date partner', async () => {
+    // Mia is dating Ben (his crush) and likes Cleo a lot; the 3rd eligible night is a certain draw.
+    const run = async (dating: boolean, likes: 'Cleo' | 'Ben') => {
+      const v = createTestVillage({ start: at(1, '01:50'), locations: V2_LOCATIONS });
+      const mia = v.minds.get('mia')!;
+      mutual(v, 'mia', 'ben', likes === 'Ben' ? 9 : 4);
+      if (likes === 'Cleo') mutual(v, 'mia', 'cleo', 9);
+      if (dating) mia.town.romances.put(romance('ben', 'mia', { stage: 'dating', crushFrom: ['ben'] }));
+      talked(mia, likes, 3, at(1, '00:30'));
+      for (const id of ['mia', 'ben', 'cleo', 'dan']) forceRandom(v.minds.get(id)!, 0.99);
+      for (const night of [1, 2, 3]) {
+        talked(mia, likes, 2, at(night, '00:30'));
+        await v.advanceTo(at(night, '02:05'));
+        v.time.now = at(night + 1, '01:50');
+      }
+      return mia.town.romances;
+    };
+    expect((await run(false, 'Cleo')).get(romanceId('mia', 'cleo'))?.crushFrom).toEqual(['mia']);
+    expect((await run(true, 'Cleo')).get(romanceId('mia', 'cleo'))).toBeUndefined();
+    expect((await run(true, 'Ben')).get(romanceId('mia', 'ben'))?.crushFrom).toContain('mia');
+  });
 });
 
 describe('the crush guarantee (v2 §7, AC15)', () => {
@@ -622,6 +643,87 @@ describe('the shy pair (v2 §7.1)', () => {
       .filter((m) => m.text === 'Franzi was at the post office again, chatting shyly with Laude.');
     expect(gossip).toHaveLength(1);
     expect(gossip[0]!.importance).toBe(5);
+  });
+
+  describe('gossip rule edges', () => {
+    const GOSSIP = 'Franzi was at the post office again, chatting shyly with Laude.';
+    // V2_LOCATIONS post office area: x 50–53, y 2–5; distance is in tiles to that area (Chebyshev).
+    const gossipOf = (v: TestVillage, id: string) =>
+      v.minds
+        .get(id)!
+        .memory.all()
+        .filter((m) => m.text === GOSSIP);
+
+    function step(v: TestVillage, ids: string[], minutes = 1): void {
+      for (let i = 0; i < minutes; i++) {
+        v.time.now += 1;
+        for (const id of ids) v.minds.get(id)!.update(v.view(id));
+      }
+    }
+
+    function chat(v: TestVillage, conversationId: string | undefined): void {
+      for (const id of ['laude', 'franzi']) {
+        const s = v.states.get(id)!;
+        if (conversationId) s.conversationId = conversationId;
+        else delete s.conversationId;
+      }
+    }
+
+    const ALL = ['laude', 'franzi', 'mia', 'ben', 'cleo', 'dan'];
+
+    it('reaches observers up to 8 tiles from the post office, diagonals included, and never the pair', () => {
+      const v = shyVillage(1);
+      v.states.get('mia')!.pos = { x: 61, y: 3 }; // 8 tiles east
+      v.states.get('ben')!.pos = { x: 62, y: 3 }; // 9 tiles east
+      v.states.get('cleo')!.pos = { x: 61, y: 13 }; // 8 east and 8 south
+      v.states.get('dan')!.pos = { x: 51, y: 14 }; // 9 south
+      chat(v, 'c-shy');
+      step(v, ALL, 2);
+      expect(gossipOf(v, 'mia')).toHaveLength(1);
+      expect(gossipOf(v, 'cleo')).toHaveLength(1);
+      expect(gossipOf(v, 'ben')).toHaveLength(0);
+      expect(gossipOf(v, 'dan')).toHaveLength(0);
+      expect(gossipOf(v, 'laude')).toHaveLength(0);
+      expect(gossipOf(v, 'franzi')).toHaveLength(0);
+      expect(gossipOf(v, 'mia')[0]).toMatchObject({ kind: 'observation', importance: 5 });
+    });
+
+    it('needs the pair in the same conversation, both at the post office', () => {
+      const v = shyVillage(1);
+      v.states.get('mia')!.pos = { x: 52, y: 6 };
+      v.states.get('laude')!.conversationId = 'c-1';
+      v.states.get('franzi')!.conversationId = 'c-2';
+      step(v, ALL, 2);
+      expect(gossipOf(v, 'mia')).toHaveLength(0);
+      chat(v, undefined);
+      step(v, ALL, 2);
+      expect(gossipOf(v, 'mia')).toHaveLength(0);
+      chat(v, 'c-3');
+      v.states.get('franzi')!.locationId = 'notice_board';
+      step(v, ALL, 2);
+      expect(gossipOf(v, 'mia')).toHaveLength(0);
+      v.states.get('franzi')!.locationId = 'post_office';
+      step(v, ALL, 2);
+      expect(gossipOf(v, 'mia')).toHaveLength(1);
+    });
+
+    it('is remembered once per observer per day, again on the next day', () => {
+      const v = shyVillage(1);
+      v.states.get('mia')!.pos = { x: 52, y: 6 };
+      chat(v, 'c-morning');
+      step(v, ALL, 3);
+      chat(v, undefined);
+      step(v, ALL, 30);
+      chat(v, 'c-afternoon');
+      step(v, ALL, 3);
+      expect(gossipOf(v, 'mia')).toHaveLength(1);
+      v.time.now = at(2, '10:00');
+      chat(v, 'c-next-day');
+      step(v, ALL, 2);
+      const two = gossipOf(v, 'mia');
+      expect(two).toHaveLength(2);
+      expect(two.map((m) => Math.floor(m.createdAt / 1440)).sort()).toEqual([1, 2]);
+    });
   });
 });
 

@@ -141,7 +141,7 @@ const RIDE_EMOJI: Record<string, string> = { rollercoaster: '🎢', ferris_wheel
 /** Bubbles stay visible for this many real milliseconds. */
 export const BUBBLE_MS = 5000;
 const STATS_INTERVAL_MS = 2000;
-/** The clock waits here each morning until the villagers' plans for the day are settled. */
+/** wakeUpMode 'hold': the clock waits here each morning until the villagers' plans for the day are settled. */
 export const WAKE_UP_MINUTE = 6 * 60;
 /** Virtual-clock mode gives up waiting after this many drain rounds. */
 const WAKE_UP_MAX_ROUNDS = 5;
@@ -320,6 +320,10 @@ export class Engine implements SimEngine, SimHost {
     /** Villagers who have not been asked for their day yet (WAKE_UP_THINK_BATCH per hold step). */
     unasked: VillagerId[];
   } | null = null;
+  /** wakeUpMode 'soft': the day whose plans are still arriving, and the last count sent. */
+  private planning: { day: number; ready: number } | null = null;
+  /** wakeUpMode 'soft': minds not yet asked at engine start (unset before it, null after). */
+  private warmUpUnasked?: VillagerId[] | null;
   /** New A* searches left in the current step (PATH_SEARCHES_PER_STEP). */
   private pathBudget = Infinity;
   private playerNearCrow = false;
@@ -1133,6 +1137,7 @@ export class Engine implements SimEngine, SimHost {
       });
       // Repeated so clients that connect mid-hold see the overlay.
       if (this.wakeHold) this.broadcastSimStatus('wakingUp', this.wakeHold.ready);
+      else if (this.planning) this.broadcastSimStatus('planning', this.planning.ready);
     }
   }
 
@@ -1167,6 +1172,11 @@ export class Engine implements SimEngine, SimHost {
    * until every villager's plan for the day is settled, the LLM is offline, or the real-time cap expires.
    */
   private holdForWakeUp(target: GameMinutes): boolean {
+    if (this.config.sim.wakeUpMode === 'soft') {
+      if (this.warmUp()) return true;
+      this.trackPlanning(target);
+      return false;
+    }
     const day = dayOf(target);
     if (day <= this.wokeDay || minuteOfDay(target) < WAKE_UP_MINUTE) return false;
     const timeout = this.config.sim.wakeUpTimeoutSec;
@@ -1221,6 +1231,61 @@ export class Engine implements SimEngine, SimHost {
       this.broadcastSimStatus('wakingUp', ready, total);
     }
     return true;
+  }
+
+  /**
+   * wakeUpMode 'soft': from 06:00 the clock runs on. While some residents' plans for the day are
+   * not settled, `planning` goes out with the count each time it changes; `running` follows once
+   * all are settled, the model is offline, or the day ends first.
+   */
+  private trackPlanning(target: GameMinutes): void {
+    const day = dayOf(target);
+    if (this.planning && this.planning.day !== day) this.endPlanning();
+    if (!this.planning) {
+      if (day <= this.wokeDay || minuteOfDay(target) < WAKE_UP_MINUTE) return;
+      this.wokeDay = day;
+      this.planning = { day, ready: -1 };
+    }
+    const { ready, total } = this.wakeUpCounts(day);
+    if (ready >= total || this.queue.isOnline() === false) {
+      this.endPlanning();
+      return;
+    }
+    if (ready !== this.planning.ready) {
+      this.planning.ready = ready;
+      this.broadcastSimStatus('planning', ready, total);
+    }
+  }
+
+  /**
+   * A mind's first update() is its costliest (day plan, cold code). At engine start the soft mode
+   * asks WAKE_UP_THINK_BATCH minds per zero-length step before the clock first moves, as the hold
+   * does at 06:00, so one step never carries them all. True while that start-up is running.
+   */
+  private warmUp(): boolean {
+    if (this.warmUpUnasked === null) return false;
+    this.warmUpUnasked ??= [...this.runtimes.keys()];
+    if (this.warmUpUnasked.length === 0) {
+      this.warmUpUnasked = null;
+      // The clock stood still: later minutes map to real time from here, as after the hold.
+      this.townLog.anchor(true);
+      return false;
+    }
+    for (const id of this.warmUpUnasked.splice(0, WAKE_UP_THINK_BATCH)) {
+      const rt = this.runtimes.get(id);
+      if (rt) this.think(rt);
+    }
+    return true;
+  }
+
+  private endPlanning(): void {
+    const planning = this.planning;
+    if (!planning) return;
+    this.planning = null;
+    // Nothing was announced for a morning whose plans were all settled at 06:00.
+    if (planning.ready < 0) return;
+    const { ready, total } = this.wakeUpCounts(planning.day);
+    this.broadcastSimStatus('running', ready, total);
   }
 
   /**

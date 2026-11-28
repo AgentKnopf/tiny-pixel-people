@@ -317,6 +317,8 @@ export class RomanceAgent {
     for (const [id, rel] of Object.entries(view.self.relationships)) {
       if (id === me || !this.present(id, view) || !this.eligible(id)) continue;
       if (rel.affinity < (this.cfg?.crushAffinity ?? 6)) continue;
+      // Nor do I look elsewhere while dating someone (§7: one partner).
+      if (mine.some((r) => r.stage === 'dating' && !r.pair.includes(id))) continue;
       const theirs = this.book.of(id).filter(isActive);
       // Someone dating or partnered with another villager is not eligible (§7: one partner).
       if (theirs.some((r) => (r.stage === 'couple' || r.stage === 'dating') && !r.pair.includes(me)))
