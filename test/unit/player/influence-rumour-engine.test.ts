@@ -1,10 +1,11 @@
 /** TASK-18 I5: rumour influence through HTTP and the real engine and minds (spec §4.1, AC5, AC4). */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { MockChatProvider } from '../../../src/server/llm/providers/mock.ts';
 import { startServer } from '../../../src/server/net/server.ts';
 import type { Engine } from '../../../src/server/sim/engine.ts';
 import type { RumourOutcomes } from '../../../src/shared/influence.ts';
 import { at } from '../../../src/shared/time.ts';
-import { PLAYER_ID } from '../../../src/shared/types.ts';
+import { PLAYER_ID, type Memory } from '../../../src/shared/types.ts';
 import { createSimTestWorld } from '../../helpers/sim.ts';
 import { createTestWorld, type TestWorld } from '../../helpers/world.ts';
 
@@ -76,9 +77,24 @@ describe('AC5: an influence rumour spreads through the normal gossip path', () =
   let sentAt = 0;
   let spreadAt: number | null = null;
   let engine: Engine;
+  /** Laude's player.reply prompts, joined. */
+  const laudePrompts: string[] = [];
+  let carried: Memory[] = [];
 
   beforeAll(async () => {
-    const world = await createTestWorld({ villagers: 12, seed: 25, startAt: '10:00', config: CONFIG });
+    const provider = new MockChatProvider('mock');
+    provider.setLatency((req) => {
+      if (req.task === 'player.reply' && req.meta?.villagerId === 'laude')
+        laudePrompts.push(req.messages.map((m) => m.content).join('\n'));
+      return 0;
+    });
+    const world = await createTestWorld({
+      villagers: 12,
+      seed: 25,
+      startAt: '10:00',
+      config: CONFIG,
+      provider,
+    });
     w = world;
     engine = world.engine as unknown as Engine;
     sentAt = world.now();
@@ -95,6 +111,22 @@ describe('AC5: an influence rumour spreads through the normal gossip path', () =
         .some((e) => e.type === 'gossip_spread' && e.data?.originId === originId && e.agents.includes(B));
     await world.until(() => spread(), 120, 1);
     if (spread()) spreadAt = world.now();
+    const ids = world.state().villagers.map((v) => v.id);
+    carried = ids.flatMap((id) =>
+      world
+        .memories(id)
+        .filter((m) => m.meta.originId === originId || m.meta.keepId || m.text.includes('cherry pie')),
+    );
+    // The player asks Laude, who looks it up in the Keep for the reply prompt.
+    expect(
+      world.command({
+        type: 'player.say',
+        villagerId: 'laude',
+        text: 'Any news about cherry pie?',
+        mode: 'say',
+      }),
+    ).toEqual([]);
+    await world.until(() => laudePrompts.length > 0, 30, 1);
   }, 300_000);
 
   afterAll(() => w?.dispose());
@@ -120,18 +152,20 @@ describe('AC5: an influence rumour spreads through the normal gossip path', () =
   it("no villager memory of the rumour, Laude's Keep log included, contains the player's name", () => {
     // Every memory the rumour produced: the target's, each gossip hop's (same originId), and
     // Laude's Keep log. Seeing the avatar ("Kestrel is hanging around ...") is not about the rumour.
-    const ids = w!.state().villagers.map((v) => v.id);
-    const carried = ids.flatMap((id) =>
-      w!
-        .memories(id)
-        .filter((m) => m.meta.originId === originId || m.meta.keepId || m.text.includes('cherry pie')),
-    );
+    // Checked before the player talks to Laude, whose own memories of that chat name the player.
     expect(carried.filter((m) => m.villagerId === B && m.kind === 'heard').length).toBeGreaterThanOrEqual(1);
     const leaks = carried.filter((m) => m.text.includes(PLAYER_NAME));
     expect(leaks.map((m) => `${m.villagerId}: ${m.text}`)).toEqual([]);
     const keep = engine.playerWorld.post.keep.all();
     expect(keep.some((e) => e.text.startsWith('Rumor started by A passerby:'))).toBe(true);
     expect(keep.filter((e) => e.text.includes(PLAYER_NAME))).toEqual([]);
+  });
+
+  it("Laude's reply prompt lists the Keep entry under the source label, not the player's name", () => {
+    expect(laudePrompts).toHaveLength(1);
+    const keep = laudePrompts[0]!.split('\n').filter((l) => l.startsWith('- rumor from'));
+    expect(keep).toContainEqual(`- rumor from A passerby: Rumor started by A passerby: ${TEXT}`);
+    expect(keep.filter((l) => l.includes(PLAYER_NAME))).toEqual([]);
   });
 
   it('the rumour panel shows the truth: the player started it', () => {

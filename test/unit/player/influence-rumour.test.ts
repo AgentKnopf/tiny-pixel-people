@@ -3,9 +3,16 @@ import { describe, expect, it } from 'vitest';
 import { InfluenceService } from '../../../src/server/sim/influence.ts';
 import type { PlayerWorldSave } from '../../../src/server/player/index.ts';
 import type { InfluenceSaveData } from '../../../src/server/persistence/types.ts';
-import type { InfluenceRequest, RumourOutcomes, RumourSource } from '../../../src/shared/influence.ts';
+import { newsText } from '../../../src/server/cognition/gossip.ts';
+import { keepLines } from '../../../src/server/cognition/post.ts';
+import {
+  RUMOUR_SOURCE_LABELS,
+  type InfluenceRequest,
+  type RumourOutcomes,
+  type RumourSource,
+} from '../../../src/shared/influence.ts';
 import { at } from '../../../src/shared/time.ts';
-import { PLAYER_ID } from '../../../src/shared/types.ts';
+import { PLAYER_ID, type Memory } from '../../../src/shared/types.ts';
 import { profile, setup, villager } from './fake-host.ts';
 
 const TEXT = 'The bakery will sell cherry pie tomorrow.';
@@ -209,5 +216,56 @@ describe('rumour influence', () => {
     // A new rumour after the restore gets a fresh origin id.
     const next = b.service.apply(rumour('cy'));
     expect(next.ok && next.refs.originId).not.toBe(originId);
+  });
+});
+
+describe('rumour influence: what Laude reads in the Keep', () => {
+  const names = (pw: { state: { name: string } }) => (id: string) =>
+    id === PLAYER_ID ? pw.state.name : id[0]!.toUpperCase() + id.slice(1);
+
+  it("the entry keeps the true author id and the label, and Laude's prompt lines show only the label", () => {
+    const { pw, service } = world();
+    service.apply(rumour('ada', 'crow'));
+    const [entry] = pw.post.keep.all();
+    expect(entry).toMatchObject({ authorId: PLAYER_ID, authorLabel: 'The crow' });
+    const lines = keepLines(pw.post.keep.search('cherry pie', 5), names(pw));
+    expect(lines).toContain(`- rumor from The crow: Rumor started by The crow: ${TEXT}`);
+    expect(lines).not.toContain(pw.state.name);
+  });
+
+  it('the label survives a save and restore', () => {
+    const a = world();
+    a.service.apply(rumour('ada', 'child'));
+    const b = world({
+      pw: structuredClone(a.pw.serialize()),
+      influence: structuredClone(a.service.serialize()),
+      time: a.host.time,
+    });
+    expect(b.pw.post.keep.all()[0]).toMatchObject({ authorLabel: 'A child in the square' });
+    const lines = keepLines(b.pw.post.keep.search('cherry pie', 5), names(b.pw));
+    expect(lines).toContain('- rumor from A child in the square:');
+    expect(lines).not.toContain(b.pw.state.name);
+  });
+
+  it("the player's own whispered rumour has no label: the Keep line names them truthfully", () => {
+    const { pw } = world();
+    pw.handleCommand({ type: 'player.rumor', villagerId: 'ada', text: TEXT });
+    expect(pw.post.keep.all()[0]).not.toHaveProperty('authorLabel');
+    expect(keepLines(pw.post.keep.all(), names(pw))).toContain(`- rumor from ${pw.state.name}:`);
+  });
+});
+
+describe('rumour influence: labels and retelling', () => {
+  it.each(Object.values(RUMOUR_SOURCE_LABELS))('newsText strips "%s told me:" when retold', (label) => {
+    const m = { text: `${label} told me: ${TEXT}` } as Memory;
+    expect(newsText(m)).toBe(TEXT);
+  });
+
+  it('a source outside the list from a direct caller is 422 on "source", never "undefined told me"', () => {
+    const { host, service } = world();
+    const res = service.apply(rumour('ada', 'wizard' as RumourSource));
+    expect(res).toMatchObject({ ok: false, status: 422, error: 'invalid', field: 'source' });
+    expect(host.memories).toEqual([]);
+    expect(service.budget().usedToday).toBe(0);
   });
 });
