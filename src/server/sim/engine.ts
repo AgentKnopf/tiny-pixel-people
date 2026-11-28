@@ -43,6 +43,15 @@ import type {
 } from '../cognition/types.ts';
 import { createConversationRunner } from '../cognition/conversation.ts';
 import { loadTracker } from '../cognition/llm.ts';
+import { villageFor } from '../cognition/village.ts';
+import type {
+  ApplyInfluenceOptions,
+  InfluenceBudget,
+  InfluenceLogPage,
+  InfluenceLogQuery,
+  InfluenceRequest,
+  InfluenceResult,
+} from '../../shared/influence.ts';
 import { createMind, Mind } from '../cognition/mind.ts';
 import type { AppConfig } from '../config.ts';
 import { createLlmQueue, type PriorityLlmQueue } from '../llm/queue.ts';
@@ -70,6 +79,7 @@ import { Rng } from './rng.ts';
 import { createStubConversationRunner } from './stub-mind.ts';
 import { TownLog } from './town-log.ts';
 import { recordTownLog } from './town-recorder.ts';
+import { InfluenceService, queueBusyAt } from './influence.ts';
 import { Rides } from './rides.ts';
 import { Train } from './train.ts';
 import type { AdvanceOptions, SimEngine, SimEngineOptions } from './types.ts';
@@ -264,6 +274,8 @@ export class Engine implements SimEngine, SimHost {
   readonly store: JsonSaveStore;
   /** Town event log and game-to-real time anchors (observer API). */
   readonly townLog: TownLog;
+  /** Influence API budget, log and endpoint handlers (specs/influence-api-v2.md). */
+  readonly influence: InfluenceService;
   readonly animals: DeterministicAnimalSim;
   /** null when `train.enabled` is false or the map has no station. */
   readonly train: Train | null;
@@ -338,6 +350,15 @@ export class Engine implements SimEngine, SimHost {
       now: () => this.clock.time,
       realMsPerGameMinute: (cfg.sim.dayLengthMinutes * 60_000) / MINUTES_PER_DAY,
       restore: restore?.observer,
+    });
+    this.influence = new InfluenceService({
+      config: cfg.influence,
+      now: () => this.clock.time,
+      busy: () => this.influenceBusy(),
+      townLog: (text, agents, data) => this.townLog.add('influence', agents, text, data).ts,
+      emit: (text) => this.log('info', text),
+      // A save from an earlier day keeps its log; dayOf(now) decides whether its count still applies.
+      restore: restore?.influence,
     });
     this.rng = new Rng(cfg.sim.seed);
     if (restore) this.rng.state = restore.rngState;
@@ -581,6 +602,7 @@ export class Engine implements SimEngine, SimHost {
       train: this.train?.state() ?? null,
       romances: this.romanceList,
       observer: this.townLog.serialize(),
+      influence: this.influence.serialize(),
     });
     data.minds.forEach((m, i) =>
       m.memories.forEach((mem, j) => {
@@ -589,6 +611,31 @@ export class Engine implements SimEngine, SimHost {
       }),
     );
     return data;
+  }
+
+  applyInfluence(req: InfluenceRequest, opts?: ApplyInfluenceOptions): InfluenceResult {
+    return this.influence.apply(req, opts);
+  }
+
+  influenceLog(q: InfluenceLogQuery): InfluenceLogPage {
+    return this.influence.log(q);
+  }
+
+  /** Today's influence budget for /api/stats; null while the influence API is off. */
+  influenceBudget(): InfluenceBudget | null {
+    return this.config.influence.enabled ? this.influence.budget() : null;
+  }
+
+  /**
+   * Influences are refused (503) rather than queued while the model is this far behind, or while
+   * the queue is close to dropping low-priority jobs (plans would fall back).
+   */
+  influenceBusy(): boolean {
+    return (
+      villageFor(this.queue).dawnRush() ||
+      loadTracker(this.queue).level(this.now()) === 'overloaded' ||
+      this.queue.stats().queued >= queueBusyAt(this.queue.maxQueued)
+    );
   }
 
   /** Save the slot now (save command, shutdown). */

@@ -25,6 +25,7 @@ export type ObserverSource = Pick<
   | 'queue'
   | 'playerWorld'
   | 'townLog'
+  | 'influenceBudget'
   | 'speed'
   | 'wakingUp'
   | 'planStatus'
@@ -645,6 +646,8 @@ export class ObserverViews {
       last_reply_ms: q.lastReplyMs,
       by_task: q.byTask ?? {},
       plans_pending: plans.total - plans.ready,
+      /** Influence API day budget (null while it is off). */
+      influence: this.src.influenceBudget(),
     };
   }
 }

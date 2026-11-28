@@ -127,7 +127,7 @@ export class PriorityLlmQueue implements LlmQueue {
   private readonly taskTtl: Partial<Record<LlmTask, number>>;
   private readonly agingMs: number;
   private readonly maxAgingBoost: number;
-  private readonly maxQueued: number;
+  private readonly cap: number;
   private readonly clockMs: () => number;
 
   private seq = 0;
@@ -168,7 +168,7 @@ export class PriorityLlmQueue implements LlmQueue {
     this.taskTtl = opts.taskTtlMinutes === false ? {} : (opts.taskTtlMinutes ?? DEFAULT_TASK_TTL_MINUTES);
     this.agingMs = Math.max(1, opts.agingMs ?? 2_000);
     this.maxAgingBoost = Math.max(0, opts.maxAgingBoost ?? 50);
-    this.maxQueued = Math.max(1, opts.maxQueued ?? 64);
+    this.cap = Math.max(1, opts.maxQueued ?? 64);
     this.clockMs = opts.clockMs ?? Date.now;
   }
 
@@ -278,6 +278,11 @@ export class PriorityLlmQueue implements LlmQueue {
     log.warn(`drain() gave up after ${maxRounds} rounds; jobs keep arriving`);
   }
 
+  /** Max queued chat jobs; beyond it the lowest-priority job is dropped. */
+  get maxQueued(): number {
+    return this.cap;
+  }
+
   stats(): QueueStats {
     const byTask: NonNullable<QueueStats['byTask']> = {};
     for (const [task, s] of this.tasks)
@@ -367,13 +372,13 @@ export class PriorityLlmQueue implements LlmQueue {
 
   /** Drop expired jobs, then the lowest-priority ones while the queue is over `maxQueued`. */
   private shed(): void {
-    if (this.pending.length <= this.maxQueued) return;
+    if (this.pending.length <= this.cap) return;
     for (const job of this.pending.filter((j) => this.isExpired(j))) {
       this.pending.splice(this.pending.indexOf(job), 1);
       this.drop(job, 'expired before it started');
     }
     const nowMs = this.clockMs();
-    while (this.pending.length > this.maxQueued) {
+    while (this.pending.length > this.cap) {
       let worst = 0;
       for (let i = 1; i < this.pending.length; i++) {
         const a = this.effectivePriority(this.pending[i]!, nowMs);
@@ -381,7 +386,7 @@ export class PriorityLlmQueue implements LlmQueue {
         if (a < w || (a === w && this.pending[i]!.seq > this.pending[worst]!.seq)) worst = i;
       }
       const [job] = this.pending.splice(worst, 1);
-      log.debug(`queue full (${this.maxQueued}); dropping ${job!.req.task}`);
+      log.debug(`queue full (${this.cap}); dropping ${job!.req.task}`);
       this.drop(job!, 'queue full');
     }
   }
