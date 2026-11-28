@@ -11,7 +11,7 @@ import {
   type PartialConfig,
 } from '../../src/server/config.ts';
 import { ObserverViews } from '../../src/server/net/observer-views.ts';
-import { queueBusyAt, type InfluenceHandler } from '../../src/server/sim/influence.ts';
+import { InfluenceService, queueBusyAt, type InfluenceHandler } from '../../src/server/sim/influence.ts';
 import type { InfluenceEndpoint, InfluenceOutcomes, InfluenceRequest } from '../../src/shared/influence.ts';
 import { at, MINUTES_PER_DAY } from '../../src/shared/time.ts';
 import { createSimTestWorld } from '../helpers/sim.ts';
@@ -160,10 +160,17 @@ describe('day budget', () => {
   });
 
   it('an endpoint without a handler is refused with 422 and not counted', () => {
-    const w = world();
-    const res = apply(w, { endpoint: 'rumour', body: { to: 'mia', text: 'hi', source: 'crow' } });
+    // A bare service: the engine registers real handlers as the endpoints are built.
+    const service = new InfluenceService({
+      config: { perGameDay: 6, logMax: 500 },
+      now: () => at(0, '10:00'),
+      busy: () => false,
+      townLog: () => new Date(0).toISOString(),
+      emit: () => {},
+    });
+    const res = service.apply({ endpoint: 'rumour', body: { to: 'mia', text: 'hi', source: 'crow' } });
     expect(res).toMatchObject({ ok: false, status: 422, error: 'invalid' });
-    expect(w.engine.influenceLog({}).budget.usedToday).toBe(0);
+    expect(service.budget().usedToday).toBe(0);
   });
 });
 
