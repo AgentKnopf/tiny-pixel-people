@@ -24,6 +24,15 @@ const log = createLogger('influence');
 
 const LOG_PAGE_DEFAULT = 100;
 
+/**
+ * Queued chat jobs at which the village counts as busy for influences: room for one influence
+ * event's decisions (about 11) plus a few replies below the cap, where the queue starts dropping
+ * the lowest-priority jobs. 75% keeps small caps sensible.
+ */
+export function queueBusyAt(maxQueued: number): number {
+  return Math.max(Math.ceil(maxQueued * 0.75), maxQueued - 16);
+}
+
 export type InfluenceEntryOf<E extends InfluenceEndpoint> = Extract<InfluenceEntry, { endpoint: E }>;
 
 /** Refusals an endpoint handler decides (422 / 409); 503 and 429 are the service's. */
@@ -36,8 +45,15 @@ export interface InfluencePlan<E extends InfluenceEndpoint> {
   visitor?: boolean;
   /** Honest town log line ("It started raining for 2 hours"); " [influence]" is appended. */
   text: string;
-  /** Change the world. Called at most once, only after the busy and budget checks passed. */
-  apply(id: InfluenceId): { refs: InfluenceRefs; outcomes: InfluenceOutcomes[E] };
+  /** Starting outcomes; the entry is logged with them before `apply` runs. */
+  outcomes: InfluenceOutcomes[E];
+  /**
+   * Change the world. Called at most once, only after the busy and budget checks passed. Every
+   * check that can fail belongs in `check`; `apply` changes the world in one step at its end, so a
+   * throw means nothing changed (the entry is then removed and the error rethrown). It may call
+   * `updateOutcomes` for its own id, directly or through bus listeners it triggers.
+   */
+  apply(id: InfluenceId): { refs: InfluenceRefs };
 }
 
 /** One endpoint (I3-I7). */
@@ -52,14 +68,14 @@ export interface InfluenceServiceOptions {
   now(): GameMinutes;
   /** Village overloaded: refuse with 503 instead of queueing more model work. */
   busy(): boolean;
+  /** Adds the `influence` town log entry and returns its ts (the influence entry reuses it). */
   townLog(
     text: string,
     agents: VillagerId[],
     data: { influenceId: InfluenceId; endpoint: InfluenceEndpoint },
-  ): void;
+  ): string;
   /** Broadcast a `log` server message (replay.jsonl records it). */
   emit(text: string): void;
-  clockMs?: () => number;
   restore?: InfluenceSaveData | undefined;
 }
 
@@ -78,26 +94,28 @@ export class InfluenceService {
   private used = 0;
   private nextId = 1;
   private lastMs = 0;
-  private readonly clockMs: () => number;
 
   constructor(private readonly opts: InfluenceServiceOptions) {
-    this.clockMs = opts.clockMs ?? Date.now;
     const r = opts.restore;
-    if (r && Array.isArray(r.entries)) {
-      this.day = Number.isInteger(r.day) ? r.day : 0;
-      this.used = Number.isInteger(r.used) && r.used > 0 ? r.used : 0;
-      let maxId = 0;
-      for (const e of r.entries) {
-        const n = Number(/^inf_(\d+)$/.exec(e.id)?.[1] ?? 0);
-        maxId = Math.max(maxId, n);
-        this.lastMs = Math.max(this.lastMs, Date.parse(e.ts) || 0);
-      }
-      this.nextId = Math.max(Number.isInteger(r.nextId) ? r.nextId : 1, maxId + 1);
-      this.entries = structuredClone(r.entries.slice(-opts.config.logMax));
-      for (const e of this.entries) this.byId.set(e.id, e);
+    if (!r) return;
+    const entries = Array.isArray(r.entries) ? r.entries : [];
+    this.day = Number.isInteger(r.day) ? r.day : 0;
+    this.used = Number.isInteger(r.used) && r.used > 0 ? r.used : 0;
+    let maxId = 0;
+    for (const e of entries) {
+      maxId = Math.max(maxId, Number(/^inf_(\d+)$/.exec(e.id)?.[1] ?? 0));
+      this.lastMs = Math.max(this.lastMs, Date.parse(e.ts) || 0);
     }
+    this.nextId = Math.max(Number.isInteger(r.nextId) ? r.nextId : 1, maxId + 1);
+    this.entries = structuredClone(entries.slice(-opts.config.logMax));
+    for (const e of this.entries) this.byId.set(e.id, e);
   }
 
+  /**
+   * Register an endpoint. `resume` runs here for every logged entry of it, so register in the
+   * engine constructor only after the subsystems the handler re-attaches to (weather, rumours,
+   * events, notes) have been restored.
+   */
   register<E extends InfluenceEndpoint>(endpoint: E, handler: InfluenceHandler<E>): void {
     this.handlers.set(endpoint, handler as unknown as AnyHandler);
     if (!handler.resume) return;
@@ -122,27 +140,38 @@ export class InfluenceService {
       return this.refuse(req.endpoint, { status: 429, error: 'limit', resetsAtTick: this.resetsAt(now) });
 
     const id = `inf_${this.nextId++}`;
-    const payload = structuredClone(req.body);
-    const { refs, outcomes } = checked.apply(id);
-    this.used++;
     const entry = {
       id,
       tick: now,
-      ts: opts.ts ?? this.realTs(),
+      ts: '',
+      // 1-based, like the observer API's `day`; InfluenceSaveData.day stays dayOf(tick).
       day: dayOf(now) + 1,
       time: formatClock(now),
       endpoint: req.endpoint,
-      payload,
+      payload: structuredClone(req.body),
       targets: [...checked.targets],
-      refs: { ...refs },
-      outcomes,
+      refs: {},
+      outcomes: checked.outcomes,
       ...(checked.visitor ? { visitor: true } : {}),
     } as InfluenceEntry;
+    // Logged before apply() so outcome updates it triggers synchronously land on the entry.
     this.entries.push(entry);
     this.byId.set(id, entry);
-    this.trim();
+    let refs: InfluenceRefs;
+    try {
+      ({ refs } = checked.apply(id));
+    } catch (err) {
+      this.entries.splice(this.entries.indexOf(entry), 1);
+      this.byId.delete(id);
+      log.error(`${req.endpoint} ${id}: apply failed`, err);
+      throw err;
+    }
+    this.used++;
+    entry.refs = { ...refs };
     const text = `${checked.text} [influence]`;
-    this.opts.townLog(text, entry.targets, { influenceId: id, endpoint: req.endpoint });
+    const townTs = this.opts.townLog(text, entry.targets, { influenceId: id, endpoint: req.endpoint });
+    entry.ts = this.increasing(opts.ts ?? townTs);
+    this.trim();
     this.opts.emit(text);
     return { ok: true, id, tick: now, refs: { ...refs } };
   }
@@ -206,10 +235,10 @@ export class InfluenceService {
     return (dayOf(now) + 1) * MINUTES_PER_DAY;
   }
 
-  /** Strictly increasing, so paging with `since=<ts>` never skips an entry from the same ms. */
-  private realTs(): string {
-    let ms = this.clockMs();
-    if (ms <= this.lastMs) ms = this.lastMs + 1;
+  /** Strictly increasing, so paging with `since=<ts>` never skips an entry (a passed-in ts counts too). */
+  private increasing(ts: string): string {
+    const parsed = Date.parse(ts);
+    const ms = Number.isNaN(parsed) || parsed <= this.lastMs ? this.lastMs + 1 : parsed;
     this.lastMs = ms;
     return new Date(ms).toISOString();
   }

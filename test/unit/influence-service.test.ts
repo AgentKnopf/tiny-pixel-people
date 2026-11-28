@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { ConfigError, DEFAULT_CONFIG, loadConfig, type PartialConfig } from '../../src/server/config.ts';
 import { ObserverViews } from '../../src/server/net/observer-views.ts';
-import type { InfluenceHandler } from '../../src/server/sim/influence.ts';
+import { queueBusyAt, type InfluenceHandler } from '../../src/server/sim/influence.ts';
 import type { InfluenceEndpoint, InfluenceOutcomes, InfluenceRequest } from '../../src/shared/influence.ts';
 import { at, MINUTES_PER_DAY } from '../../src/shared/time.ts';
 import { createSimTestWorld } from '../helpers/sim.ts';
@@ -191,7 +191,8 @@ describe('influence log', () => {
         targets: ['mia'],
         visitor: true,
         text: 'x',
-        outcomes: {}, apply: () => ({ refs: {} }),
+        outcomes: {},
+        apply: () => ({ refs: {} }),
       }),
     });
     w.engine.applyInfluence({ endpoint: 'nudge', body: { agent: 'mia', thought: 'hm' } });
@@ -413,5 +414,17 @@ describe('review follow-ups', () => {
     stats.mockReturnValue({ ...real, queued: 48 });
     expect(w.engine.influenceBusy()).toBe(true);
     expect(apply(w)).toEqual({ ok: false, status: 503, error: 'busy' });
+  });
+
+  it('F3: a small queue cap still leaves room (75% or cap - 16, whichever is higher)', () => {
+    expect([1, 2, 8, 16, 20, 64, 100].map(queueBusyAt)).toEqual([1, 2, 6, 12, 15, 48, 84]);
+    const w = world();
+    vi.spyOn(w.engine.queue, 'maxQueued', 'get').mockReturnValue(8);
+    const real = w.engine.queue.stats();
+    const stats = vi.spyOn(w.engine.queue, 'stats');
+    stats.mockReturnValue({ ...real, queued: 5 });
+    expect(w.engine.influenceBusy()).toBe(false);
+    stats.mockReturnValue({ ...real, queued: 6 });
+    expect(w.engine.influenceBusy()).toBe(true);
   });
 });

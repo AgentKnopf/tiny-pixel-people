@@ -79,7 +79,7 @@ import { Rng } from './rng.ts';
 import { createStubConversationRunner } from './stub-mind.ts';
 import { TownLog } from './town-log.ts';
 import { recordTownLog } from './town-recorder.ts';
-import { InfluenceService } from './influence.ts';
+import { InfluenceService, queueBusyAt } from './influence.ts';
 import { Rides } from './rides.ts';
 import { Train } from './train.ts';
 import type { AdvanceOptions, SimEngine, SimEngineOptions } from './types.ts';
@@ -351,7 +351,7 @@ export class Engine implements SimEngine, SimHost {
       config: cfg.influence,
       now: () => this.clock.time,
       busy: () => this.influenceBusy(),
-      townLog: (text, agents, data) => this.townLog.add('influence', agents, text, data),
+      townLog: (text, agents, data) => this.townLog.add('influence', agents, text, data).ts,
       emit: (text) => this.log('info', text),
       // A save from an earlier day keeps its log; dayOf(now) decides whether its count still applies.
       restore: restore?.influence,
@@ -622,9 +622,16 @@ export class Engine implements SimEngine, SimHost {
     return this.config.influence.enabled ? this.influence.budget() : null;
   }
 
-  /** Influences are refused (503) rather than queued while the model is this far behind. */
+  /**
+   * Influences are refused (503) rather than queued while the model is this far behind, or while
+   * the queue is close to dropping low-priority jobs (plans would fall back).
+   */
   influenceBusy(): boolean {
-    return villageFor(this.queue).dawnRush() || loadTracker(this.queue).level(this.now()) === 'overloaded';
+    return (
+      villageFor(this.queue).dawnRush() ||
+      loadTracker(this.queue).level(this.now()) === 'overloaded' ||
+      this.queue.stats().queued >= queueBusyAt(this.queue.maxQueued)
+    );
   }
 
   /** Save the slot now (save command, shutdown). */
