@@ -718,4 +718,9 @@ export interface KeepEntry {
   authorId: VillagerId;
   recipientId?: VillagerId;
   text: string;
+  /**
+   * Shown to villagers instead of the author's name (an influence rumour's source label).
+   * `authorId` stays the true author for the player and the observer.
+   */
+  authorLabel?: string;
 }

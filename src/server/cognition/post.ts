@@ -117,7 +117,7 @@ export function keepLines(entries: readonly KeepEntry[], names: (id: string) => 
   if (entries.length === 0) return '';
   const items = entries.map(
     (e) =>
-      `- ${e.kind} from ${names(e.authorId)}${e.recipientId ? ` to ${names(e.recipientId)}` : ''}: ${e.text.slice(0, 160)}`,
+      `- ${e.kind} from ${e.authorLabel ?? names(e.authorId)}${e.recipientId ? ` to ${names(e.recipientId)}` : ''}: ${e.text.slice(0, 160)}`,
   );
   return `You check the Keep (the post office archive):\n${items.join('\n')}`;
 }

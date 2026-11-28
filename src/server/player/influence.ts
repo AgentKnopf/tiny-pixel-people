@@ -119,6 +119,13 @@ export function rumourInfluence(deps: RumourDeps): RumourInfluence {
         const profile = deps.profile(to);
         if (!villager || !profile)
           return { status: 422, error: 'invalid', field: 'to', message: `Unknown villager "${to}".` };
+        if (!Object.hasOwn(RUMOUR_SOURCE_LABELS, source))
+          return {
+            status: 422,
+            error: 'invalid',
+            field: 'source',
+            message: `"source" must be one of: ${Object.keys(RUMOUR_SOURCE_LABELS).join(', ')}.`,
+          };
         const now = deps.now();
         if (villager.status === 'sleeping' || !isAwakeAt(profile, now))
           return { status: 409, error: 'asleep', wakesAt: wakesAt(profile, now) };

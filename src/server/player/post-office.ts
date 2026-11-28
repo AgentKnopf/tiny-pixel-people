@@ -533,6 +533,7 @@ function keepEntryFor(
             at,
             refId: r.id,
             authorId: r.startedBy,
+            ...(event.authorLabel !== undefined ? { authorLabel: event.authorLabel } : {}),
             text: `Rumor started by ${event.authorLabel ?? name(r.startedBy)}: ${r.text}`,
           };
     }
