@@ -15,6 +15,7 @@ import {
 import { DEFAULT_CONFIG } from '../../../src/server/config.ts';
 import { updateNeeds } from '../../../src/server/sim/needs.ts';
 import { at } from '../../../src/shared/time.ts';
+import type { Needs } from '../../../src/shared/types.ts';
 import { LOCATIONS, PROFILES } from './helpers.ts';
 
 const mia = PROFILES[0]!;
@@ -142,6 +143,39 @@ describe('planning', () => {
       needOverride(needs, { ...cur, activity: 'eat lunch' }, LOCATIONS, 'house_mia', 610, () => false),
     ).toBeNull();
     expect(needOverride({ ...needs, hunger: 50 }, cur, LOCATIONS, 'house_mia', 610, () => false)).toBeNull();
+  });
+
+  it('a less urgent need never replaces the block that fixes a more urgent one', () => {
+    const needs = { hunger: 5, energy: 80, social: 10, fun: 10 };
+    const fixed = new Set<string>(['hunger']);
+    const meal = { start: 600, end: 645, locationId: 'cafe', activity: 'grab a bite to eat' };
+    expect(needOverride(needs, meal, LOCATIONS, 'house_mia', 610, (n) => fixed.has(n))).toBeNull();
+    const lunch = { start: 600, end: 660, locationId: 'cafe', activity: 'eat lunch' };
+    expect(needOverride(needs, lunch, LOCATIONS, 'house_mia', 610, () => false)).toBeNull();
+    // With hunger fine, the next need still gets its override.
+    const fed = { ...needs, hunger: 60 };
+    expect(needOverride(fed, lunch, LOCATIONS, 'house_mia', 610, () => false)?.need).toBe('social');
+  });
+
+  it('a block counts as fixing a need only when its words restore that need in the sim', () => {
+    const block = (activity: string) => ({ start: 600, end: 780, locationId: 'house_mia', activity });
+    const fixes = (needs: Needs, activity: string) =>
+      needOverride(needs, block(activity), LOCATIONS, 'house_mia', 610, () => false)?.need ?? null;
+    // "forest", "restaurant", "restock" are not rest: tired and starving, the villager gets a nap.
+    const tired = { hunger: 5, energy: 10, social: 60, fun: 60 };
+    for (const a of ['walk in the forest', 'lunch at the restaurant', 'restock the shelves'])
+      expect(fixes(tired, a), a).toBe('energy');
+    expect(fixes(tired, 'rest on a bench')).toBeNull();
+    const starving = { hunger: 5, energy: 60, social: 60, fun: 60 };
+    expect(fixes(starving, 'shop for food')).toBe('hunger');
+    expect(fixes(starving, 'teach a class')).toBe('hunger');
+    expect(fixes(starving, 'have a coffee and cake')).toBeNull();
+    const lonely = { hunger: 60, energy: 60, social: 5, fun: 60 };
+    expect(fixes(lonely, 'make friends with the ducks')).toBe('social');
+    expect(fixes(lonely, 'chat with neighbours')).toBeNull();
+    const bored = { hunger: 60, energy: 60, social: 60, fun: 5 };
+    expect(fixes(bored, 'have some fun')).toBe('fun');
+    expect(fixes(bored, 'walk in the forest')).toBeNull();
   });
 
   it('a fun override at the park restores fun under the needs rules', () => {
