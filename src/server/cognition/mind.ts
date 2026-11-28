@@ -212,6 +212,8 @@ export class Mind implements VillagerMind {
   private readonly planDoneAt = new Map<number, number>();
   /** Day of the plan.day job in flight at planToday priority, if any. */
   private urgentPlanDay: number | null = null;
+  /** Day whose waiting evening plan ask was raised to planToday after midnight. */
+  private bumpedPlanDay: number | null = null;
   /** End (game minutes) of the latest override block per need. */
   private readonly needFixUntil: Partial<Record<keyof Needs, GameMinutes>> = {};
   private readonly lastTalkedAt = new Map<VillagerId, GameMinutes>();
@@ -313,6 +315,7 @@ export class Mind implements VillagerMind {
     // Plan tomorrow in the evening, while the model is less busy than at the morning rush.
     if (mod >= planEnd(this.window) - PREPARE_WINDOW && this.load() !== 'overloaded')
       this.prepareDay(view, day + 1);
+    this.bumpMorningPlan(now, day + 1);
     this.syncEvents(view, day);
     this.romance.update(view);
     this.markDone(mod);
@@ -1102,13 +1105,6 @@ export class Mind implements VillagerMind {
 
   /** Returns true when an immediate retry was scheduled. */
   private async dayPlanJob(view: WorldView, day: number, rescue: boolean): Promise<boolean> {
-    const priority =
-      day > dayOf(this.deps.now())
-        ? PRIORITY.planTomorrow
-        : rescue
-          ? PRIORITY.planRescue
-          : PRIORITY.planToday;
-    if (priority === PRIORITY.planToday) this.urgentPlanDay = day;
     const now = view.now;
     // Not started yet for this villager (evening or night prepare): it may wait in the queue
     // until the villager wakes, then ensurePlan takes over with a fallback.
@@ -1125,6 +1121,14 @@ export class Mind implements VillagerMind {
         .find((m) => m.kind === 'summary')
         ?.text.replace(SUMMARY_RE, '')
         .trim() ?? '';
+    // After the recall, which can wait into the next day (see bumpMorningPlan).
+    const priority =
+      day > dayOf(this.deps.now())
+        ? PRIORITY.planTomorrow
+        : rescue
+          ? PRIORITY.planRescue
+          : PRIORITY.planToday;
+    if (priority === PRIORITY.planToday) this.urgentPlanDay = day;
     const acceptedEvents = view.events.filter(
       (e) =>
         dayOf(e.start) === day &&
@@ -2046,11 +2050,32 @@ export class Mind implements VillagerMind {
       this.memory.releaseEmbeddings(now);
     }
     this.prepareDay(view, nextDay);
+    this.bumpMorningPlan(now, nextDay);
     this.publishPrepared(nextDay);
     if (this.village.claimStatsLog(ended)) {
       const line = statsLine(fallbackStats(this.deps.queue));
       if (line) this.emit('info', `LLM use so far (model / fallback): ${line}`);
     }
+  }
+
+  /**
+   * Tomorrow's plan, asked in the evening at planTomorrow priority, may still be queued once the
+   * day has begun: from then on it is a morning plan and gets planToday priority. A request with
+   * the same dedupe key raises the waiting job's priority; it is aborted before it starts, so when
+   * nothing with that key is waiting (running, in its repair round, already answered) it never
+   * reaches the model.
+   */
+  private bumpMorningPlan(now: GameMinutes, day: number): void {
+    if (this.bumpedPlanDay === day || this.urgentPlanDay === day || dayOf(now) < day) return;
+    if (!this.pending.has(`plan.day:${day}`)) return;
+    this.bumpedPlanDay = day;
+    const signal = AbortSignal.abort();
+    this.deps.queue
+      .enqueue(
+        { task: 'plan.day', messages: [], signal },
+        { dedupeKey: `plan:${this.id}:day${day}`, priority: PRIORITY.planToday },
+      )
+      .catch(() => {});
   }
 
   /**

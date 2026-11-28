@@ -3,6 +3,7 @@ import { at } from '../../../src/shared/time.ts';
 import type { ChatRequest } from '../../../src/server/llm/types.ts';
 import type { VillageEvent, VillagerProfile } from '../../../src/shared/types.ts';
 import { MockChatProvider } from '../../../src/server/llm/providers/mock.ts';
+import { PriorityLlmQueue } from '../../../src/server/llm/queue.ts';
 import { PREPARE_MAX_ATTEMPTS, PRIORITY } from '../../../src/server/cognition/mind.ts';
 import { fallbackBlocks, makePlan } from '../../../src/server/cognition/planning.ts';
 import { LOCATIONS, PROFILES, createTestVillage, testConfig } from './helpers.ts';
@@ -256,5 +257,70 @@ describe('default morning routine and the late swap', () => {
     expect(after.blocks.filter((b) => b.eventId === 'ev1').map((b) => [b.start, b.end])).toEqual([
       [900, 960],
     ]);
+  });
+});
+
+describe("tomorrow's plan after midnight", () => {
+  it('still waiting at midnight, it moves up to morning priority, behind older morning asks', async () => {
+    const p = new MockChatProvider();
+    const order: string[] = [];
+    let releaseBlocker = () => {};
+    p.setScript('plan.day', (req) => {
+      if (req.meta?.villagerId === 'mia' && req.meta?.day === 1) order.push('plan');
+      return plan(req);
+    });
+    p.setScript('health', (req) => {
+      const tag = String(req.meta?.tag);
+      if (tag === 'blocker') return new Promise<string>((r) => (releaseBlocker = () => r('{}')));
+      order.push(tag);
+      return '{}';
+    });
+    const v = createTestVillage({
+      start: at(0, '05:59'),
+      provider: p,
+      profiles: MIA,
+      queue: (chat, now) =>
+        new PriorityLlmQueue({ chat, concurrency: 1, now, clockMs: () => 0, taskTtlMinutes: false }),
+    });
+    const filler = (tag: string, priority: number) =>
+      void v.queue.enqueue({ task: 'health', messages: [], meta: { tag } }, { priority }).catch(() => {});
+    await v.advanceTo(at(0, '17:00'));
+    filler('blocker', 200);
+    await stepTo(v, at(0, '23:00'), 5);
+    expect(asks(v, 'mia', 1)).toHaveLength(1);
+    filler('evening', PRIORITY.planToday - 10);
+    await stepTo(v, at(1, '00:10'));
+    filler('morning', PRIORITY.planToday);
+    expect(v.queue.priorities.get(asks(v, 'mia', 1)[0]!)).toBe(PRIORITY.planTomorrow);
+    expect(v.queue.preAborted.map((b) => b.opts)).toEqual([
+      { dedupeKey: 'plan:mia:day1', priority: PRIORITY.planToday },
+    ]);
+    releaseBlocker();
+    await v.queue.drain();
+    expect(order).toEqual(['plan', 'morning', 'evening']);
+    // The bump is no second ask: one model call, one plan.
+    expect(p.calls.filter((c) => c.task === 'plan.day' && c.meta?.day === 1)).toHaveLength(1);
+    await stepTo(v, at(1, '06:30'));
+    expect(v.worlds.get('mia')!.plan).toMatchObject({ day: 1, source: 'llm', revision: 0 });
+    expect(asks(v, 'mia', 1)).toHaveLength(1);
+  });
+
+  it('already running at midnight, the ask is not sent again', async () => {
+    const h = holdDay(1);
+    const v = createTestVillage({
+      start: at(0, '05:59'),
+      provider: h.provider,
+      profiles: MIA,
+      queue: (chat, now) => new PriorityLlmQueue({ chat, concurrency: 2, now, taskTtlMinutes: false }),
+    });
+    await stepTo(v, at(1, '00:10'), 5);
+    expect(h.maxInflight).toBe(1);
+    expect(v.queue.preAborted).toHaveLength(1);
+    h.releaseAll();
+    await v.queue.drain();
+    expect(h.provider.calls.filter((c) => c.task === 'plan.day' && c.meta?.day === 1)).toHaveLength(1);
+    await stepTo(v, at(1, '06:30'));
+    expect(v.worlds.get('mia')!.plan).toMatchObject({ day: 1, source: 'llm' });
+    expect(asks(v, 'mia', 1)).toHaveLength(1);
   });
 });
