@@ -124,6 +124,51 @@ describe('PriorityLlmQueue', () => {
     expect(p.calls).toBe(2);
   });
 
+  it('lets an already-aborted request with a waiting dedupeKey raise that job, which still runs as asked', async () => {
+    const p = new ManualProvider();
+    const q = new PriorityLlmQueue({ chat: p, concurrency: 1, agingMs: 1e9 });
+    const order: string[] = [];
+    const blocker = q.enqueue(req('reflect', 'blocker')).then(() => order.push('blocker'));
+    const plan = q.enqueue(req('plan.day', 'evening plan'), { dedupeKey: 'plan:ada:day3', priority: 70 });
+    const planDone = plan.then((r) => order.push(`plan:${r.text}`));
+    const turn = q.enqueue(req('convo.turn', 'talk')).then(() => order.push('talk'));
+
+    const bump = q.enqueue(
+      { task: 'plan.day', messages: [], signal: AbortSignal.abort() },
+      { dedupeKey: 'plan:ada:day3', priority: 110 },
+    );
+    expect(bump).toBe(plan);
+    expect(q.stats()).toMatchObject({ queued: 2, running: 1 });
+
+    const sent: string[] = [];
+    while (p.calls.length) {
+      const c = p.calls.shift()!;
+      sent.push(c.req.messages[0]!.content);
+      c.resolve({ text: c.req.messages[0]!.content });
+      await tick();
+    }
+    await Promise.all([blocker, planDone, turn]);
+    expect(sent).toEqual(['blocker', 'evening plan', 'talk']);
+    expect(order).toEqual(['blocker', 'plan:evening plan', 'talk']);
+  });
+
+  it('rejects an already-aborted request when nothing with its dedupeKey is waiting', async () => {
+    const p = new ManualProvider();
+    const q = new PriorityLlmQueue({ chat: p, concurrency: 1 });
+    const bump = q.enqueue(
+      { task: 'plan.day', messages: [], signal: AbortSignal.abort() },
+      { dedupeKey: 'plan:ada:day3', priority: 110 },
+    );
+    await expect(bump).rejects.toMatchObject({ kind: 'aborted' });
+    expect(p.calls).toHaveLength(0);
+    expect(q.stats()).toMatchObject({ queued: 0, running: 0 });
+    // The key stays free: a later real request starts a new job.
+    const real = q.enqueue(req('plan.day', 'morning plan'), { dedupeKey: 'plan:ada:day3' });
+    expect(p.calls.map((c) => c.req.messages[0]!.content)).toEqual(['morning plan']);
+    p.calls.shift()!.resolve({});
+    await expect(real).resolves.toMatchObject({ text: 'ok' });
+  });
+
   it('drops jobs that expired (game time) before they started', async () => {
     let now = 100;
     const p = new ManualProvider();

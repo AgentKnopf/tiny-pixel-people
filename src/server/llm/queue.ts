@@ -201,6 +201,8 @@ export class PriorityLlmQueue implements LlmQueue {
 
   enqueue(req: ChatRequest, opts: EnqueueOptions = {}): Promise<ChatResponse> {
     const priority = opts.priority ?? TASK_PRIORITY[req.task] ?? 0;
+    // Dedupe runs before the aborted check on purpose: an already-aborted request only raises the
+    // waiting job's priority, or creates nothing. Cognition's post-midnight plan bump relies on it.
     if (opts.dedupeKey) {
       const existing = this.byKey.get(opts.dedupeKey);
       if (existing) {
