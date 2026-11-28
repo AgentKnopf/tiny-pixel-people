@@ -132,7 +132,11 @@ async function runCrowDays(neverAnswer: boolean): Promise<CrowRun> {
     startAt: '06:00',
     neverAnswer,
     // No villager-written letters, so the crow's only letter triggers are identical in both runs.
-    config: { post: { maxVillagerLettersPerDay: 0 }, sim: { wakeUpTimeoutSec: 2 }, llm: { timeoutMs: 3000 } },
+    config: {
+      post: { maxVillagerLettersPerDay: 0 },
+      sim: { wakeUpMode: 'hold', wakeUpTimeoutSec: 2 },
+      llm: { timeoutMs: 3000 },
+    },
   };
   const w = await createTestWorld(opts);
   try {
