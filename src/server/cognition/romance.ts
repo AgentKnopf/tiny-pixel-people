@@ -787,12 +787,11 @@ export class RomanceAgent {
       if (a.self.locationId !== POST_OFFICE || b.self.locationId !== POST_OFFICE) continue;
       this.shySeenDay.set(r.id, day);
       const [visitor, clerk] = this.visitorFirst(r, view);
-      this.mind.addMemory({
-        kind: 'observation',
-        at: view.now,
-        text: `${this.mind.nameOf(visitor, view)} was at the post office again, chatting shyly with ${this.mind.nameOf(clerk, view)}.`,
-        importance: 5,
-      });
+      const text = `${this.mind.nameOf(visitor, view)} was at the post office again, chatting shyly with ${this.mind.nameOf(clerk, view)}.`;
+      // shySeenDay is not saved: after a load the day's memories tell whether it was seen already.
+      const from = day * MINUTES_PER_DAY;
+      if (this.mind.memory.between(from, view.now + 1).some((m) => m.text === text)) continue;
+      this.mind.addMemory({ kind: 'observation', at: view.now, text, importance: 5 });
     }
   }
 
