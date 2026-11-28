@@ -513,7 +513,11 @@ export function needOverride(
   if (current?.eventId || current?.taskId) return null;
   const order: (keyof Needs)[] = ['energy', 'hunger', 'social', 'fun'];
   for (const need of order) {
-    if (needs[need] >= 20 || recentlyFixed(need)) continue;
+    if (needs[need] >= 20) continue;
+    // The more urgent need is already being fixed (its override is running, or the current block
+    // fixes it): a less urgent one waits instead of replacing that block, or the villager walks off
+    // to the park with hunger at 0 and the meal never happens.
+    if (recentlyFixed(need)) return null;
     const stop = need === 'hunger' && food ? food() : null;
     if (
       current &&
@@ -521,7 +525,7 @@ export function needOverride(
       // A starving hotel guest must not cross the map for a planned lunch at the bakery.
       !(stop && distance && distance(current.locationId) > distance(stop.locationId))
     )
-      continue;
+      return null;
     const plan: Record<keyof Needs, { loc: LocationId; activity: string; emoji: string }> = {
       hunger: stop
         ? (({ locationId, ...rest }) => ({ loc: locationId, ...rest }))(stop)

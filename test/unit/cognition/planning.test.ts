@@ -144,6 +144,18 @@ describe('planning', () => {
     expect(needOverride({ ...needs, hunger: 50 }, cur, LOCATIONS, 'house_mia', 610, () => false)).toBeNull();
   });
 
+  it('a less urgent need never replaces the block that fixes a more urgent one', () => {
+    const needs = { hunger: 5, energy: 80, social: 10, fun: 10 };
+    const fixed = new Set<string>(['hunger']);
+    const meal = { start: 600, end: 645, locationId: 'cafe', activity: 'grab a bite to eat' };
+    expect(needOverride(needs, meal, LOCATIONS, 'house_mia', 610, (n) => fixed.has(n))).toBeNull();
+    const lunch = { start: 600, end: 660, locationId: 'cafe', activity: 'eat lunch' };
+    expect(needOverride(needs, lunch, LOCATIONS, 'house_mia', 610, () => false)).toBeNull();
+    // With hunger fine, the next need still gets its override.
+    const fed = { ...needs, hunger: 60 };
+    expect(needOverride(fed, lunch, LOCATIONS, 'house_mia', 610, () => false)?.need).toBe('social');
+  });
+
   it('a fun override at the park restores fun under the needs rules', () => {
     const needs = { hunger: 80, energy: 80, social: 80, fun: 15 };
     const o = needOverride(needs, undefined, LOCATIONS, 'house_mia', 900, () => false)!;
