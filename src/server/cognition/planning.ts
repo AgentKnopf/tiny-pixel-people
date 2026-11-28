@@ -443,7 +443,7 @@ export function fallbackBlocks(profile: VillagerProfile, locations: readonly Loc
       start: w.wake,
       end: w.wake + 60,
       locationId: profile.homeId,
-      activity: 'morning routine and breakfast',
+      activity: 'wake up, wash and have breakfast',
       emoji: '☕',
     },
     { start: w.wake + 60, end: 720, locationId: work, activity: workAct, emoji: emojiFor(workAct) },
@@ -532,7 +532,7 @@ export function needOverride(
         activity: 'look for someone to chat with',
         emoji: '💬',
       },
-      fun: { loc: funPlace(locations)?.id ?? homeId, activity: 'relax and have some fun', emoji: '🌳' },
+      fun: { loc: funPlace(locations)?.id ?? homeId, activity: 'stroll and play in the park', emoji: '🌳' },
     };
     const p = plan[need];
     return {

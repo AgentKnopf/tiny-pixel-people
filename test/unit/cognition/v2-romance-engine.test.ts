@@ -171,12 +171,14 @@ describe.skipIf(!ready(...FEATURES) || !STORES_ROMANCE)(
       const seen = /^I saw (Sam|Ivy) \S+ and (Sam|Ivy) \S+ on a date/;
       const others = w.engine.profiles.map((p) => p.id).filter((id) => !['sam', 'ivy'].includes(id));
       const witnesses = () => others.filter((id) => w.memories(id).some((m) => seen.test(m.text)));
+      // Gossip reached someone before they saw a date themselves (over enough days, most villagers
+      // end up witnessing one too, so "never saw one" depends on the day's routes).
       const heard = () =>
-        others.filter(
-          (id) =>
-            !witnesses().includes(id) &&
-            w.memories(id).some((m) => m.kind === 'heard' && /on a date/.test(m.text)),
-        );
+        others.filter((id) => {
+          const mems = w.memories(id);
+          const firstSeen = Math.min(...mems.filter((m) => seen.test(m.text)).map((m) => m.createdAt));
+          return mems.some((m) => m.kind === 'heard' && /on a date/.test(m.text) && m.createdAt < firstSeen);
+        });
       for (let d = 0; d < MAX_DAYS && !(between(w, 'sam', 'ivy')?.stage === 'couple' && heard().length); d++)
         await days(w, 1);
       const dates = w

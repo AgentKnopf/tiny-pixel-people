@@ -41,10 +41,12 @@ export class DirectQueue implements LlmQueue {
   }
 
   readonly priorities = new Map<ChatRequest, number | undefined>();
+  readonly options = new Map<ChatRequest, EnqueueOptions | undefined>();
 
   enqueue(req: ChatRequest, opts?: EnqueueOptions): Promise<ChatResponse> {
     this.requests.push(req);
     this.priorities.set(req, opts?.priority);
+    this.options.set(req, opts);
     const signal = req.signal;
     if (!signal) return this.track(this.chat.chat(req));
     // Like the real queue: an aborted caller stops waiting for the provider.
