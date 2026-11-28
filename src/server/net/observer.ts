@@ -1,4 +1,4 @@
-import { timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { AppConfig } from '../config.ts';
@@ -33,6 +33,13 @@ export function isLoopback(addr: string | undefined): boolean {
   return a === '::1' || /^127\.\d+\.\d+\.\d+$/.test(a);
 }
 
+const digest = (s: string) => createHash('sha256').update(s).digest();
+
+/** Constant-time over fixed-size digests, so neither the content nor the length of the token leaks. */
+export function tokenMatches(given: string, want: string): boolean {
+  return timingSafeEqual(digest(given), digest(want));
+}
+
 export type AccessResult = { ok: true } | { ok: false; status: 401 | 403; error: string };
 
 /**
@@ -48,9 +55,7 @@ export function checkAccess(
   }
   if (cfg.token) {
     const m = /^Bearer\s+(.+)$/i.exec(req.authorization ?? '');
-    const given = Buffer.from(m?.[1]?.trim() ?? '');
-    const want = Buffer.from(cfg.token);
-    if (given.length !== want.length || !timingSafeEqual(given, want)) {
+    if (!tokenMatches(m?.[1]?.trim() ?? '', cfg.token)) {
       return { ok: false, status: 401, error: 'Missing or wrong bearer token.' };
     }
   }

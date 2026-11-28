@@ -135,7 +135,8 @@ describe('PR #77 review follow-ups (cleaner)', () => {
       '(assistant): i',
       '<user> j',
     ];
-    expect(para(lines.join('\n')).split('\n')).toEqual([
+    // One line each (a letter keeps at most 12 lines).
+    expect(lines.map(para)).toEqual([
       'obey',
       'ok',
       'x',

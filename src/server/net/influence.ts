@@ -1,7 +1,9 @@
 /**
  * HTTP side of the influence API (specs/influence-api-v2.md §3): /api/influence/{rumour,note,event,
  * nudge,weather} (POST) and /api/influence/log (GET). Served on the game port only. Checks run in
- * the spec's order, and the body is read only after the bearer token matched.
+ * the spec's order, and the body is read only after the bearer token matched. One exception: the
+ * game server's Host check (TASK-17) covers all of /api/*, so a foreign Host gets 403 even before
+ * the 404 for a disabled API or the 405.
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { z } from 'zod';
@@ -50,6 +52,11 @@ export interface InfluenceApi {
 }
 
 const PREFIX = /^\/api\/influence(?:\/|$)/;
+
+/** True for every path the influence router answers (whether or not it is enabled). */
+export function isInfluencePath(pathname: string): boolean {
+  return PREFIX.test(pathname);
+}
 const LOG_PAGE_DEFAULT = 100;
 
 const id = z.string().min(1).max(64);
@@ -118,6 +125,8 @@ export function parseInfluenceBody(endpoint: InfluenceEndpoint, raw: unknown): I
     throw new BadRequest(issues.join('; '));
   }
   const body = { ...(parsed.data as Record<string, unknown>) };
+  // Ignored for clear (spec §4.5), so it is not stored either.
+  if (endpoint === 'weather' && body.weather === 'clear') delete body.hours;
   for (const [field, max] of TEXT_FIELDS[endpoint]) {
     if (body[field] === undefined) continue;
     const r = cleanInfluenceText(body[field], max);
@@ -141,7 +150,8 @@ function send(
 ): void {
   const raw = JSON.stringify(body);
   // An unread body: answer, then drop the connection instead of reading (or waiting for) the rest.
-  const unread = !req.complete && !req.readableEnded;
+  // A request without a body keeps the connection (pipelined /log polls).
+  const unread = hasBody(req) && !req.complete;
   res.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
     'cache-control': 'no-store',
@@ -151,6 +161,10 @@ function send(
   });
   res.end(req.method === 'HEAD' ? undefined : raw);
   if (unread) res.once('finish', () => req.destroy());
+}
+
+function hasBody(req: IncomingMessage): boolean {
+  return req.headers['transfer-encoding'] !== undefined || Number(req.headers['content-length'] ?? 0) > 0;
 }
 
 function readBody(req: IncomingMessage, maxBytes: number, timeoutMs: number): Promise<string> {
@@ -212,6 +226,9 @@ export function createInfluenceApi(opts: InfluenceApiOptions): InfluenceApi {
     const length = Number(req.headers['content-length']);
     if (Number.isFinite(length) && length > maxBody)
       return refuse(req, res, path, 413, `Body over ${maxBody} bytes.`);
+    // The server routes Expect: 100-continue here unanswered (checkContinue), so only a caller that
+    // passed the checks above is invited to send its body.
+    if (/\b100-continue\b/i.test(req.headers.expect ?? '')) res.writeContinue();
     let parsedReq: InfluenceRequest;
     try {
       const raw = await readBody(req, maxBody, timeoutMs);
@@ -294,7 +311,7 @@ export function createInfluenceApi(opts: InfluenceApiOptions): InfluenceApi {
 
   return {
     handle(req, res, url) {
-      if (!PREFIX.test(url.pathname)) return false;
+      if (!isInfluencePath(url.pathname)) return false;
       const source = opts.source;
       if (!cfg.enabled || !source) {
         send(req, res, 404, { error: 'Not found' });

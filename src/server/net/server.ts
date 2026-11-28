@@ -17,7 +17,12 @@ import {
   type RunningObserver,
 } from './observer.ts';
 import type { ObserverSource } from './observer-views.ts';
-import { createInfluenceApi, type InfluenceConfig, type InfluenceSource } from './influence.ts';
+import {
+  createInfluenceApi,
+  isInfluencePath,
+  type InfluenceConfig,
+  type InfluenceSource,
+} from './influence.ts';
 import { hostAllowed, localHosts, originAllowed, RefusalLog } from './origin.ts';
 import { parseClientMessage } from './validate.ts';
 
@@ -110,12 +115,19 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   /** Filled in once listening (the port may be 0 until then). */
   let allowedHosts = new Set<string>();
 
-  const http = createServer((req, res) => {
+  const onRequest = (req: IncomingMessage, res: ServerResponse) => {
     void handleHttp(req, res).catch((err: unknown) => {
       log.error('HTTP handler failed', err);
       if (!res.headersSent) res.writeHead(500);
       res.end();
     });
+  };
+  const http = createServer(onRequest);
+  // Expect: 100-continue. The influence router sends 100 Continue itself, only after the token check,
+  // so a refused caller is never invited to upload. Every other path gets it at once, as Node would.
+  http.on('checkContinue', (req, res) => {
+    if (!isInfluencePath(new URL(req.url ?? '/', 'http://localhost').pathname)) res.writeContinue();
+    onRequest(req, res);
   });
 
   async function handleHttp(req: IncomingMessage, res: ServerResponse): Promise<void> {
