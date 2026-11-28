@@ -574,12 +574,13 @@ describe('couples (v2 §7)', () => {
 describe('the shy pair (v2 §7.1)', () => {
   const shy = romance('laude', 'franzi', { crushFrom: ['laude', 'franzi'], shy: true });
 
-  function shyVillage(day: number) {
+  function shyVillage(day: number, snapshots?: Parameters<typeof createTestVillage>[0]['snapshots']) {
     const v = createTestVillage({
       start: at(day, '10:00'),
       profiles: [LAUDE, FRANZI, ...PROFILES],
       locations: V2_LOCATIONS,
       extraView: () => ({ romances: [shy] }),
+      ...(snapshots ? { snapshots } : {}),
     });
     mutual(v, 'laude', 'franzi', 9);
     for (const id of ['laude', 'franzi']) v.states.get(id)!.locationId = 'post_office';
@@ -643,6 +644,37 @@ describe('the shy pair (v2 §7.1)', () => {
       .filter((m) => m.text === 'Franzi was at the post office again, chatting shyly with Laude.');
     expect(gossip).toHaveLength(1);
     expect(gossip[0]!.importance).toBe(5);
+  });
+
+  it('gossip seen before a save is not repeated after loading it the same day, and comes back the next day', () => {
+    const GOSSIP = 'Franzi was at the post office again, chatting shyly with Laude.';
+    const post = V2_LOCATIONS.find((l) => l.id === 'post_office')!;
+    const watch = (v: TestVillage, minutes: number) => {
+      for (const id of ['laude', 'franzi']) v.states.get(id)!.conversationId = 'c-shy';
+      v.states.get('mia')!.pos = { ...post.entry };
+      for (let i = 0; i < minutes; i++) {
+        v.time.now += 1;
+        for (const id of ['laude', 'franzi', 'mia']) v.minds.get(id)!.update(v.view(id));
+      }
+    };
+    const gossip = (v: TestVillage) =>
+      v.minds
+        .get('mia')!
+        .memory.all()
+        .filter((m) => m.text === GOSSIP);
+    const v = shyVillage(1);
+    watch(v, 2);
+    expect(gossip(v)).toHaveLength(1);
+    const saved = JSON.parse(
+      JSON.stringify(Object.fromEntries([...v.minds].map(([id, m]) => [id, m.serialize()]))),
+    );
+    const restored = shyVillage(1, saved);
+    restored.time.now = v.time.now;
+    watch(restored, 3);
+    expect(gossip(restored)).toHaveLength(1);
+    restored.time.now = at(2, '10:00');
+    watch(restored, 2);
+    expect(gossip(restored)).toHaveLength(2);
   });
 
   describe('gossip rule edges', () => {
