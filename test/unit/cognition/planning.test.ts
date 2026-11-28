@@ -12,10 +12,13 @@ import {
   workLocation,
   planDayFor,
 } from '../../../src/server/cognition/planning.ts';
+import { DEFAULT_CONFIG } from '../../../src/server/config.ts';
+import { updateNeeds } from '../../../src/server/sim/needs.ts';
 import { at } from '../../../src/shared/time.ts';
 import { LOCATIONS, PROFILES } from './helpers.ts';
 
 const mia = PROFILES[0]!;
+const decay = DEFAULT_CONFIG.needs.decayPerHour;
 const w = wakeWindow(mia);
 
 function coversDay(blocks: { start: number; end: number }[]) {
@@ -139,6 +142,18 @@ describe('planning', () => {
       needOverride(needs, { ...cur, activity: 'eat lunch' }, LOCATIONS, 'house_mia', 610, () => false),
     ).toBeNull();
     expect(needOverride({ ...needs, hunger: 50 }, cur, LOCATIONS, 'house_mia', 610, () => false)).toBeNull();
+  });
+
+  it('a fun override at the park restores fun under the needs rules', () => {
+    const needs = { hunger: 80, energy: 80, social: 80, fun: 15 };
+    const o = needOverride(needs, undefined, LOCATIONS, 'house_mia', 900, () => false)!;
+    expect(o.need).toBe('fun');
+    const where = LOCATIONS.find((l) => l.id === o.block.locationId) ?? null;
+    expect(where?.id).toBe('park');
+    for (let m = o.block.start; m < o.block.end; m++)
+      updateNeeds(needs, { status: 'acting', activity: o.block.activity, location: where }, 1, decay);
+    expect(o.block.end - o.block.start).toBe(45);
+    expect(needs.fun).toBeGreaterThanOrEqual(25);
   });
 
   it('moves outdoor blocks indoors while it rains', () => {
