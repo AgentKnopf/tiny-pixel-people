@@ -308,12 +308,15 @@ recipient_name?, text }]`. `kind` is `note`, `letter`, `notice`, `rumor` or `rep
   "tokens": 6164,
   "tokens_per_second": null,
   "last_reply_ms": 0,
-  "by_task": { "plan.day": { "done": 10, "failed": 0, "avgLatencyMs": 0 } }
+  "by_task": { "plan.day": { "done": 10, "failed": 0, "avgLatencyMs": 0 } },
+  "plans_pending": 0
 }
 ```
 
 `calls` counts finished model calls (successful plus failed). `queue_len` is the number of requests
-waiting.
+waiting. `plans_pending` is the number of residents whose day plan for the current game day is not
+settled yet (from midnight to 06:00 that is the coming day). Visitors and passing strangers never
+count; they don't plan days.
 
 ### `GET /api/screenshot?scale=1`
 

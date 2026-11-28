@@ -67,8 +67,13 @@ cottage ✓`. Your conversations with villagers appear in a small dialog there t
 - Villagers sleep at night. Each one has its own hours: early birds get up at 05:00, late risers at
   08:00, and bedtimes are between 21:00 and 23:30. While everybody sleeps, the clock runs 6× faster on
   top of the chosen speed (`sim.nightSpeedMultiplier`), so nights pass quickly.
-- **Waking up.** At 06:00 each day the clock waits until every villager's plan for the day is ready,
-  so the day starts with real plans. A small banner at the top centre shows
+- **Still planning.** By default (`sim.wakeUpMode: "soft"`) the clock keeps running at 06:00. A
+  villager whose plan for the day isn't ready yet starts on a default morning routine and switches to
+  the real plan when it arrives. Meanwhile a small banner at the top centre shows
+  `🌅 3 villagers still planning`. It disappears once every plan is in, when the model is offline,
+  or at midnight if the day ends first; the next morning it starts again at 06:00 if needed.
+- **Waking up.** With `sim.wakeUpMode: "hold"`, at 06:00 each day the clock waits until every
+  villager's plan for the day is ready, so the day starts with real plans. A small banner at the top centre shows
   `🌅 Villagers are waking up… (n/m plans ready)` with a progress bar. The banner doesn't block
   the screen: you can still open the inspector and send messages, but nobody moves until the clock
   runs again. The clock goes on once every villager's plan request has finished (with a
