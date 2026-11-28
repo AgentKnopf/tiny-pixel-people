@@ -490,11 +490,17 @@ export function withEvents(
 
 // ---------- overrides at execution time ----------
 
+// A match means the block already fixes the need and no override is placed (needOverride returns
+// null), so each entry only lists whole words that the sim's restore rules (sim/needs.ts) count for
+// that need. "forest" is no rest and "shop for food" no meal.
 const ADDRESSES: Record<keyof Needs, RegExp> = {
-  hunger: /\beat|lunch|breakfast|dinner|snack|bite|meal|food|picnic/i,
-  energy: /sleep|nap|rest|relax|lie down/i,
-  social: /talk|chat|visit|friend|party|meet|gossip|event|host|attend|neighbou?r/i,
-  fun: /play|fun|relax|park|party|game|hobby|paint|music|read|stroll|fish|festival|picnic|dance/i,
+  hunger:
+    /\b(eat|eating|breakfast|lunch|dinner|supper|snacks?|bite|meals?|brunch|picnic|tea|coffee|cakes?|pastr(y|ies))\b/i,
+  energy:
+    /\b(rest|resting|nap|napping|relax|relaxing|read|reading|sit|sitting|lounge|lounging|doze|dozing)\b/i,
+  social:
+    /\b(chat|chatting|talk|talking|visit|visiting|meet|meeting|gossip|party|celebrate|celebrating|bake-off|festival|gather|gathering|serve|serving|customers?|class|classes|teach|teaching)\b/i,
+  fun: /\b(play|playing|games?|stroll|walk|walking|garden|gardening|paint|painting|music|guitar|sing|singing|fish|fishing|picnic|dance|dancing|party|bake-off|festival|explore|exploring|read|reading|story|stories)\b/i,
 };
 
 /** A short corrective block when a need is below 20 and the current block does not address it. */
