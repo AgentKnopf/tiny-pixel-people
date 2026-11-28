@@ -124,6 +124,27 @@ describe('nightly crushes (v2 §7)', () => {
       expect(mia.town.romances.of('mia'), stage).toHaveLength(0);
     }
   });
+  it('never forms a crush on someone else while dating, only on the date partner', async () => {
+    // Mia is dating Ben (his crush) and likes Cleo a lot; the 3rd eligible night is a certain draw.
+    const run = async (dating: boolean, likes: 'Cleo' | 'Ben') => {
+      const v = createTestVillage({ start: at(1, '01:50'), locations: V2_LOCATIONS });
+      const mia = v.minds.get('mia')!;
+      mutual(v, 'mia', 'ben', likes === 'Ben' ? 9 : 4);
+      if (likes === 'Cleo') mutual(v, 'mia', 'cleo', 9);
+      if (dating) mia.town.romances.put(romance('ben', 'mia', { stage: 'dating', crushFrom: ['ben'] }));
+      talked(mia, likes, 3, at(1, '00:30'));
+      for (const id of ['mia', 'ben', 'cleo', 'dan']) forceRandom(v.minds.get(id)!, 0.99);
+      for (const night of [1, 2, 3]) {
+        talked(mia, likes, 2, at(night, '00:30'));
+        await v.advanceTo(at(night, '02:05'));
+        v.time.now = at(night + 1, '01:50');
+      }
+      return mia.town.romances;
+    };
+    expect((await run(false, 'Cleo')).get(romanceId('mia', 'cleo'))?.crushFrom).toEqual(['mia']);
+    expect((await run(true, 'Cleo')).get(romanceId('mia', 'cleo'))).toBeUndefined();
+    expect((await run(true, 'Ben')).get(romanceId('mia', 'ben'))?.crushFrom).toContain('mia');
+  });
 });
 
 describe('the crush guarantee (v2 §7, AC15)', () => {
