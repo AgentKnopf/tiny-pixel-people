@@ -1,10 +1,15 @@
 /** TASK-18 I2: influence HTTP contract — status order, token, body limits, log paging (spec §3, §4.6, AC1-AC4). */
 import { createServer, request, type IncomingHttpHeaders } from 'node:http';
-import type { AddressInfo } from 'node:net';
+import { connect as connectTcp, type AddressInfo, type Socket } from 'node:net';
 import { networkInterfaces } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { PartialConfig } from '../../src/server/config.ts';
-import { createInfluenceApi, type InfluenceSource } from '../../src/server/net/influence.ts';
+import {
+  createInfluenceApi,
+  parseInfluenceBody,
+  type InfluenceSource,
+} from '../../src/server/net/influence.ts';
+import { checkAccess, tokenMatches } from '../../src/server/net/observer.ts';
 import { startServer } from '../../src/server/net/server.ts';
 import type { InfluenceHandler } from '../../src/server/sim/influence.ts';
 import type { InfluenceRequest, InfluenceResult } from '../../src/shared/influence.ts';
@@ -560,5 +565,135 @@ describe('influence API logging (spec §3)', () => {
     expect(out).not.toContain(secretText);
     expect(out).not.toContain(TOKEN);
     expect(out).not.toContain('since=');
+  });
+});
+
+/** Raw TCP: writes `data`, collects everything until the server closes or `ms` passes. */
+function rawTcp(
+  port: number,
+  data: string,
+  ms = 400,
+  onData?: (all: string, sock: Socket) => void,
+): Promise<string> {
+  return new Promise((resolve) => {
+    let out = '';
+    const sock = connectTcp(port, '127.0.0.1', () => sock.write(data));
+    const timer = setTimeout(() => {
+      sock.destroy();
+      resolve(out);
+    }, ms);
+    sock.on('data', (c: Buffer) => {
+      out += c.toString('latin1');
+      onData?.(out, sock);
+    });
+    sock.on('error', () => {});
+    sock.on('close', () => {
+      clearTimeout(timer);
+      resolve(out);
+    });
+  });
+}
+
+describe('PR #77 review follow-ups (HTTP)', () => {
+  const head = (port: number, auth: string, extra = '') =>
+    `POST /api/influence/weather HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nContent-Type: application/json\r\n` +
+    `Authorization: Bearer ${auth}\r\n${extra}`;
+
+  it('F4: with Expect: 100-continue a bad token gets 401 without a 100 Continue first', async () => {
+    const { server } = await boot();
+    const out = await rawTcp(
+      server.port,
+      head(server.port, 'wrong', 'Content-Length: 20\r\nExpect: 100-continue\r\n\r\n'),
+    );
+    expect(out).toMatch(/^HTTP\/1\.1 401 /);
+    expect(out).not.toContain('100 Continue');
+  });
+
+  it('F4: with a good token the server sends 100 Continue, then reads the body', async () => {
+    const { server } = await boot();
+    const body = '{"weather":"clear"}';
+    let sent = false;
+    const out = await rawTcp(
+      server.port,
+      head(server.port, TOKEN, `Content-Length: ${body.length}\r\nExpect: 100-continue\r\n\r\n`),
+      600,
+      (all, sock) => {
+        if (!sent && all.includes('100 Continue')) {
+          sent = true;
+          sock.write(body);
+        }
+      },
+    );
+    expect(out).toMatch(/^HTTP\/1\.1 100 Continue\r\n\r\nHTTP\/1\.1 200 /);
+  });
+
+  it('F4: other routes still answer an Expect: 100-continue request', async () => {
+    const { server } = await boot();
+    const out = await rawTcp(
+      server.port,
+      `GET /api/health HTTP/1.1\r\nHost: 127.0.0.1:${server.port}\r\nContent-Length: 0\r\nExpect: 100-continue\r\n\r\n`,
+    );
+    expect(out).toContain('HTTP/1.1 200 ');
+  });
+
+  it('F5: a bodyless GET /log keeps the connection open, so pipelined polls all get answers', async () => {
+    const { server } = await boot();
+    const get = `GET /api/influence/log HTTP/1.1\r\nHost: 127.0.0.1:${server.port}\r\nAuthorization: Bearer ${TOKEN}\r\n\r\n`;
+    const out = await rawTcp(server.port, get + get + get);
+    expect(out.match(/HTTP\/1\.1 200 /g)).toHaveLength(3);
+    expect(out.toLowerCase()).not.toContain('connection: close');
+  });
+
+  it('F5: a refusal with an unread body still closes the connection', async () => {
+    const { server } = await boot();
+    const out = await rawTcp(server.port, head(server.port, 'wrong', 'Content-Length: 100\r\n\r\n{"we'));
+    expect(out).toMatch(/^HTTP\/1\.1 401 /);
+    expect(out.toLowerCase()).toContain('connection: close');
+  });
+
+  it('F7: clear ignores hours; the stored payload has none', async () => {
+    const seen: InfluenceRequest[] = [];
+    const source: InfluenceSource = {
+      applyInfluence: (req) => {
+        seen.push(req);
+        return { ok: true, id: 'inf_1', tick: 1, refs: {} };
+      },
+      influenceLog: () => ({ entries: [], budget: { limit: 6, usedToday: 0, resetsAtTick: 1440 } }),
+    };
+    const { server } = await boot({ source });
+    expect((await post(server.port, 'weather', { weather: 'clear', hours: -5 })).status).toBe(200);
+    expect(seen.at(-1)).toEqual({ endpoint: 'weather', body: { weather: 'clear' } });
+    expect(parseInfluenceBody('weather', { weather: 'rain', hours: 2 }).body).toEqual({
+      weather: 'rain',
+      hours: 2,
+    });
+  });
+});
+
+describe('F6: token compare', () => {
+  it('compares fixed-size digests, so any length gives the same answer path', () => {
+    const want = 'w'.repeat(40);
+    expect(tokenMatches(want, want)).toBe(true);
+    for (const given of ['', 'w', 'w'.repeat(39), 'w'.repeat(41), 'x'.repeat(40), 'w'.repeat(4000)])
+      expect(tokenMatches(given, want), String(given.length)).toBe(false);
+  });
+
+  it('checkAccess (observer and influence) uses it: wrong-length tokens get 401', () => {
+    for (const authorization of ['Bearer a', `Bearer ${'t'.repeat(5000)}`])
+      expect(
+        checkAccess(
+          { remoteAddress: '127.0.0.1', authorization },
+          { allowRemote: false, token: 'secret-token' },
+        ),
+      ).toMatchObject({
+        ok: false,
+        status: 401,
+      });
+    expect(
+      checkAccess(
+        { remoteAddress: '127.0.0.1', authorization: 'bearer   secret-token  ' },
+        { allowRemote: false, token: 'secret-token' },
+      ),
+    ).toEqual({ ok: true });
   });
 });
