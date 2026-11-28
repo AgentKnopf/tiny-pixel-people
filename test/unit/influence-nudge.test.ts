@@ -240,7 +240,8 @@ describe('nudge with the real minds (mock provider)', () => {
     expect(['llm', 'fallback']).toContain(after.source);
     expect(entry(engine, r3.id).outcomes.planAfter).toEqual(after);
 
-    expect(prompts.length).toBeGreaterThan(0);
+    // The thought itself does reach the next plan through retrieval, as a plain memory line.
+    expect(prompts.some((p) => p.startsWith('plan.') && p.includes('pink house'))).toBe(true);
     for (const p of prompts) {
       expect(p).not.toMatch(/inf_\d/);
       expect(p.toLowerCase()).not.toContain('nudge');

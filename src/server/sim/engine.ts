@@ -47,6 +47,7 @@ import { villageFor } from '../cognition/village.ts';
 import type {
   ApplyInfluenceOptions,
   InfluenceBudget,
+  InfluenceId,
   InfluenceLogPage,
   InfluenceLogQuery,
   InfluenceRequest,
@@ -74,7 +75,7 @@ import { SimClock } from './clock.ts';
 import { advanceAlongPath, distance, facingFor, tileOf } from './movement.ts';
 import { CONVERSATION_SOCIAL_BONUS, initialNeeds, updateNeeds } from './needs.ts';
 import { isWalkable, PathFinder } from './pathfinding.ts';
-import { currentBlock, isAwakeAt } from './plan.ts';
+import { awakeWindow, currentBlock, isAwakeAt } from './plan.ts';
 import { Rng } from './rng.ts';
 import { createStubConversationRunner } from './stub-mind.ts';
 import { TownLog } from './town-log.ts';
@@ -452,6 +453,7 @@ export class Engine implements SimEngine, SimHost {
     this.train = cfg.train.enabled && hasStation ? new Train(cfg.train, startAt, restore?.train) : null;
     this.rides = new Rides(this.map.locations, cfg.zoo, startAt);
     this.registerBuiltins();
+    this.registerNudge();
     recordTownLog(this, this.townLog);
     this.townLog.anchor(true);
   }
@@ -2330,6 +2332,73 @@ export class Engine implements SimEngine, SimHost {
   }
 
   // ---------- built-in commands ----------
+
+  // ---------- influence: nudge (specs/influence-api-v2.md §4.4) ----------
+
+  /**
+   * An importance-3 observation in the target's own words, tagged meta.influenceId. Explicit
+   * importance: never rated by the model, below the gossip and re-plan thresholds. The tag never
+   * reaches a prompt. Registered last, after the villagers are restored (resume reads their plans).
+   */
+  private registerNudge(): void {
+    /** Nudges still waiting for their planAfter, with the plan the target had when nudged. */
+    const waiting = new Map<InfluenceId, { villagerId: VillagerId; day: number; revision: number }>();
+    const baseline = (id: VillagerId, influenceId: InfluenceId) => {
+      const plan = this.runtimes.get(id)?.state.plan;
+      waiting.set(influenceId, { villagerId: id, day: plan?.day ?? -1, revision: plan?.revision ?? -1 });
+    };
+    this.bus.on('plan.changed', ({ villagerId, plan }) => {
+      if (!plan) return;
+      for (const [influenceId, w] of waiting) {
+        if (w.villagerId !== villagerId || (plan.day === w.day && plan.revision === w.revision)) continue;
+        waiting.delete(influenceId);
+        const planAfter = { tick: this.now(), revision: plan.revision, source: plan.source };
+        this.influence.updateOutcomes('nudge', influenceId, (o) => (o.planAfter = planAfter));
+      }
+    });
+    this.influence.register('nudge', {
+      check: ({ agent, thought }) => {
+        const rt = this.runtimes.get(agent);
+        if (!rt)
+          return { status: 422, error: 'invalid', message: `Unknown villager "${agent}".`, field: 'agent' };
+        const now = this.now();
+        if (rt.state.status === 'sleeping' || !isAwakeAt(rt.profile, now))
+          return { status: 409, error: 'asleep', wakesAt: this.wakesAt(rt, now) };
+        return {
+          targets: [agent],
+          ...(rt.profile.transient ? { visitor: true } : {}),
+          text: `A thought was nudged into ${rt.profile.name}'s mind: '${thought}'`,
+          outcomes: {},
+          apply: (influenceId) => {
+            rt.mind.observe({
+              at: now,
+              kind: 'observation',
+              text: thought,
+              importance: 3,
+              meta: { influenceId },
+            });
+            const recent = rt.mind.recentMemories?.(8) ?? rt.mind.serialize().memories.slice(-8);
+            if (!recent.some((m) => m.meta.influenceId === influenceId))
+              throw new Error(`nudge ${influenceId}: the memory was not stored`);
+            baseline(agent, influenceId);
+            return { refs: {} };
+          },
+        };
+      },
+      resume: (e) => {
+        // The plan at nudge time is not saved: the next new plan after the restore counts.
+        if (!e.outcomes.planAfter && e.targets[0]) baseline(e.targets[0], e.id);
+      },
+    });
+  }
+
+  /** Next tick the villager is up: tomorrow's (or today's) wake time, or the next minute if already due. */
+  private wakesAt(rt: Runtime, now: GameMinutes): GameMinutes {
+    if (isAwakeAt(rt.profile, now)) return Math.floor(now) + 1;
+    const { wake } = awakeWindow(rt.profile);
+    const t = dayOf(now) * MINUTES_PER_DAY + wake;
+    return t > now ? t : t + MINUTES_PER_DAY;
+  }
 
   private registerBuiltins(): void {
     this.registerCommand('speed', (cmd) => {

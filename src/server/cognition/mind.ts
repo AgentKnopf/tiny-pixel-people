@@ -333,7 +333,13 @@ export class Mind implements VillagerMind {
         .trim();
       const key = obs.text.toLowerCase().replace(/\s+/g, ' ').trim();
       const prev = this.lastObs.get(subject);
-      if (prev && (prev.key === key || obs.at - prev.at < this.settings.observationCooldownMinutes)) return;
+      // An influence was accepted and logged, so it is always stored; it still counts as seen.
+      if (
+        !obs.meta?.influenceId &&
+        prev &&
+        (prev.key === key || obs.at - prev.at < this.settings.observationCooldownMinutes)
+      )
+        return;
       this.lastObs.set(subject, { key, at: obs.at });
     }
     if (obs.kind === 'event' && obs.meta?.eventId) {
