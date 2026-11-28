@@ -212,6 +212,27 @@ describe('nudge: planAfter ("a plan was made after the nudge")', () => {
     });
     expect(entry(b.engine, r.id).outcomes.planAfter).toMatchObject({ revision: 0, source: 'fallback' });
   });
+  it('ignores a new plan made before the nudge (createdAt earlier), also after a restore', () => {
+    const a = createSimTestWorld({ config: ON, startAt: '10:00' });
+    const id = dayPerson(a.engine);
+    const r = accepted(nudge(a.engine, id, 'hmm'));
+    const old = (createdAt: number, revision = 0): DayPlan => ({
+      day: dayOf(a.engine.now()) + 1,
+      summary: 'x',
+      blocks: [],
+      revision,
+      source: 'llm',
+      createdAt,
+    });
+    mindWorld(a.engine, id).setPlan(old(a.engine.now() - 10));
+    expect(entry(a.engine, r.id).outcomes.planAfter).toBeUndefined();
+    const b = createSimTestWorld({ config: ON, startAt: '10:00', restore: a.engine.toSaveData() });
+    mindWorld(b.engine, id).setPlan(old(b.engine.now() - 10, 1));
+    expect(entry(b.engine, r.id).outcomes.planAfter).toBeUndefined();
+    // Made in the same minute as the nudge: counts (it is a different plan from the one at nudge time).
+    mindWorld(b.engine, id).setPlan(old(entry(b.engine, r.id).tick, 2));
+    expect(entry(b.engine, r.id).outcomes.planAfter).toMatchObject({ revision: 2 });
+  });
 });
 
 describe('nudge with the real minds (mock provider)', () => {
@@ -248,6 +269,45 @@ describe('nudge with the real minds (mock provider)', () => {
       expect(p).not.toContain('influence');
     }
     expect(prompts.filter((p) => p.startsWith('importance.rate') && p.includes('pink house'))).toEqual([]);
+  }, 60_000);
+  it('does not credit a plan for tomorrow that was prepared before the nudge (published at bedtime or dawn)', async () => {
+    const w = await createTestWorld({ config: ON, startAt: '15:00', villagers: 4 });
+    const engine = w.engine as Engine;
+    const id = dayPerson(engine);
+    const mind = (
+      engine as unknown as { runtimes: Map<VillagerId, { mind: { prepared: Map<number, DayPlan> } }> }
+    ).runtimes.get(id)!.mind;
+    const tomorrow = dayOf(w.now()) + 1;
+    expect(await w.until(() => mind.prepared.has(tomorrow), 10 * 60)).toBe(true);
+    const preparedAt = mind.prepared.get(tomorrow)!.createdAt;
+    await w.advance(10);
+    const nudgedAt = w.now();
+    expect(isAwakeAt(w.profile(id), nudgedAt)).toBe(true);
+    const r = accepted(nudge(engine, id, 'I keep thinking about the pink house next door.'));
+
+    // Every plan the engine gets from now on.
+    const plans: { tick: number; plan: DayPlan }[] = [];
+    (
+      engine as unknown as {
+        bus: {
+          on(e: 'plan.changed', f: (p: { villagerId: VillagerId; plan: DayPlan | null }) => void): void;
+        };
+      }
+    ).bus.on('plan.changed', ({ villagerId, plan }) => {
+      if (villagerId === id && plan) plans.push({ tick: w.now(), plan });
+    });
+    // Run past the publish of the prepared plan (bedtime, or dawn at the latest) and into tomorrow.
+    await w.advanceTo(at(tomorrow, '12:00'), { chunk: 1 });
+    expect(plans.some((p) => p.plan.day === tomorrow && p.plan.createdAt === preparedAt)).toBe(true);
+    expect(preparedAt).toBeLessThan(nudgedAt);
+    // The next plan actually made after the nudge (tomorrow evening's plan for the day after) counts.
+    expect(await w.until(() => entry(engine, r.id).outcomes.planAfter !== undefined, MINUTES_PER_DAY)).toBe(
+      true,
+    );
+    const after = entry(engine, r.id).outcomes.planAfter!;
+    const credited = plans.find((p) => p.tick === after.tick && p.plan.revision === after.revision)!;
+    expect(after.tick).toBeGreaterThanOrEqual(nudgedAt);
+    expect(credited.plan.createdAt).toBeGreaterThanOrEqual(nudgedAt);
   }, 60_000);
 });
 
