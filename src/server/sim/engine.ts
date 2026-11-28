@@ -332,6 +332,11 @@ export class Engine implements SimEngine, SimHost {
   private romanceList: Romance[] = [];
   /** Visitors who have had a conversation with a resident. */
   private readonly visitorsMet = new Set<VillagerId>();
+  /** Nudges still waiting for their planAfter: target, nudge tick and the plan it had then. */
+  private readonly nudgeWaiting = new Map<
+    InfluenceId,
+    { villagerId: VillagerId; tick: GameMinutes; day: number; revision: number }
+  >();
   private worldDraws = { minute: -1, n: 0 };
 
   constructor(opts: EngineOptions) {
@@ -823,6 +828,8 @@ export class Engine implements SimEngine, SimHost {
         this.upsertRomance({ ...r, stage: 'ended', updatedAt: now });
     this.runtimes.delete(id);
     this.visitorsMet.delete(id);
+    for (const [influenceId, w] of this.nudgeWaiting)
+      if (w.villagerId === id) this.nudgeWaiting.delete(influenceId);
     this.lastFrames.delete(id);
     this.broadcast({ type: 'villagers.changed', added: [], removed: [id] });
   }
@@ -2341,16 +2348,29 @@ export class Engine implements SimEngine, SimHost {
    * reaches a prompt. Registered last, after the villagers are restored (resume reads their plans).
    */
   private registerNudge(): void {
-    /** Nudges still waiting for their planAfter, with the plan the target had when nudged. */
-    const waiting = new Map<InfluenceId, { villagerId: VillagerId; day: number; revision: number }>();
-    const baseline = (id: VillagerId, influenceId: InfluenceId) => {
+    const waiting = this.nudgeWaiting;
+    // Baseline: the plan the target has now. A later plan counts only if it differs from it and was
+    // made at or after the nudge, so a plan for tomorrow drafted earlier and published at bedtime or
+    // dawn is not credited; the day/revision check covers a plan made in the nudge's own minute.
+    const baseline = (id: VillagerId, influenceId: InfluenceId, tick: GameMinutes) => {
       const plan = this.runtimes.get(id)?.state.plan;
-      waiting.set(influenceId, { villagerId: id, day: plan?.day ?? -1, revision: plan?.revision ?? -1 });
+      waiting.set(influenceId, {
+        villagerId: id,
+        tick,
+        day: plan?.day ?? -1,
+        revision: plan?.revision ?? -1,
+      });
     };
     this.bus.on('plan.changed', ({ villagerId, plan }) => {
       if (!plan) return;
       for (const [influenceId, w] of waiting) {
-        if (w.villagerId !== villagerId || (plan.day === w.day && plan.revision === w.revision)) continue;
+        // Trimmed from the log: nothing left to update.
+        if (!this.influence.has(influenceId)) {
+          waiting.delete(influenceId);
+          continue;
+        }
+        if (w.villagerId !== villagerId || plan.createdAt < w.tick) continue;
+        if (plan.day === w.day && plan.revision === w.revision) continue;
         waiting.delete(influenceId);
         const planAfter = { tick: this.now(), revision: plan.revision, source: plan.source };
         this.influence.updateOutcomes('nudge', influenceId, (o) => (o.planAfter = planAfter));
@@ -2380,20 +2400,22 @@ export class Engine implements SimEngine, SimHost {
             const recent = rt.mind.recentMemories?.(8) ?? rt.mind.serialize().memories.slice(-8);
             if (!recent.some((m) => m.meta.influenceId === influenceId))
               throw new Error(`nudge ${influenceId}: the memory was not stored`);
-            baseline(agent, influenceId);
+            baseline(agent, influenceId, now);
             return { refs: {} };
           },
         };
       },
       resume: (e) => {
-        // The plan at nudge time is not saved: the next new plan after the restore counts.
-        if (!e.outcomes.planAfter && e.targets[0]) baseline(e.targets[0], e.id);
+        // The plan at nudge time is not saved: the next new plan made after the nudge counts.
+        if (!e.outcomes.planAfter && e.targets[0]) baseline(e.targets[0], e.id, e.tick);
       },
     });
   }
 
-  /** Next tick the villager is up: tomorrow's (or today's) wake time, or the next minute if already due. */
-  private wakesAt(rt: Runtime, now: GameMinutes): GameMinutes {
+  /**
+   * Next tick the villager is up: tomorrow's (or today's) wake time, or the next minute if already
+   * due. A hint: with wakeUpMode 'hold' a villager still in bed at dawn may take longer.
+   */ private wakesAt(rt: Runtime, now: GameMinutes): GameMinutes {
     if (isAwakeAt(rt.profile, now)) return Math.floor(now) + 1;
     const { wake } = awakeWindow(rt.profile);
     const t = dayOf(now) * MINUTES_PER_DAY + wake;

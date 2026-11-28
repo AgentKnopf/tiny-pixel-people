@@ -176,6 +176,11 @@ export class InfluenceService {
     return { ok: true, id, tick: now, refs: { ...refs } };
   }
 
+  /** Whether the influence is still in the log. */
+  has(id: InfluenceId): boolean {
+    return this.byId.has(id);
+  }
+
   /** Update the outcomes of a logged influence (no-op once it has left the log). */
   updateOutcomes<E extends InfluenceEndpoint>(
     endpoint: E,
