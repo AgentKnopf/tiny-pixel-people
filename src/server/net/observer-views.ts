@@ -359,6 +359,7 @@ export class ObserverViews {
         importance: m.importance,
         text: m.text,
         ...(m.meta.archived ? { archived: true } : {}),
+        ...(m.meta.influenceId ? { influence_id: m.meta.influenceId } : {}),
       });
     }
     // Polling with `since` pages forward from the oldest new memory; the page is still newest first.
