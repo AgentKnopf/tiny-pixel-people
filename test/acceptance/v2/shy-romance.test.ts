@@ -1,5 +1,6 @@
 /** AC25: Laude and Franzi's slow-burn shy crush. */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createMind } from '../../../src/server/cognition/mind.ts';
 import { MockChatProvider } from '../../../src/server/llm/providers/mock.ts';
 import { at, dayOf, formatClock } from '../../../src/shared/time.ts';
 import type {
@@ -115,16 +116,6 @@ describe.skipIf(!readyV2(...F))(`AC25: Laude and Franzi's shy crush${waitingForV
       expect(long.map((c) => `${c.id}: ${c.messages.length} turns`)).toEqual([]);
     });
 
-    it('another villager has a memory about them at the post office', () => {
-      const others = w!.state().villagers.filter((v) => !PAIR.includes(v.id));
-      const hits = others.filter((v) =>
-        w!
-          .memories(v.id)
-          .some((m) => /franzi/i.test(m.text) && /laude/i.test(m.text) && /post office/i.test(m.text)),
-      );
-      expect(hits.length).toBeGreaterThanOrEqual(1);
-    });
-
     it('no date is asked before day shyMinDays or while either affinity is below 8', () => {
       const { shyMinDays } = w!.config.romance;
       const early = asks
@@ -146,6 +137,105 @@ describe.skipIf(!readyV2(...F))(`AC25: Laude and Franzi's shy crush${waitingForV
     it('the inspector shows the seeded shy crush', () => {
       expect(seedLines[LAUDE]).toContainEqual(expect.stringContaining('Shy crush'));
       expect(seedLines[FRANZI]).toContainEqual(expect.stringContaining('Shy crush'));
+    });
+  });
+
+  // Controlled scenario for the gossip bullet (spec v2 §7.1 "Gossip"). Under the mock provider with
+  // drainLlm, a pair chat that starts with both standing on adjacent tiles runs and ends inside one
+  // step, so no observer's update ever sees it; whether a week brings such a visible chat and a
+  // witness together is luck (about 2 of 16 seeds). Controls, and what this scenario does not cover:
+  // - four villagers' intents are pinned in the window (Franzi and Laude go to the post office, the
+  //   witness Mia to the notice board, the control Tom to the penguins); each pinned mind still
+  //   runs its real update() first, so romance and shyGossip run unchanged;
+  // - the post office keeps only two of its real spots, 2 tiles apart, so the engine's chat start
+  //   always needs a one-tile approach walk and the chat is live for one step;
+  // - the 7-day run above therefore no longer proves that gossip happens on its own in a normal week,
+  //   and the pair's own plans bringing them there are covered by the visit bullet, not here.
+  describe('gossip at the post office, with a witness nearby', () => {
+    const WITNESS = 'mia';
+    const CONTROL = 'tom';
+    const GOSSIP = 'Franzi was at the post office again, chatting shyly with Laude.';
+    const PINS: Record<VillagerId, { from: string; locationId: string; activity: string }> = {
+      [FRANZI]: { from: '09:00', locationId: 'post_office', activity: 'drop by the post office' },
+      [LAUDE]: { from: '09:00', locationId: 'post_office', activity: 'sort the letters' },
+      [WITNESS]: { from: '06:30', locationId: 'notice_board', activity: 'read the notices' },
+      [CONTROL]: { from: '06:30', locationId: 'zoo_penguin', activity: 'watch the penguins' },
+    };
+    const UNTIL = at(0, '11:00');
+    let w: TestWorld | undefined;
+    const startDistance = new Map<string, number>();
+    const live: { id: string; witness: number; control: number }[] = [];
+
+    beforeAll(async () => {
+      const base = await createTestWorld({ villagers: 12, seed: 25 });
+      const map = structuredClone(base.engine.map);
+      base.dispose();
+      const post = map.locations.find((l) => l.id === 'post_office')!;
+      post.spots = [
+        { x: 52, y: 6 },
+        { x: 54, y: 6 },
+      ];
+      const world = await createTestWorld({
+        villagers: 12,
+        seed: 25,
+        startAt: '06:00',
+        map,
+        createMind: (profile, deps) => {
+          const mind = createMind(profile, deps);
+          const pin = PINS[profile.id];
+          if (!pin) return mind;
+          const update = mind.update.bind(mind);
+          mind.update = (view) => {
+            const intent = update(view);
+            return view.now >= at(0, pin.from) && view.now < UNTIL
+              ? { type: 'goto', locationId: pin.locationId, activity: pin.activity }
+              : intent;
+          };
+          return mind;
+        },
+      });
+      w = world;
+      const tiles = (p: { x: number; y: number }) => {
+        const { x, y, w: aw, h } = post.area;
+        return Math.max(Math.max(x - p.x, 0, p.x - (x + aw - 1)), Math.max(y - p.y, 0, p.y - (y + h - 1)));
+      };
+      await world.advanceTo(UNTIL, {
+        chunk: 1,
+        onStep: ({ snapshot }) => {
+          const vs = snapshot().villagers;
+          const [f, l] = [FRANZI, LAUDE].map((id) => vs.find((v) => v.id === id)!);
+          if (!f!.conversationId || f!.conversationId !== l!.conversationId) return;
+          // Seen right after the step that started it, before the approach walk moves anyone.
+          if (!live.some((s) => s.id === f!.conversationId))
+            startDistance.set(f!.conversationId, Math.hypot(f!.pos.x - l!.pos.x, f!.pos.y - l!.pos.y));
+          live.push({
+            id: f!.conversationId,
+            witness: tiles(vs.find((v) => v.id === WITNESS)!.pos),
+            control: tiles(vs.find((v) => v.id === CONTROL)!.pos),
+          });
+        },
+      });
+    }, 600_000);
+
+    afterAll(() => w?.dispose());
+
+    it('the engine starts their chat at the post office with an approach walk, and it is live at a step', () => {
+      // The test never starts a conversation itself: every one here was started by the engine.
+      const atPost = w!
+        .conversations()
+        .filter((c) => isPair(c.participants) && c.locationId === 'post_office');
+      expect(atPost.length).toBeGreaterThanOrEqual(1);
+      const seen = live.filter((s) => atPost.some((c) => c.id === s.id));
+      expect([...startDistance.values()].every((d) => d > 1.5)).toBe(true);
+      expect(seen.length).toBeGreaterThanOrEqual(1);
+      expect(seen.every((s) => s.witness <= 8 && s.control > 8)).toBe(true);
+    });
+
+    it('the witness remembers it once; the control and the pair do not', () => {
+      const gossip = (id: VillagerId) => w!.memories(id).filter((m) => m.text === GOSSIP);
+      expect(gossip(WITNESS)).toHaveLength(1);
+      expect(gossip(WITNESS)[0]).toMatchObject({ kind: 'observation', importance: 5 });
+      for (const id of [CONTROL, FRANZI, LAUDE]) expect(gossip(id)).toHaveLength(0);
     });
   });
 
