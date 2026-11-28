@@ -1,11 +1,13 @@
 import { dayOf, minuteOfDay } from '../../shared/time.ts';
 import type {
   DayPlan,
+  GameMinutes,
   LocationId,
   PlanBlock,
   VillagerId,
   VillagerState,
   Weather,
+  WorldEvent,
 } from '../../shared/types.ts';
 import type { Ctx } from './context.ts';
 import { distance } from './geometry.ts';
@@ -24,10 +26,17 @@ interface Swap {
   swapped: LocationId;
 }
 
+/** Follows one rain: blocks it moved indoors and when it stopped. */
+export interface RainWatcher {
+  swapped(blocks: number): void;
+  ended(at: GameMinutes): void;
+}
+
 /** Weather and the rain plan swap (spec §7.13): outdoor blocks move indoors until the rain stops. */
 export class WeatherController {
   weather: Weather;
   private swaps: Swap[] = [];
+  private watchers: { rainId: string; watcher: RainWatcher }[] = [];
   private lastHour: number;
 
   constructor(
@@ -44,13 +53,26 @@ export class WeatherController {
     return this.weather.state === 'rain';
   }
 
-  startRain(durationMinutes?: number): void {
+  /** The open world event of the current rain, if it is raining. */
+  currentRainId(): string | null {
+    if (!this.raining) return null;
+    return this.log.active().find((e) => e.kind === 'rain')?.id ?? null;
+  }
+
+  /** Follow the current rain (`rainId`) until it stops; ignored if that rain is not the current one. */
+  watchRain(rainId: string, watcher: RainWatcher): void {
+    if (this.currentRainId() === rainId) this.watchers.push({ rainId, watcher });
+  }
+
+  /** `watcher` follows this rain from its first plan swaps on. */
+  startRain(durationMinutes?: number, watcher?: RainWatcher): WorldEvent {
     const now = this.ctx.host.now();
     const rnd = this.ctx.host.random();
     const duration =
       durationMinutes ?? Math.round(RAIN_MIN_MINUTES + rnd * (RAIN_MAX_MINUTES - RAIN_MIN_MINUTES));
     this.weather = { state: 'rain', since: now, until: now + duration };
-    this.log.open('rain', now + duration, { until: now + duration });
+    const ev = this.log.open('rain', now + duration, { until: now + duration });
+    if (watcher) this.watchers.push({ rainId: ev.id, watcher });
     this.ctx.emit({ type: 'weather.updated', weather: { ...this.weather } });
     this.ctx.toast('🌧', 'It started raining');
     this.ctx.log('It started raining');
@@ -58,6 +80,7 @@ export class WeatherController {
       this.ctx.host.addMemory(v.id, { at: now, kind: 'event', text: 'It started raining', importance: 3 });
     }
     this.applySwaps();
+    return ev;
   }
 
   stopRain(): void {
@@ -68,6 +91,9 @@ export class WeatherController {
     for (const ev of this.log.active()) if (ev.kind === 'rain') this.log.close(ev);
     this.ctx.emit({ type: 'weather.updated', weather: { ...this.weather } });
     this.ctx.log('The rain stopped');
+    const watchers = this.watchers;
+    this.watchers = [];
+    for (const w of watchers) w.watcher.ended(now);
   }
 
   update(): void {
@@ -92,6 +118,7 @@ export class WeatherController {
     const now = this.ctx.host.now();
     const day = dayOf(now);
     const mod = minuteOfDay(now);
+    let moved = 0;
     for (const v of this.ctx.host.villagers()) {
       if (!v.plan || v.plan.day !== day) continue;
       let next: DayPlan | null = null;
@@ -109,9 +136,11 @@ export class WeatherController {
         });
         next ??= structuredClone(v.plan!);
         next.blocks[i]!.locationId = target;
+        moved++;
       });
       if (next) this.ctx.host.setPlan(v.id, next);
     }
+    if (moved > 0) for (const w of this.watchers) w.watcher.swapped(moved);
   }
 
   private restoreSwaps(): void {
