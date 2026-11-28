@@ -423,6 +423,8 @@ export class Engine implements SimEngine, SimHost {
         c.status === 'active' ? { ...c, status: 'aborted' as const, endedAt: savedAt } : c,
       );
     }
+    // After the player world restored its weather, so resume() finds it.
+    this.playerWorld.registerInfluence(this.influence);
 
     const profiles = opts.profiles ?? loadProfiles(this.map, undefined, cfg.sim.villagers);
     const all = restore

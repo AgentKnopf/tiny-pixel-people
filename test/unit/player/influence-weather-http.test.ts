@@ -38,7 +38,10 @@ async function boot(engine: Engine) {
     },
     log: async () => {
       const r = await fetch(`${base}/log`, { headers: HEADERS });
-      return (await r.json()) as { entries: { outcomes: WeatherOutcomes; refs: Record<string, string> }[] };
+      return {
+        entries: (await r.json()) as { outcomes: WeatherOutcomes }[],
+        budget: JSON.parse(r.headers.get('x-influence-budget') ?? 'null') as { usedToday: number },
+      };
     },
   };
 }
@@ -64,7 +67,8 @@ describe('POST /api/influence/weather', () => {
     expect(await api.post({ weather: 'clear' })).toEqual({ status: 409, json: { error: 'not_raining' } });
     expect(engine.influence.budget().usedToday).toBe(2);
 
-    const { entries } = await api.log();
+    const { entries, budget } = await api.log();
+    expect(budget.usedToday).toBe(2);
     expect(entries.map((e) => e.outcomes)).toEqual([
       { startedAt: now, endedAt: now, swaps: expect.any(Number) },
       { endedAt: now, swaps: 0 },

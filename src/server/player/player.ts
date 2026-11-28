@@ -35,6 +35,7 @@ import { DecorController } from './decor.ts';
 import { Economy } from './economy.ts';
 import { Farm, isOpen, nearLocation } from './farm-economy.ts';
 import { Hotel } from './hotel.ts';
+import { weatherInfluence, type InfluenceRegistry } from './influence.ts';
 import { HouseVisits } from './house-visits.ts';
 import { PostOffice } from './post-office.ts';
 import { distance, isWalkable, stepAlong, tileOf, walkableNeighbours } from './geometry.ts';
@@ -208,6 +209,21 @@ export class PlayerWorld implements PlayerService {
 
   get weather(): Readonly<Weather> {
     return this.weatherCtl.weather;
+  }
+
+  /**
+   * Register the influence endpoints this world owns (weather). Call after construction so
+   * `resume` finds the restored weather (spec v2 influence §4.5).
+   */
+  registerInfluence(registry: InfluenceRegistry): void {
+    registry.register(
+      'weather',
+      weatherInfluence(
+        this.weatherCtl,
+        () => this.ctx.host.now(),
+        (id, update) => registry.updateOutcomes('weather', id, update),
+      ),
+    );
   }
 
   // ---------- engine loop ----------
