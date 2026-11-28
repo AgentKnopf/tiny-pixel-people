@@ -1,6 +1,21 @@
-import { INFLUENCE_RAIN_HOURS, type WeatherOutcomes } from '../../shared/influence.ts';
-import type { InfluenceId } from '../../shared/influence.ts';
+import type { LearnedFact } from '../cognition/types.ts';
 import type { InfluenceHandler, InfluenceService } from '../sim/influence.ts';
+import { awakeWindow, isAwakeAt } from '../sim/plan.ts';
+import {
+  INFLUENCE_RAIN_HOURS,
+  RUMOUR_SOURCE_LABELS,
+  type InfluenceId,
+  type RumourOutcomes,
+  type WeatherOutcomes,
+} from '../../shared/influence.ts';
+import { dayOf, MINUTES_PER_DAY } from '../../shared/time.ts';
+import type {
+  GameMinutes,
+  MemoryId,
+  VillagerId,
+  VillagerProfile,
+  VillagerState,
+} from '../../shared/types.ts';
 import type { RainWatcher, WeatherController } from './weather.ts';
 
 /** The part of the engine's influence service the player world's endpoint handlers use. */
@@ -61,6 +76,72 @@ export function weatherInfluence(
       const rainId = entry.refs.worldEventId;
       if (entry.payload.weather !== 'rain' || entry.outcomes.endedAt !== undefined || !rainId) return;
       weather.watchRain(rainId, rainWatcher(entry.id, update));
+    },
+  };
+}
+
+type UpdateRumour = (id: InfluenceId, update: (o: RumourOutcomes) => void) => void;
+
+/** What the rumour handler needs from the player world. */
+export interface RumourDeps {
+  now(): GameMinutes;
+  villager(id: VillagerId): VillagerState | undefined;
+  profile(id: VillagerId): VillagerProfile | undefined;
+  nameOf(id: VillagerId): string;
+  /**
+   * Give `to` the rumour as heard from `label` and start tracking it; returns the origin id.
+   * Never names the player in anything a villager can read.
+   */
+  tell(to: VillagerId, text: string, label: string, influenceId: InfluenceId): MemoryId;
+  update: UpdateRumour;
+}
+
+export interface RumourInfluence {
+  handler: InfluenceHandler<'rumour'>;
+  /** A new hop of a tracked rumour (`Rumors.recordLearned` accepted it). */
+  spread(fact: LearnedFact): void;
+}
+
+/** Next game minute the villager may be told something: now if only the status lags, else the next wake time. */
+export function wakesAt(profile: VillagerProfile, now: GameMinutes): GameMinutes {
+  if (isAwakeAt(profile, now)) return Math.floor(now) + 1;
+  const t = dayOf(now) * MINUTES_PER_DAY + awakeWindow(profile).wake;
+  return t > now ? t : t + MINUTES_PER_DAY;
+}
+
+/** `POST /api/influence/rumour` (spec §4.1): a rumour from an in-world source, spread by normal gossip. */
+export function rumourInfluence(deps: RumourDeps): RumourInfluence {
+  const byOrigin = new Map<MemoryId, InfluenceId>();
+  return {
+    handler: {
+      check({ to, text, source }) {
+        const villager = deps.villager(to);
+        const profile = deps.profile(to);
+        if (!villager || !profile)
+          return { status: 422, error: 'invalid', field: 'to', message: `Unknown villager "${to}".` };
+        const now = deps.now();
+        if (villager.status === 'sleeping' || !isAwakeAt(profile, now))
+          return { status: 409, error: 'asleep', wakesAt: wakesAt(profile, now) };
+        const label = RUMOUR_SOURCE_LABELS[source];
+        return {
+          targets: [to],
+          ...(profile.transient ? { visitor: true } : {}),
+          text: `${label} told ${deps.nameOf(to)} a rumour: ${text}`,
+          outcomes: { spreadTo: [] },
+          apply: (id) => {
+            const originId = deps.tell(to, text, label, id);
+            byOrigin.set(originId, id);
+            return { refs: { originId } };
+          },
+        };
+      },
+      resume(entry) {
+        if (entry.refs.originId) byOrigin.set(entry.refs.originId, entry.id);
+      },
+    },
+    spread(fact) {
+      const id = byOrigin.get(fact.originId);
+      if (id) deps.update(id, (o) => o.spreadTo.push({ from: fact.from, to: fact.to, tick: fact.at }));
     },
   };
 }

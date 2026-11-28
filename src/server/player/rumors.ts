@@ -14,7 +14,7 @@ export class Rumors implements RumorTracker {
     private readonly ctx: Ctx,
     restored?: Rumor[],
     /** Called for every rumor started and hop recorded (the post office log, spec v2 §8.3). */
-    private readonly onChange?: (rumor: Rumor, hop?: RumorHop) => void,
+    private readonly onChange?: (rumor: Rumor, hop?: RumorHop, authorLabel?: string) => void,
   ) {
     if (restored) this.rumors = structuredClone(restored);
   }
@@ -25,6 +25,8 @@ export class Rumors implements RumorTracker {
     originMemoryId: string,
     at: number,
     knownBy: VillagerId[] = [],
+    /** Who villagers are told started it, instead of `startedBy`'s name (influence rumours). */
+    authorLabel?: string,
   ): Rumor {
     const existing = this.byOrigin(originMemoryId);
     if (existing) return existing;
@@ -39,7 +41,7 @@ export class Rumors implements RumorTracker {
     };
     this.rumors.push(rumor);
     this.broadcast(rumor);
-    this.onChange?.(rumor);
+    this.onChange?.(rumor, undefined, authorLabel);
     return rumor;
   }
 

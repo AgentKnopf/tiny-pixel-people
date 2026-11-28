@@ -51,7 +51,10 @@ describe('POST /api/influence/rumour', () => {
 
     const ok = await post({ to: a!.id, text: TEXT, source: 'child' });
     expect(ok.status).toBe(200);
-    expect(ok.json).toMatchObject({ id: 'inf_1', refs: { originId: expect.stringMatching(/^fact_\d+$/) } });
+    expect(ok.json).toMatchObject({
+      id: 'inf_1',
+      refs: { originId: expect.stringMatching(/^fact_[\d_]+$/) },
+    });
 
     expect((await post({ to: a!.id, text: TEXT, source: 'the player' })).status).toBe(400);
     expect(await post({ to: 'nobody', text: TEXT, source: 'crow' })).toMatchObject({
@@ -72,12 +75,14 @@ describe('AC5: an influence rumour spreads through the normal gossip path', () =
   let originId = '';
   let sentAt = 0;
   let spreadAt: number | null = null;
+  let engine: Engine;
 
   beforeAll(async () => {
     const world = await createTestWorld({ villagers: 12, seed: 25, startAt: '10:00', config: CONFIG });
     w = world;
+    engine = world.engine as unknown as Engine;
     sentAt = world.now();
-    const res = world.engine.applyInfluence({
+    const res = engine.applyInfluence({
       endpoint: 'rumour',
       body: { to: A, text: TEXT, source: 'passerby' },
     });
@@ -85,7 +90,7 @@ describe('AC5: an influence rumour spreads through the normal gossip path', () =
     originId = res.refs.originId!;
     expect(world.command({ type: 'player.pairTalk', aId: A, bId: B })).toEqual([]);
     const spread = () =>
-      world.engine.townLog
+      engine.townLog
         .list()
         .some((e) => e.type === 'gossip_spread' && e.data?.originId === originId && e.agents.includes(B));
     await world.until(() => spread(), 120, 1);
@@ -106,24 +111,32 @@ describe('AC5: an influence rumour spreads through the normal gossip path', () =
   it('within 2 game hours of a forced talk, gossip_spread matches the origin and spreadTo has B', () => {
     expect(spreadAt).not.toBeNull();
     expect(spreadAt! - sentAt).toBeLessThanOrEqual(120);
-    const [entry] = w!.engine.influenceLog({}).entries;
+    const [entry] = engine.influenceLog({}).entries;
     expect((entry!.outcomes as RumourOutcomes).spreadTo).toContainEqual(
       expect.objectContaining({ from: A, to: B }),
     );
   });
 
-  it("no villager memory and no Keep entry contains the player's name", () => {
+  it("no villager memory of the rumour, Laude's Keep log included, contains the player's name", () => {
+    // Every memory the rumour produced: the target's, each gossip hop's (same originId), and
+    // Laude's Keep log. Seeing the avatar ("Kestrel is hanging around ...") is not about the rumour.
     const ids = w!.state().villagers.map((v) => v.id);
-    const leaks = ids.flatMap((id) => w!.memories(id).filter((m) => m.text.includes(PLAYER_NAME)));
+    const carried = ids.flatMap((id) =>
+      w!
+        .memories(id)
+        .filter((m) => m.meta.originId === originId || m.meta.keepId || m.text.includes('cherry pie')),
+    );
+    expect(carried.filter((m) => m.villagerId === B && m.kind === 'heard').length).toBeGreaterThanOrEqual(1);
+    const leaks = carried.filter((m) => m.text.includes(PLAYER_NAME));
     expect(leaks.map((m) => `${m.villagerId}: ${m.text}`)).toEqual([]);
-    const keep = w!.engine.playerWorld.post.keep.all();
+    const keep = engine.playerWorld.post.keep.all();
     expect(keep.some((e) => e.text.startsWith('Rumor started by A passerby:'))).toBe(true);
     expect(keep.filter((e) => e.text.includes(PLAYER_NAME))).toEqual([]);
   });
 
   it('the rumour panel shows the truth: the player started it', () => {
     expect(sentAt).toBe(at(0, '10:00'));
-    expect(w!.engine.playerWorld.rumors.byOrigin(originId)).toMatchObject({
+    expect(engine.playerWorld.rumors.byOrigin(originId)).toMatchObject({
       startedBy: PLAYER_ID,
       text: TEXT,
     });

@@ -42,7 +42,7 @@ describe('rumour influence', () => {
     const res = service.apply(rumour('ada', 'crow'));
     expect(res).toMatchObject({ ok: true, id: 'inf_1', tick: at(0, '08:00') });
     const originId = res.ok ? res.refs.originId : undefined;
-    expect(originId).toMatch(/^fact_\d+$/);
+    expect(originId).toMatch(/^fact_[\d_]+$/);
 
     const [memory] = host.memoriesOf('ada');
     expect(memory).toMatchObject({

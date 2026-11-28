@@ -109,7 +109,13 @@ export type PostLogEvent =
   | { kind: 'note'; note: DoorNote }
   | { kind: 'letter'; letter: Letter }
   | { kind: 'notice'; notice: Notice }
-  | { kind: 'rumor'; rumor: Rumor; hop?: Rumor['hops'][number] };
+  | {
+      kind: 'rumor';
+      rumor: Rumor;
+      hop?: Rumor['hops'][number];
+      /** Shown instead of the starter's name, so the Keep never names the player (influence). */
+      authorLabel?: string;
+    };
 
 /** Letters, notices and the Keep. `log` is the omniscience hook (spec v2 §8.3). */
 export interface PostOfficeService {

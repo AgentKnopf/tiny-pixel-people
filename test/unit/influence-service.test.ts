@@ -161,6 +161,8 @@ describe('day budget', () => {
 
   it('an endpoint without a handler is refused with 422 and not counted', () => {
     const w = world();
+    // Endpoints get handlers as they are built; drop one so this stays about a missing handler.
+    (w.engine.influence as unknown as { handlers: Map<string, unknown> }).handlers.delete('rumour');
     const res = apply(w, { endpoint: 'rumour', body: { to: 'mia', text: 'hi', source: 'crow' } });
     expect(res).toMatchObject({ ok: false, status: 422, error: 'invalid' });
     expect(w.engine.influenceLog({}).budget.usedToday).toBe(0);

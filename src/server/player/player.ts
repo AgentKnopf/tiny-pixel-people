@@ -35,7 +35,12 @@ import { DecorController } from './decor.ts';
 import { Economy } from './economy.ts';
 import { Farm, isOpen, nearLocation } from './farm-economy.ts';
 import { Hotel } from './hotel.ts';
-import { weatherInfluence, type InfluenceRegistry } from './influence.ts';
+import {
+  rumourInfluence,
+  weatherInfluence,
+  type InfluenceRegistry,
+  type RumourInfluence,
+} from './influence.ts';
 import { HouseVisits } from './house-visits.ts';
 import { PostOffice } from './post-office.ts';
 import { distance, isWalkable, stepAlong, tileOf, walkableNeighbours } from './geometry.ts';
@@ -143,6 +148,7 @@ export class PlayerWorld implements PlayerService {
   readonly post: PostOffice;
   private readonly log: WorldEventLog;
   private readonly player: PlayerState;
+  private rumourInfluence?: RumourInfluence;
 
   constructor(opts: CreatePlayerWorldOptions) {
     const { host, config, restore = {} } = opts;
@@ -150,8 +156,13 @@ export class PlayerWorld implements PlayerService {
     this.ctx.continueIdsAfter(restore);
     this.player = restore.player ? structuredClone(restore.player) : this.initialPlayer();
     this.log = new WorldEventLog(this.ctx, restore.worldEvents);
-    this.rumors = new Rumors(this.ctx, restore.rumors, (rumor, hop) =>
-      this.post.log(hop ? { kind: 'rumor', rumor, hop } : { kind: 'rumor', rumor }, this.ctx.host.now()),
+    this.rumors = new Rumors(this.ctx, restore.rumors, (rumor, hop, authorLabel) =>
+      this.post.log(
+        hop
+          ? { kind: 'rumor', rumor, hop }
+          : { kind: 'rumor', rumor, ...(authorLabel !== undefined ? { authorLabel } : {}) },
+        this.ctx.host.now(),
+      ),
     );
     this.post = new PostOffice(
       this.ctx,
@@ -212,10 +223,19 @@ export class PlayerWorld implements PlayerService {
   }
 
   /**
-   * Register the influence endpoints this world owns (weather). Call after construction so
-   * `resume` finds the restored weather (spec v2 influence §4.5).
+   * Register the influence endpoints this world owns (weather, rumour). Call after construction
+   * so `resume` finds the restored weather and rumours (spec v2 influence §4.1, §4.5).
    */
   registerInfluence(registry: InfluenceRegistry): void {
+    this.rumourInfluence = rumourInfluence({
+      now: () => this.ctx.host.now(),
+      villager: (id) => this.ctx.villager(id),
+      profile: (id) => this.ctx.host.profile(id),
+      nameOf: (id) => this.ctx.nameOf(id),
+      tell: (to, text, label, influenceId) => this.tellInfluenceRumour(to, text, label, influenceId),
+      update: (id, update) => registry.updateOutcomes('rumour', id, update),
+    });
+    registry.register('rumour', this.rumourInfluence.handler);
     registry.register(
       'weather',
       weatherInfluence(
@@ -316,7 +336,9 @@ export class PlayerWorld implements PlayerService {
 
   /** `MindWorld.recordLearned`: a fact passed between villagers; adds a rumor hop if it is tracked. */
   onLearned(fact: LearnedFact): Rumor | null {
-    return this.rumors.recordLearned(fact);
+    const rumor = this.rumors.recordLearned(fact);
+    if (rumor) this.rumourInfluence?.spread(fact);
+    return rumor;
   }
 
   /** `MindWorld.taskCompleted`: pay `economy.taskReward` once per task. */
@@ -570,6 +592,22 @@ export class PlayerWorld implements PlayerService {
     this.rumors.start(text.value, PLAYER_ID, originId, now, [villagerId]);
     this.ctx.toast('🗣', `You whispered a rumor to ${this.ctx.nameOf(villagerId)}`);
     return { ok: true };
+  }
+
+  /** An influence rumour: like `tellRumor`, but from `label`, with no walk, speech or toast. */
+  private tellInfluenceRumour(to: VillagerId, text: string, label: string, influenceId: string): string {
+    const now = this.ctx.host.now();
+    const originId = this.ctx.id('fact');
+    // Tracked before the memory exists, so nothing can start it as a rumour by `to` instead.
+    this.rumors.start(text, PLAYER_ID, originId, now, [to], label);
+    this.ctx.host.addMemory(to, {
+      at: now,
+      kind: 'heard',
+      text: `${label} told me: ${text}`,
+      importance: 7,
+      meta: { originId, influenceId },
+    });
+    return originId;
   }
 
   private buy(locationId: LocationId, itemId: ItemId): CommandResult {
