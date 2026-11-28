@@ -18,7 +18,8 @@ function accepting(outcomes: InfluenceOutcomes['weather'] = { swaps: 0 }): Influ
     check: () => ({
       targets: [],
       text: 'The sky clouded over',
-      apply: (id) => ({ refs: { worldEventId: `we_${id}` }, outcomes: structuredClone(outcomes) }),
+      outcomes: structuredClone(outcomes),
+      apply: (id) => ({ refs: { worldEventId: `we_${id}` } }),
     }),
   };
 }
@@ -77,7 +78,7 @@ describe('day budget', () => {
       check: () =>
         refuse
           ? { status: 409, error: 'asleep', wakesAt: at(0, '07:00') }
-          : { targets: ['mia'], text: 'x', apply: () => ({ refs: {}, outcomes: {} }) },
+          : { targets: ['mia'], text: 'x', outcomes: {}, apply: () => ({ refs: {} }) },
     });
     const nudge: InfluenceRequest = { endpoint: 'nudge', body: { agent: 'mia', thought: 'hm' } };
     for (let i = 0; i < 5; i++) expect(apply(w)).toMatchObject({ ok: true });
@@ -190,7 +191,7 @@ describe('influence log', () => {
         targets: ['mia'],
         visitor: true,
         text: 'x',
-        apply: () => ({ refs: {}, outcomes: {} }),
+        outcomes: {}, apply: () => ({ refs: {} }),
       }),
     });
     w.engine.applyInfluence({ endpoint: 'nudge', body: { agent: 'mia', thought: 'hm' } });
@@ -332,3 +333,85 @@ describe('stats', () => {
 
 const _endpointsTyped: InfluenceEndpoint = 'weather';
 void _endpointsTyped;
+
+describe('review follow-ups', () => {
+  it('F1: an outcome update made inside apply() is kept', () => {
+    const w = world();
+    w.engine.influence.register('weather', {
+      check: () => ({
+        targets: [],
+        text: 'Rain',
+        outcomes: { swaps: 0 },
+        apply: (id) => {
+          w.engine.influence.updateOutcomes('weather', id, (o) => (o.swaps = 9));
+          return { refs: {} };
+        },
+      }),
+    });
+    expect(apply(w)).toMatchObject({ ok: true });
+    expect(w.engine.influenceLog({}).entries[0]!.outcomes).toEqual({ swaps: 9 });
+  });
+
+  it('F2: an error in apply() is logged with id and endpoint, rethrown, and leaves no entry or count', () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const w = world();
+      w.engine.influence.register('weather', {
+        check: () => ({
+          targets: [],
+          text: 'Rain',
+          outcomes: { swaps: 0 },
+          apply: () => {
+            throw new Error('boom');
+          },
+        }),
+      });
+      expect(() => apply(w)).toThrow('boom');
+      expect(err.mock.calls.some(([l]) => /inf_1/.test(String(l)) && /weather/.test(String(l)))).toBe(true);
+      expect(w.engine.influenceLog({}).entries).toEqual([]);
+      expect(w.engine.influenceLog({}).budget.usedToday).toBe(0);
+      expect(w.engine.townLog.list().some((e) => e.type === 'influence')).toBe(false);
+      w.engine.influence.register('weather', accepting());
+      // Ids are never reused, so the error line's id stays unique.
+      expect(apply(w)).toMatchObject({ ok: true, id: 'inf_2' });
+    } finally {
+      err.mockRestore();
+    }
+  });
+
+  it('F4: the entry ts is its town log entry ts; a passed-in ts moves the increasing clock forward', () => {
+    const w = world({ influence: { enabled: true, perGameDay: 0 } });
+    apply(w);
+    const town = w.engine.townLog.list().filter((e) => e.type === 'influence');
+    expect(w.engine.influenceLog({}).entries[0]!.ts).toBe(town[0]!.ts);
+    w.engine.applyInfluence(rain, { ts: '2099-01-01T00:00:00.000Z' });
+    apply(w);
+    const entries = w.engine.influenceLog({}).entries;
+    expect(Date.parse(entries[2]!.ts)).toBeGreaterThan(Date.parse('2099-01-01T00:00:00.000Z'));
+    expect(w.engine.influenceLog({ since: '2099-01-01T00:00:00.000Z' }).entries.map((e) => e.id)).toEqual([
+      'inf_3',
+    ]);
+  });
+
+  it('F5: a saved block without entries keeps its counter and ids', () => {
+    const save = world().engine.toSaveData();
+    save.influence = { day: 0, used: 6, nextId: 7 } as unknown as NonNullable<typeof save.influence>;
+    const b = world({}, { restore: save });
+    expect(b.engine.influenceLog({}).budget.usedToday).toBe(6);
+    expect(apply(b)).toMatchObject({ status: 429 });
+    const c = world({ influence: { enabled: true, perGameDay: 10 } }, { restore: structuredClone(save) });
+    expect(apply(c)).toMatchObject({ ok: true, id: 'inf_7' });
+  });
+
+  it('F3: busy once the LLM queue is within 16 jobs of full', () => {
+    const w = world();
+    expect(w.engine.queue.maxQueued).toBe(64);
+    const real = w.engine.queue.stats();
+    const stats = vi.spyOn(w.engine.queue, 'stats');
+    stats.mockReturnValue({ ...real, queued: 47 });
+    expect(w.engine.influenceBusy()).toBe(false);
+    stats.mockReturnValue({ ...real, queued: 48 });
+    expect(w.engine.influenceBusy()).toBe(true);
+    expect(apply(w)).toEqual({ ok: false, status: 503, error: 'busy' });
+  });
+});

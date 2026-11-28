@@ -488,3 +488,12 @@ describe('PriorityLlmQueue embeddings lane', () => {
     expect((await p)![0]).toHaveLength(64);
   });
 });
+
+describe('PriorityLlmQueue capacity', () => {
+  it('exposes maxQueued read-only (default 64)', () => {
+    const chat = new OllamaChatProvider({ baseUrl: 'http://127.0.0.1:1', model: 'm' });
+    expect(new PriorityLlmQueue({ chat }).maxQueued).toBe(64);
+    expect(new PriorityLlmQueue({ chat, maxQueued: 10 }).maxQueued).toBe(10);
+    expect(new PriorityLlmQueue({ chat, maxQueued: 0 }).maxQueued).toBe(1);
+  });
+});
