@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { z } from 'zod';
+import { INFLUENCE_CONFIG } from '../shared/influence.ts';
 
 export const PROVIDER_KINDS = ['ollama', 'openai', 'anthropic', 'gemini', 'mock'] as const;
 export type ProviderKind = (typeof PROVIDER_KINDS)[number];
@@ -184,6 +185,14 @@ export const configSchema = z
       /** Entries kept in the town event log ring buffer. */
       logSize: z.number().int().min(100).max(100_000),
     }),
+    /** Influence API (specs/influence-api-v2.md §2); the token arrives with the HTTP layer. */
+    influence: z.object({
+      enabled: z.boolean(),
+      /** Accepted influences per game day, all endpoints; 0 = no limit. */
+      perGameDay: z.number().int().min(INFLUENCE_CONFIG.perGameDay.min).max(INFLUENCE_CONFIG.perGameDay.max),
+      /** Influence log entries kept in the save. */
+      logMax: z.number().int().min(INFLUENCE_CONFIG.logMax.min).max(INFLUENCE_CONFIG.logMax.max),
+    }),
     debug: z.boolean(),
   })
   .superRefine((cfg, ctx) => {
@@ -278,6 +287,11 @@ export const DEFAULT_CONFIG: AppConfig = {
   },
   forest: { enabled: true },
   observer: { enabled: true, host: '127.0.0.1', port: null, allowRemote: false, token: '', logSize: 5000 },
+  influence: {
+    enabled: false,
+    perGameDay: INFLUENCE_CONFIG.perGameDay.default,
+    logMax: INFLUENCE_CONFIG.logMax.default,
+  },
   debug: false,
 };
 

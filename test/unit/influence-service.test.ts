@@ -46,12 +46,14 @@ describe('influence config', () => {
   it('accepts 0 (no limit) and 1000, refuses -1, 1.5 and 1001 at startup', () => {
     expect(load({ perGameDay: 0 }).influence.perGameDay).toBe(0);
     expect(load({ perGameDay: 1000 }).influence.perGameDay).toBe(1000);
-    for (const bad of [-1, 1.5, 1001]) expect(() => load({ perGameDay: bad }), String(bad)).toThrow(ConfigError);
+    for (const bad of [-1, 1.5, 1001])
+      expect(() => load({ perGameDay: bad }), String(bad)).toThrow(ConfigError);
   });
 
   it('keeps logMax within 50-5000', () => {
     expect(load({ logMax: 50 }).influence.logMax).toBe(50);
-    for (const bad of [49, 5001, 100.5]) expect(() => load({ logMax: bad }), String(bad)).toThrow(ConfigError);
+    for (const bad of [49, 5001, 100.5])
+      expect(() => load({ logMax: bad }), String(bad)).toThrow(ConfigError);
   });
 });
 
@@ -60,7 +62,11 @@ describe('day budget', () => {
     const w = world();
     for (let i = 1; i <= 6; i++) expect(apply(w)).toMatchObject({ ok: true, id: `inf_${i}` });
     expect(apply(w)).toEqual({ ok: false, status: 429, error: 'limit', resetsAtTick: MINUTES_PER_DAY });
-    expect(w.engine.influenceLog({}).budget).toEqual({ limit: 6, usedToday: 6, resetsAtTick: MINUTES_PER_DAY });
+    expect(w.engine.influenceLog({}).budget).toEqual({
+      limit: 6,
+      usedToday: 6,
+      resetsAtTick: MINUTES_PER_DAY,
+    });
     expect(w.engine.influenceLog({}).entries).toHaveLength(6);
   });
 
@@ -75,7 +81,8 @@ describe('day budget', () => {
     });
     const nudge: InfluenceRequest = { endpoint: 'nudge', body: { agent: 'mia', thought: 'hm' } };
     for (let i = 0; i < 5; i++) expect(apply(w)).toMatchObject({ ok: true });
-    for (let i = 0; i < 3; i++) expect(apply(w, nudge)).toMatchObject({ ok: false, status: 409, error: 'asleep' });
+    for (let i = 0; i < 3; i++)
+      expect(apply(w, nudge)).toMatchObject({ ok: false, status: 409, error: 'asleep' });
     expect(w.engine.influenceLog({}).budget.usedToday).toBe(5);
     refuse = false;
     expect(apply(w, nudge)).toMatchObject({ ok: true, id: 'inf_6' });
@@ -96,7 +103,11 @@ describe('day budget', () => {
     expect(apply(w)).toMatchObject({ status: 429 });
     await w.engine.advance(61);
     expect(apply(w)).toMatchObject({ ok: true });
-    expect(w.engine.influenceLog({}).budget).toEqual({ limit: 6, usedToday: 1, resetsAtTick: 2 * MINUTES_PER_DAY });
+    expect(w.engine.influenceLog({}).budget).toEqual({
+      limit: 6,
+      usedToday: 1,
+      resetsAtTick: 2 * MINUTES_PER_DAY,
+    });
   });
 
   it('an endpoint without a handler is refused with 422 and not counted', () => {
@@ -120,7 +131,9 @@ describe('overload', () => {
     w.engine.influence.register('nudge', {
       check: () => ({ status: 422, error: 'invalid', message: 'Unknown villager', field: 'agent' }),
     });
-    expect(apply(w, { endpoint: 'nudge', body: { agent: 'zed', thought: 'x' } })).toMatchObject({ status: 422 });
+    expect(apply(w, { endpoint: 'nudge', body: { agent: 'zed', thought: 'x' } })).toMatchObject({
+      status: 422,
+    });
     expect(w.engine.influenceLog({}).budget.usedToday).toBe(1);
   });
 
@@ -162,7 +175,7 @@ describe('influence log', () => {
     });
   });
 
-  it('stores a copy of the body, not the caller\'s object', () => {
+  it("stores a copy of the body, not the caller's object", () => {
     const w = world();
     const body = { weather: 'rain' as const, hours: 2 };
     w.engine.applyInfluence({ endpoint: 'weather', body });
@@ -173,7 +186,12 @@ describe('influence log', () => {
   it('marks visitors and lists targets', () => {
     const w = world();
     w.engine.influence.register('nudge', {
-      check: () => ({ targets: ['mia'], visitor: true, text: 'x', apply: () => ({ refs: {}, outcomes: {} }) }),
+      check: () => ({
+        targets: ['mia'],
+        visitor: true,
+        text: 'x',
+        apply: () => ({ refs: {}, outcomes: {} }),
+      }),
     });
     w.engine.applyInfluence({ endpoint: 'nudge', body: { agent: 'mia', thought: 'hm' } });
     expect(w.engine.influenceLog({}).entries[0]).toMatchObject({ targets: ['mia'], visitor: true });
@@ -200,11 +218,14 @@ describe('influence log', () => {
       w.engine.applyInfluence(rain, { ts: `2030-01-01T00:0${i}:00.000Z` });
       await w.engine.advance(10);
     }
-    const ids = (q: Parameters<typeof w.engine.influenceLog>[0]) => w.engine.influenceLog(q).entries.map((e) => e.id);
+    const ids = (q: Parameters<typeof w.engine.influenceLog>[0]) =>
+      w.engine.influenceLog(q).entries.map((e) => e.id);
     expect(ids({ limit: 2 })).toEqual(['inf_4', 'inf_5']);
     expect(ids({ since: at(0, '06:10'), limit: 2 })).toEqual(['inf_3', 'inf_4']);
     expect(ids({ since: '2030-01-01T00:02:00.000Z' })).toEqual(['inf_4', 'inf_5']);
-    expect(w.engine.influenceLog({ since: at(0, '06:10'), limit: 2 }).nextSince).toBe('2030-01-01T00:03:00.000Z');
+    expect(w.engine.influenceLog({ since: at(0, '06:10'), limit: 2 }).nextSince).toBe(
+      '2030-01-01T00:03:00.000Z',
+    );
     expect(w.engine.influenceLog({ since: at(1, '00:00') }).nextSince).toBeUndefined();
     const many = world({ influence: { enabled: true, perGameDay: 0, logMax: 500 } });
     for (let i = 0; i < 250; i++) many.engine.applyInfluence(rain);
@@ -242,7 +263,7 @@ describe('save and restore', () => {
     expect(apply(c)).toMatchObject({ ok: true, id: 'inf_7' });
   });
 
-  it('a lower limit after restore than today\'s usage gives 429', () => {
+  it("a lower limit after restore than today's usage gives 429", () => {
     const a = world();
     for (let i = 0; i < 5; i++) apply(a);
     const b = world({ influence: { enabled: true, perGameDay: 3 } }, { restore: a.engine.toSaveData() });
@@ -271,7 +292,10 @@ describe('save and restore', () => {
   it('a smaller logMax after restore keeps the newest entries; nextId never goes back', () => {
     const a = world({ influence: { enabled: true, perGameDay: 0, logMax: 500 } });
     for (let i = 0; i < 80; i++) apply(a);
-    const b = world({ influence: { enabled: true, perGameDay: 0, logMax: 50 } }, { restore: a.engine.toSaveData() });
+    const b = world(
+      { influence: { enabled: true, perGameDay: 0, logMax: 50 } },
+      { restore: a.engine.toSaveData() },
+    );
     const entries = b.engine.influenceLog({ limit: 200 }).entries;
     expect(entries).toHaveLength(50);
     expect(entries[0]!.id).toBe('inf_31');
@@ -282,7 +306,10 @@ describe('save and restore', () => {
     const a = world();
     apply(a);
     apply(a);
-    const b = createSimTestWorld({ config: { influence: { enabled: true } }, restore: a.engine.toSaveData() });
+    const b = createSimTestWorld({
+      config: { influence: { enabled: true } },
+      restore: a.engine.toSaveData(),
+    });
     const resumed: string[] = [];
     b.engine.influence.register('weather', { ...accepting(), resume: (e) => resumed.push(e.id) });
     expect(resumed).toEqual(['inf_1', 'inf_2']);
