@@ -3,7 +3,13 @@ import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { ConfigError, DEFAULT_CONFIG, loadConfig, type PartialConfig } from '../../src/server/config.ts';
+import {
+  ConfigError,
+  DEFAULT_CONFIG,
+  loadConfig,
+  redactConfig,
+  type PartialConfig,
+} from '../../src/server/config.ts';
 import { ObserverViews } from '../../src/server/net/observer-views.ts';
 import { queueBusyAt, type InfluenceHandler } from '../../src/server/sim/influence.ts';
 import type { InfluenceEndpoint, InfluenceOutcomes, InfluenceRequest } from '../../src/shared/influence.ts';
@@ -24,8 +30,13 @@ function accepting(outcomes: InfluenceOutcomes['weather'] = { swaps: 0 }): Influ
   };
 }
 
+const TOKEN = 'influence-test-token-0123456789abcdef';
+
 function world(config: PartialConfig = {}, extra: Parameters<typeof createSimTestWorld>[0] = {}) {
-  const w = createSimTestWorld({ config: { influence: { enabled: true }, ...config }, ...extra });
+  const w = createSimTestWorld({
+    config: { ...config, influence: { enabled: true, token: TOKEN, ...config.influence } },
+    ...extra,
+  });
   w.engine.influence.register('weather', accepting());
   return w;
 }
@@ -40,8 +51,45 @@ describe('influence config', () => {
       overrides: { influence } as PartialConfig,
     });
 
-  it('defaults to off, 6 a day and a 500-entry log; no token in this section yet', () => {
-    expect(DEFAULT_CONFIG.influence).toEqual({ enabled: false, perGameDay: 6, logMax: 500 });
+  it('defaults to off, no token, 6 a day and a 500-entry log', () => {
+    expect(DEFAULT_CONFIG.influence).toEqual({ enabled: false, token: '', perGameDay: 6, logMax: 500 });
+  });
+
+  it('refuses to start enabled without a token of at least 32 characters, never echoing it (AC2)', () => {
+    const short = 'abcdefghijklmnopqrstuvwxyz01234';
+    expect(short).toHaveLength(31);
+    for (const token of ['', short, `${short} `, 'x'.repeat(31) + '\u00e9'])
+      expect(() => load({ enabled: true, token }), JSON.stringify(token)).toThrow(ConfigError);
+    let message = '';
+    try {
+      load({ enabled: true, token: short });
+    } catch (err) {
+      message = (err as Error).message;
+    }
+    expect(message).toContain('influence.token');
+    expect(message).toContain('INFLUENCE_TOKEN');
+    expect(message).not.toContain(short);
+    expect(load({ enabled: true, token: short + '5' }).influence.enabled).toBe(true);
+    // A short token is fine while the API is off.
+    expect(load({ token: 'x' }).influence.token).toBe('x');
+  });
+
+  it('takes the token from INFLUENCE_TOKEN over the file, separate from OBSERVER_TOKEN', () => {
+    const cfg = loadConfig({
+      env: { INFLUENCE_TOKEN: TOKEN, OBSERVER_TOKEN: 'obs' },
+      cwd: mkdtempSync(join(tmpdir(), 'tpp-inf-cfg-')),
+      overrides: { influence: { enabled: true } },
+    });
+    expect(cfg.influence.token).toBe(TOKEN);
+    expect(cfg.observer.token).toBe('obs');
+  });
+
+  it('redacts the token in the config dump', () => {
+    const cfg = load({ enabled: true, token: TOKEN });
+    const dump = JSON.stringify(redactConfig(cfg));
+    expect(dump).not.toContain(TOKEN);
+    expect(redactConfig(cfg).influence).toMatchObject({ enabled: true, token: '***' });
+    expect(cfg.influence.token).toBe(TOKEN);
   });
 
   it('accepts 0 (no limit) and 1000, refuses -1, 1.5 and 1001 at startup', () => {
@@ -309,7 +357,7 @@ describe('save and restore', () => {
     apply(a);
     apply(a);
     const b = createSimTestWorld({
-      config: { influence: { enabled: true } },
+      config: { influence: { enabled: true, token: TOKEN } },
       restore: a.engine.toSaveData(),
     });
     const resumed: string[] = [];
